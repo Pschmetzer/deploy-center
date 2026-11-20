@@ -118,13 +118,38 @@ grep -q 'Stop and wait for the answer' "$plug/skills/deploys-ship/SKILL.md" \
   && ok "deploys-ship: asks before deploying" || fail "deploys-ship: asks before deploying" "missing"
 grep -q 'Stop and wait for the answer' "$plug/skills/deploys-rollback/SKILL.md" \
   && ok "deploys-rollback: asks before rolling back" || fail "deploys-rollback: asks before rolling back" "missing"
+# Every `deploys <command>` an allowed-tools line names is a command the CLI has (a typo such as
+# `deploys logs` for `log` would silently ask the user at every call).
+unknown=""
+for c in $(grep -hE '^allowed-tools:' "$plug"/skills/*/SKILL.md | grep -oE 'Bash\(deploys [a-z-]+' | sed 's/Bash(deploys //' | sort -u); do
+  grep -qE "^#   deploys $c( |\$)" deploys || unknown="$unknown $c"
+done
+[ -z "$unknown" ] && ok "skills: every allowed-tools command exists in deploys" || fail "skills: every allowed-tools command exists in deploys" "unknown:$unknown"
 # The subagent: read-only, never --yes.
 agent="$plug/agents/ship-reviewer.md"
 if [ -f "$agent" ]; then
   [ "$(sed -nE 's/^name: *//p' "$agent")" = ship-reviewer ] && ok "agent ship-reviewer: name" || fail "agent ship-reviewer: name" "missing"
   grep -q 'never with `--yes`' "$agent" && grep -q 'You never deploy' "$agent" \
     && ok "agent ship-reviewer: read-only" || fail "agent ship-reviewer: read-only" "missing"
+  # The tool pattern itself, not only the prompt, keeps --yes out: no "*" after deploy-changed, and only
+  # reading commands.
+  tools="$(sed -nE 's/^tools: *//p' "$agent")"
+  case "$tools" in *"deploy-changed --json)"*) ok "agent ship-reviewer: deploy-changed is allowed only as the exact plan command" ;; *) fail "agent ship-reviewer: deploy-changed is allowed only as the exact plan command" "$tools" ;; esac
+  case "$tools" in *"deploy-changed --json:"*|*"deploy-changed *"*|*"deploy-changed:*"*) fail "agent ship-reviewer: no wildcard after deploy-changed" "$tools" ;; *) ok "agent ship-reviewer: no wildcard after deploy-changed" ;; esac
+  if grep -oE 'Bash\(deploys [a-z-]+' <<<"$tools" | grep -qE ' (deploy|rollback|cancel|ignore|autodeploy[a-z-]*|guard|autofix)$'; then
+    fail "agent ship-reviewer: reading commands only" "$tools"; else ok "agent ship-reviewer: reading commands only"; fi
 else fail "agent ship-reviewer: exists" "$agent"; fi
+# The wrapper in bin/: a DEPLOYS from the environment wins and gets the arguments; none found is exit 127.
+wrap="$plug/bin/deploys"
+if [ -x "$wrap" ]; then
+  wt="$(mktemp -d)"; printf '#!/bin/sh\necho "fake $*"\n' > "$wt/fake"; chmod +x "$wt/fake"
+  got="$(DEPLOYS="$wt/fake" "$wrap" changed --json)"
+  [ "$got" = "fake changed --json" ] && ok "bin/deploys: runs \$DEPLOYS with the arguments" || fail "bin/deploys: runs \$DEPLOYS with the arguments" "$got"
+  env -u DEPLOYS HOME="$wt" PATH="/usr/bin:/bin" "$wrap" status >/dev/null 2>&1; code=$?
+  # A deploys on this machine's /usr/bin would make this one pass differently: only then skip.
+  if [ ! -x /usr/bin/deploys ] && [ ! -x /bin/deploys ]; then [ "$code" = 127 ] && ok "bin/deploys: none installed is exit 127" || fail "bin/deploys: none installed is exit 127" "exit $code"; fi
+  rm -rf "$wt"
+else fail "bin/deploys exists and is executable" "$wrap"; fi
 check "hooks: SessionStart calls the hook script with --session-start" jq -e '.hooks.SessionStart[0].hooks[0].command | endswith("--session-start")' "$hooks"
 check "plugin: session_hint is off by default" jq -e '.userConfig.session_hint.default == false' "$man"
 grep -qi 'never deploy without an explicit OK' "$plug/skills/deploy-center/SKILL.md" \

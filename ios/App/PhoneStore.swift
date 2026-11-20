@@ -524,19 +524,25 @@ final class PhoneStore: ObservableObject {
     /// The build this app follows, else the newest attempt the list shows.
     func buildId(_ p: PhoneProject) -> String? { deployIds[p.key] ?? (p.building ? p.latestId : nil) }
 
+    /// Keys of followed deploys the person canceled in the app: their "canceled" end is not a failure.
+    private var userCanceled: Set<String> = []
+
     func cancelBuild(_ p: PhoneProject) async {
         guard let id = buildId(p) else { return }
         if demo { say(L("Build of \(p.name) canceled (demo).", "Build von \(p.name) abgebrochen (Demo).")); return }
         guard requireOnline() else { return }
         guard await authenticate(L("Cancel the build of \(p.name)", "Build von \(p.name) abbrechen")) else { return }
+        // Marked before the cancel goes out: the followed deploy may see "canceled" before this call returns.
+        let followed = running[p.key] != nil
+        if followed { userCanceled.insert(p.key) }
         do {
             switch p.provider {
             case .vercel: try await vercel().cancel(id)
             case .render: try await Render(key: token(.render) ?? "").cancel(p, id)
             }
             say(L("Build of \(p.name) canceled.", "Build von \(p.name) abgebrochen."))
-            if running[p.key] == nil { await reload() }    // a followed deploy ends its loop itself
-        } catch { say(describe(error, p.provider), error: true) }
+            if !followed { await reload() }    // a followed deploy ends its loop itself ("canceled" by this mark, not a failure)
+        } catch { userCanceled.remove(p.key); say(describe(error, p.provider), error: true) }
     }
 
     func rollbackTarget(_ p: PhoneProject) async -> RollbackTarget? {
@@ -648,7 +654,7 @@ final class PhoneStore: ObservableObject {
         }
     }
 
-    /// Polls every 6 seconds until the deploy ends, at most 20 minutes. When the app goes to the
+    /// Polls (every 6 s, later 15 s and 30 s, see PollEvery) until the deploy ends, at most 20 minutes. When the app goes to the
     /// background meanwhile, iOS gives it some more time (and on iOS 26 a progress in the system),
     /// and the end comes as a notification.
     private func follow(_ p: PhoneProject, _ id: String, rollback: Bool = false, limit: TimeInterval = 20 * 60,
@@ -662,10 +668,11 @@ final class PhoneStore: ObservableObject {
         // The usual build time of this project, from its history: the progress bar is not a guess of five minutes.
         let typical = BuildTime.typical(await history(p) ?? [])
         var outcome: String?, ok = false, failed = false, replaced = false, lastError: String?
+        var canceledByUser = false
         // The person may never have been asked: the end of this deploy is reported to them in the background.
         Task { await Notes.askOnce() }
         while Date() < end && !Task.isCancelled {
-            try? await Task.sleep(for: .seconds(6))
+            try? await Task.sleep(for: .seconds(PollEvery.seconds(elapsed: Date().timeIntervalSince(start))))
             let s: String
             do { s = try await (check ?? { try await self.status(p, id) })().lowercased() }
             catch let e as APIError where e.status == 401 || (e.status == 404 && Date().timeIntervalSince(start) > 15) {
@@ -693,6 +700,11 @@ final class PhoneStore: ObservableObject {
             if s == "deactivated" && !rollback {
                 outcome = "\(p.name): \(PhoneProject.stateWord(s))"; replaced = true; break
             }
+            // The person canceled it here: that is what they wanted, not a failure.
+            if ["cancelled", "canceled"].contains(s) && userCanceled.contains(p.key) {
+                userCanceled.remove(p.key)
+                outcome = L("Build of \(p.name) canceled.", "Build von \(p.name) abgebrochen."); canceledByUser = true; break
+            }
             if PhoneProject.failedStates.contains(s) || ["deactivated", "cancelled", "canceled"].contains(s) {
                 outcome = "\(p.name): \(PhoneProject.stateWord(s))"; failed = true; break
             }
@@ -700,13 +712,15 @@ final class PhoneStore: ObservableObject {
         let text = outcome ?? L("\(p.name): no final state after \(Int(limit / 60)) minutes. Check it on \(p.provider.rawValue).",
                                 "\(p.name): nach \(Int(limit / 60)) Minuten kein Endstand. Prüfe es bei \(p.provider.rawValue).")
             + (lastError.map { " (\($0))" } ?? "")
-        say(text, error: !ok && !replaced)
-        keep.finish(success: ok)
-        live.finish(ok ? .live : failed ? .failed : .unknown,
-                    ok ? (rollback ? L("Rolled back", "Zurückgerollt") : L("Live", "Live")) : failed ? text.replacingOccurrences(of: "\(p.name): ", with: "")
+        say(text, error: !ok && !replaced && !canceledByUser)
+        keep.finish(success: ok || canceledByUser)
+        live.finish(ok ? .live : canceledByUser ? .unknown : failed ? .failed : .unknown,
+                    ok ? (rollback ? L("Rolled back", "Zurückgerollt") : L("Live", "Live")) : canceledByUser ? L("Canceled", "Abgebrochen")
+                       : failed ? text.replacingOccurrences(of: "\(p.name): ", with: "")
                        : L("No final state", "Kein Endstand"))
         // One note per project replaces the last good news; an end that is not good stays (it has its own id).
-        if UIApplication.shared.applicationState != .active {
+        // A cancel the person made themselves needs none.
+        if UIApplication.shared.applicationState != .active && !canceledByUser {
             await Notes.post(text, project: p.key, id: ok || replaced ? nil : "deploy-\(p.key)-\(Int(Date().timeIntervalSince1970))")
         }
         await reload()
@@ -759,7 +773,7 @@ final class PhoneStore: ObservableObject {
                               language: appLanguage, connected: demo || hasAccount)
     }
 
-    /// The widget is reloaded only when what it shows changed, or its time is half an hour old:
+    /// The widget is reloaded only when what it shows changed, or its time is 15 minutes old:
     /// each reload counts against the widget's daily budget.
     func writeSnapshot() {
         QuickActions.update(projects)
@@ -796,9 +810,13 @@ final class PhoneStore: ObservableObject {
         // all its projects would look new.
         let seen = Set(before.map(\.provider))
         var events: [(id: String, key: String, text: String)] = []
+        // Good news too: a project that failed before and is fine now ("is live again").
         for p in projects where seen.contains(p.provider) && !stale.contains(p.provider) {
             let o = old[p.key]
             if p.failed && !(o?.failed ?? false) { events.append(("failed:" + p.key, p.key, L("\(p.name) failed", "\(p.name) fehlgeschlagen"))) }
+            else if (o?.failed ?? false) && !p.failed && !p.building && p.liveState != nil {
+                events.append(("recovered:" + p.key, p.key, L("\(p.name) is live again", "\(p.name) ist wieder live")))
+            }
             else if p.group == .waiting && o?.group != .waiting { events.append(("waiting:" + p.key, p.key, L("\(p.name) is waiting", "\(p.name) wartet"))) }
         }
         guard !events.isEmpty else { return }
@@ -853,7 +871,10 @@ enum Notes {
         if news && muted { return }
         let c = UNMutableNotificationContent()
         c.title = "Deploy Center"; c.body = body; c.sound = .default
-        c.threadIdentifier = "deploy-center"
+        // One thread per project groups its history; failures rise in the notification summary, news falls.
+        c.threadIdentifier = project.map { "deploy-center-" + $0 } ?? "deploy-center"
+        let kind = (id ?? "").split(separator: ":").first.map(String.init) ?? ""
+        c.relevanceScore = kind == "failed" ? 1.0 : kind == "waiting" ? 0.3 : kind == "recovered" ? 0.5 : 0.7
         c.categoryIdentifier = (id ?? "").hasPrefix("waiting:") ? waitingCategory : category
         if let project { c.userInfo = ["project": project] }
         let r = UNNotificationRequest(identifier: id ?? "deploy-\(project ?? "")", content: c, trigger: nil)

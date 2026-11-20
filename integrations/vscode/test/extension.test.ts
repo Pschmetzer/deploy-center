@@ -16,13 +16,13 @@ beforeEach(() => {
   vs.reset();
   dir = mkdtempSync(path.join(tmpdir(), "dc-ext-"));
   log = path.join(dir, "args.log");
-  process.env.FAKE_ARGS_LOG = log;
+  process.env.DEPLOYS_FAKE_ARGS_LOG = log;
   vs.settings.cliPath = FAKE;
   vs.workspace.workspaceFolders = undefined;
 });
 afterEach(() => {
   ctl?.dispose(); ctl = null;
-  delete process.env.FAKE_ARGS_LOG;
+  delete process.env.DEPLOYS_FAKE_ARGS_LOG;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -166,12 +166,12 @@ test("the project menu offers preview and rollback where the platform has them",
 
 test("rollback: exit 0 without a readable answer is not called a failure", async () => {
   const c = await ready();
-  process.env.FAKE_ROLLBACK_EMPTY = "1";
+  process.env.DEPLOYS_FAKE_ROLLBACK_EMPTY = "1";
   try {
     c.locate(); // the runner takes the environment when it is made
     vs.answers.warning.push("Roll back");
     await c.rollback(project(c, "app-web"));
     assert.deepEqual(said("error"), []);
     assert.match(said("warning")[1], /the rollback ran, but its answer could not be read/);
-  } finally { delete process.env.FAKE_ROLLBACK_EMPTY; }
+  } finally { delete process.env.DEPLOYS_FAKE_ROLLBACK_EMPTY; }
 });

@@ -1,5 +1,5 @@
 #!/bin/bash
-# deploys-open.sh — the ⌘↵ action of the Alfred filter: "open <name>" → deploys open <name>.
+# deploys-open.sh — the ⌘↵ action of the Alfred filter: "open <platform>:<name>" (or "open <name>") → deploys open.
 # Only a project name passes (letters, digits, . _ : -); anything else is refused.
 set -euo pipefail
 export PATH="$PATH:/opt/homebrew/bin:/usr/local/bin"

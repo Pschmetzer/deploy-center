@@ -154,32 +154,43 @@ done
 
 # A push to a feature branch does not touch what a project deploys from: only projects whose
 # branch (.ref) is the pushed one count, or all of them when the branch is unknown.
-msg="$(jq -r --arg repo "$repo" --arg br "$branch" '
-  if type != "array" then empty else
-  map(select((.repo // "" | ascii_downcase | sub("^github\\.com/"; "")) == ($repo | ascii_downcase)))
-  | map(select($br == "" or (.ref // "") == "" or .ref == $br))
-  | map(if (.pendingCommits | type) == "number"
-        then "\(.pendingCommits) commit\(if .pendingCommits == 1 then "" else "s" end) waiting on \(.name)"
-        else "changes waiting on \(.name)" end)
-  | if length == 0 then empty else "\(join(", ")): deploy when ready (deploys changed)" end
-  end' "$tmp/out" 2>/dev/null)"
+# shellcheck disable=SC2016 # $repo and $br are jq variables, not shell
+sel='map(select((.repo // "" | ascii_downcase | sub("^github\\.com/"; "")) == ($repo | ascii_downcase)))
+  | map(select($br == "" or (.ref // "") == "" or .ref == $br))'
+# A project whose newest build failed gets the way to the fix skill next to its count.
+msg="$(jq -r --arg repo "$repo" --arg br "$branch" "
+  if type != \"array\" then empty else
+  $sel
+  | map((if (.pendingCommits | type) == \"number\"
+        then \"\\(.pendingCommits) commit\\(if .pendingCommits == 1 then \"\" else \"s\" end) waiting on \\(.name)\"
+        else \"changes waiting on \\(.name)\" end)
+        + (if ((.lastState // \"\") | tostring | test(\"fail|error\"; \"i\")) and (.name | test(\"^[A-Za-z0-9._:-]+\$\"))
+           then \" (its last build failed: /deploy-center:deploys-fix \\(.name))\" else \"\" end))
+  | if length == 0 then empty else \"\\(join(\", \")): deploy when ready (deploys changed)\" end
+  end" "$tmp/out" 2>/dev/null)"
 [ -n "$msg" ] || exit 0
+# Auto-deploy still on for one of them? Then the push may have started a build by itself, and the
+# note must not say "auto-deploy is off".
+auto="$(jq -r --arg repo "$repo" --arg br "$branch" "if type != \"array\" then false else $sel | any(.[]; .auto == true) end" "$tmp/out" 2>/dev/null)"
+if [ "$auto" = true ]; then off_note="Auto-deploy is still ON for at least one of these projects, so the push may have started a build by itself (deploys status shows it)."
+elif [ "$mode" = session ]; then off_note="Auto-deploy is off."
+else off_note="Auto-deploy is off, so this push did not go live."; fi
 
 if [ "$mode" = session ]; then
-  jq -cn --arg m "$msg" '{
+  jq -cn --arg m "$msg" --arg n "$off_note" '{
     systemMessage: ("Deploy Center: " + $m),
     hookSpecificOutput: {
       hookEventName: "SessionStart",
-      additionalContext: ("Deploy Center: " + $m + ". Auto-deploy is off. Mention it only if the user asks about deploys or before they ship. Do not deploy unless the user explicitly says so.")
+      additionalContext: ("Deploy Center: " + $m + ". " + $n + " Mention it only if the user asks about deploys or before they ship. Do not deploy unless the user explicitly says so.")
     }
   }'
   exit 0
 fi
-jq -cn --arg m "$msg" '{
+jq -cn --arg m "$msg" --arg n "$off_note" '{
   systemMessage: $m,
   hookSpecificOutput: {
     hookEventName: "PostToolUse",
-    additionalContext: ("Deploy Center: " + $m + ". Auto-deploy is off, so this push did not go live. Tell the user in one line. Do not deploy unless the user explicitly says so.")
+    additionalContext: ("Deploy Center: " + $m + ". " + $n + " Tell the user in one line. Do not deploy unless the user explicitly says so.")
   }
 }'
 exit 0

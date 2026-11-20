@@ -1,6 +1,7 @@
 # Example only: copy to .github/workflows/ in your own repo and adjust.
 #
-# Deploys when a person writes [deploy] in the commit message, and only then. It deploys the
+# Deploys when a person starts the commit message with [deploy], and only then: a message that
+# merely mentions the marker ("docs: explain the [deploy] marker") does not deploy. It deploys the
 # changed projects that deploy from this repo (set `repo: "*"` for every repo). Every other
 # push just reports what is waiting. A squash merge puts the PR description into the commit
 # message: whoever can open a PR can then write [deploy], so keep the `environment` below with
@@ -42,7 +43,7 @@ jobs:
       - uses: Pschmetzer/deploy-center/integrations/action@main
         id: dc
         with:
-          deploy: ${{ contains(github.event.head_commit.message, '[deploy]') || inputs.deploy == true }}
+          deploy: ${{ startsWith(github.event.head_commit.message, '[deploy]') || inputs.deploy == true }}
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           vercel-team: ${{ vars.DEPLOYS_VERCEL_TEAM }}
           render-api-key: ${{ secrets.RENDER_API_KEY }}

@@ -5,12 +5,21 @@
 #   integrations/notify/notify.sh --dry-run [list.json|-]            print what would be posted
 #   DEPLOYS_NOTIFY_URL=… integrations/notify/notify.sh list.json     post from a saved list
 #
+# Options may stand before or after the list: `notify.sh list.json --dry-run` is a dry run too.
+#   --dry-run  --quiet-when-empty  --link <url>   (--link: a button or link line, e.g. the status page)
+#
 # Env:
 #   DEPLOYS_NOTIFY_URL     where to post. A secret (Telegram's carries the bot token): it goes to
 #                          curl on stdin, never on the command line.
+#   DEPLOYS_NOTIFY_URLS    more targets, comma-separated (Slack and ntfy at once). One that fails does not
+#                          stop the others; the exit code is 1 if any failed.
+#   DEPLOYS_NOTIFY_URL_FILE a file (chmod 600) whose first line is the URL, for launchd and cron: the
+#                          secret stays out of a plist or crontab.
+#   DEPLOYS_NOTIFY_LINK    the same as --link.
 #   DEPLOYS_NOTIFY_FORMAT  discord | slack | ntfy | telegram | teams | googlechat | matrix | pushover |
+#                          plain ({"text":…} only, for Mattermost, Rocket.Chat, Zulip-style hooks) |
 #                          custom (your own jq program in DEPLOYS_NOTIFY_TEMPLATE). Default: guessed from
-#                          the host, anything unknown is sent Slack-style ({"text":…}, also Mattermost etc.).
+#                          the host, anything unknown is sent Slack-style (with blocks when there is a link).
 #   DEPLOYS                the CLI to call (default: deploys on PATH)
 #   DEPLOYS_NOTIFY_TZ      the time zone of "today", e.g. Europe/Berlin. Default: DEPLOYS_TZ
 #                          (shared with the digest), else UTC.
@@ -30,14 +39,22 @@ DEPLOYS="${DEPLOYS:-deploys}"
 . "$(dirname "$0")/../lib/post.sh"
 tz="${DEPLOYS_NOTIFY_TZ:-${DEPLOYS_TZ:-UTC}}"
 [[ "$tz" =~ ^[A-Za-z0-9/_+-]+$ ]] || { echo "DEPLOYS_NOTIFY_TZ / DEPLOYS_TZ must be a zone name like Europe/Berlin" >&2; exit 1; }
-dry=0 quiet=0
-while [ "${1:-}" = "--dry-run" ] || [ "${1:-}" = "--quiet-when-empty" ]; do
-  case "$1" in --dry-run) dry=1 ;; --quiet-when-empty) quiet=1 ;; esac; shift
+dry=0 quiet=0 from="" link="${DEPLOYS_NOTIFY_LINK:-}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dry-run) dry=1 ;;
+    --quiet-when-empty) quiet=1 ;;
+    --link) link="${2:?--link <url>}"; shift ;;
+    -) from=- ;;
+    -*) echo "Unknown option $1 (--dry-run, --quiet-when-empty, --link <url>)" >&2; exit 1 ;;
+    *) [ -z "$from" ] || { echo "Only one list file, got $from and $1" >&2; exit 1; }; from="$1" ;;
+  esac
+  shift
 done
-from="${1:-}"
 lang="${DEPLOYS_LANG:-en}"; case "$lang" in en|de) ;; *) echo "DEPLOYS_LANG must be en or de" >&2; exit 1 ;; esac
-url="${DEPLOYS_NOTIFY_URL:-}"
-[ "$dry" = 1 ] || [ -n "$url" ] || { echo "Set DEPLOYS_NOTIFY_URL (or use --dry-run)." >&2; exit 1; }
+urls="$(webhook_urls)" || exit 1
+[ "$dry" = 1 ] || [ -n "$urls" ] || { echo "Set DEPLOYS_NOTIFY_URL, DEPLOYS_NOTIFY_URLS or DEPLOYS_NOTIFY_URL_FILE (or use --dry-run)." >&2; exit 1; }
+export WEBHOOK_CUT_HINT="see deploys changed"
 
 chg=null
 if [ -z "$from" ]; then
@@ -49,7 +66,7 @@ elif [ "$from" = - ]; then list="$(cat)"
 else list="$(cat "$from")"
 fi
 
-text="$(echo "$list" | TZ="$tz" jq -r --argjson ign "$(ignored_names)" --argjson chg "$chg" --arg lang "$lang" --arg tz "$tz" '
+res="$(echo "$list" | TZ="$tz" jq -c --argjson ign "$(ignored_names)" --argjson chg "$chg" --arg lang "$lang" --arg tz "$tz" '
   # A name on two platforms is shown as platform:name, so "web" is one project, not two.
   def lbl($twice): if (.name as $n | $twice | index($n)) and .platform then "\(.platform):\(.name)" else .name end;
   (now | strflocaltime("%Y-%m-%d")) as $today
@@ -64,22 +81,33 @@ text="$(echo "$list" | TZ="$tz" jq -r --argjson ign "$(ignored_names)" --argjson
   | ($all | map(select(.changed and ((.name as $n | $ign | index($n)) | not) and (if $chg == null then true else (.name as $n | $chg | index($n)) != null end)))
       | map(lbl($twice) + (if .pendingCommits then " (\(.pendingCommits) \(if $lang == "de" then "Commits" else "commits" end))" else "" end))) as $wait
   | (if $lang == "de" then {live: "Heute live", wait: "Wartend", fail: "Fehlgeschlagen", none: "keine"} else {live: "Live today", wait: "Waiting", fail: "Failed", none: "none"} end) as $t
-  | "Deploy Center, \($today) (\($tz))",
+  | {failed: ($failed | length), live: ($live | length), wait: ($wait | length),
+     text: ([ "Deploy Center, \($today) (\($tz))",
     "\($t.live) (\($live | length)): \(if ($live | length) > 0 then $live | join(", ") else $t.none end)",
     "\($t.wait) (\($wait | length)): \(if ($wait | length) > 0 then $wait | join(", ") else $t.none end)",
-    (if ($failed | length) > 0 then "\($t.fail) (\($failed | length)): \($failed | join(", "))" else empty end)')"
-failed_any=0; case "$text" in *$'\n'"Failed ("*|*$'\n'"Fehlgeschlagen ("*) failed_any=1 ;; esac
-if [ "$quiet" = 1 ] && [ "$failed_any" = 0 ] && ! grep -Eq '^(Live today|Heute live|Waiting|Wartend) \([1-9]' <<<"$text"; then
+    (if ($failed | length) > 0 then "\($t.fail) (\($failed | length)): \($failed | join(", "))" else empty end) ] | join("\n"))}')"
+# From the data, not from the finished text: a changed wording cannot turn the priority off.
+text="$(jq -r '.text' <<<"$res")"
+failed_any=0; [ "$(jq '.failed' <<<"$res")" = 0 ] || failed_any=1
+if [ "$quiet" = 1 ] && [ "$failed_any" = 0 ] && [ "$(jq '.live + .wait' <<<"$res")" = 0 ]; then
   echo "Nothing to report; nothing posted."; exit 0
 fi
 if [ "$failed_any" = 1 ]; then
   export DEPLOYS_NOTIFY_PRIORITY="${DEPLOYS_NOTIFY_PRIORITY:-high}" DEPLOYS_NOTIFY_TAGS="${DEPLOYS_NOTIFY_TAGS:-rotating_light}"
 fi
 
-format="$(webhook_format "$url")"
-webhook_body "$format" "$text"
-
-if [ "$dry" = 1 ]; then printf 'format: %s\n%s\n' "$format" "$WEBHOOK_BODY"; exit 0; fi
-
-webhook_send "$url" "$format"
-echo "Posted ($format)."
+rc=0
+if [ -z "$urls" ]; then   # a dry run without a URL: the format comes from DEPLOYS_NOTIFY_FORMAT or the Slack default
+  format="$(webhook_format "")"
+  webhook_body "$format" "$text" "$link" "Open"
+  printf 'format: %s\n%s\n' "$format" "$WEBHOOK_BODY"; exit 0
+fi
+while IFS= read -r url; do
+  [ -n "$url" ] || continue
+  format="$(webhook_format "$url")"
+  webhook_body "$format" "$text" "$link" "Open" || { rc=1; continue; }
+  if [ "$dry" = 1 ]; then printf 'format: %s\n%s\n' "$format" "$WEBHOOK_BODY"; continue; fi
+  # webhook_send and curl say why on stderr; one target failing does not stop the next.
+  if webhook_send "$url" "$format"; then echo "Posted ($format)."; else rc=1; fi
+done <<<"$urls"
+exit "$rc"

@@ -7,7 +7,7 @@ deploys nothing:
 |---|---|
 | `index.html` | One file, no external assets. Light and dark, readable on a phone. |
 | `feed.xml` | An Atom feed, one entry per deploy in the timeline. |
-| `status.json` | The same data, for other tools. The page and the feed are made from it. |
+| `status.json` | The same data, for other tools. The page and the feed are made from it. It has `schema: 1`; a tool that reads it can tell when the format changes. |
 
 ```bash
 cp integrations/statuspage/statuspage.example.json statuspage.json   # then edit it
@@ -60,6 +60,7 @@ published.
 | `hideMessages` | `false` | `true` shows "Updated" instead of every commit message, in the page, the feed and `status.json`. The example config sets it to `true`: commit messages and the titles of waiting commits ("Coming next") are often not meant for the public. Set `false` only for a page you would show anyone. |
 | `showAuthors` | `false` | Keep the author names that `deploys notes` adds. |
 | `timeline` | `30` | How many deploys the timeline keeps. |
+| `timelinePerProject` | `10` | At most this many of them per project, so one busy project does not push the others out of the list. |
 | `lang` | `en` | `en` or `de`: the page's texts, the feed's titles and "Updated" in `status.json`. |
 | `staleHours` | `48` | When the page is older than this (the job that makes it may have stopped), a red line on the page says how old it is. Needs scripts in the browser. |
 | `journal` | the app's | Path to a `journal.jsonl`. `DEPLOYS_JOURNAL` overrides it. Without a journal (in CI, on another machine) the timeline comes from each platform's history, when the CLI has `deploys history --json`. |

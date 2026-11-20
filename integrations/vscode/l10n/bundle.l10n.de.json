@@ -97,5 +97,10 @@
   "{0} min": "{0} Min.",
   "{0} h": "{0} Std.",
   "{0} d": "{0} T.",
-  "{0}: the rollback ran, but its answer could not be read. Check its state (Refresh) before you roll back again.": "{0}: Das Zurückrollen lief, aber seine Antwort ließ sich nicht lesen. Prüfe den Stand (Aktualisieren), bevor du noch einmal zurückrollst."
+  "{0}: the rollback ran, but its answer could not be read. Check its state (Refresh) before you roll back again.": "{0}: Das Zurückrollen lief, aber seine Antwort ließ sich nicht lesen. Prüfe den Stand (Aktualisieren), bevor du noch einmal zurückrollst.",
+  "{0}: the build was canceled.": "{0}: Der Build wurde abgebrochen.",
+  "Actions": "Aktionen",
+  "Opened the build log of {0}.": "Build-Log von {0} geöffnet.",
+  "{0} project waiting": "{0} Projekt wartet",
+  "{0} projects waiting": "{0} Projekte warten"
 }

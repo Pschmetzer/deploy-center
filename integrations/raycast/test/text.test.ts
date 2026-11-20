@@ -8,6 +8,7 @@ import type { ChangedProject } from "../src/lib/deploys";
 import { aiPrompt, firstErrorBlock, isErrorLine, maskSecrets } from "../src/lib/log";
 import {
   classify,
+  cliEnv,
   costText,
   idleText,
   commitsText,
@@ -142,4 +143,27 @@ test("idleText: days idle, or never deployed", () => {
   assert.equal(idleText(1), "1 day idle");
   assert.equal(idleText(null), "never deployed");
   assert.equal(idleText(undefined), "never deployed");
+});
+
+test("cliEnv: an allowlist, the editor's tokens and program-running variables stay out", () => {
+  const e = cliEnv({
+    PATH: "/x",
+    HOME: "/h",
+    NPM_TOKEN: "t",
+    OPENAI_API_KEY: "k",
+    GIT_ASKPASS: "/bin/evil",
+    GIT_SSH_COMMAND: "x",
+    VERCEL_TOKEN: "v",
+    DEPLOYS_CONFIG: "/c",
+    RENDER_API_KEY: "r",
+    GH_TOKEN: "g",
+  });
+  assert.deepEqual(Object.keys(e).sort(), [
+    "DEPLOYS_CONFIG",
+    "GH_TOKEN",
+    "HOME",
+    "PATH",
+    "RENDER_API_KEY",
+    "VERCEL_TOKEN",
+  ]);
 });

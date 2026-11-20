@@ -12,10 +12,13 @@ import AppIntents
 struct Entry: TimelineEntry {
     let date: Date
     let snap: DeploySnapshot?
-    /// A failed build is what the person most wants to see: the widget rises in the Smart Stack.
+    /// Why there is no snapshot (no file yet, unreadable, written by a newer app).
+    var problem: DeploySnapshot.ReadProblem? = nil
+    /// A failed build is what the person most wants to see; a build that runs long or a project that waits
+    /// over a day rises less (the snapshot decides, see relevanceScore).
     var relevance: TimelineEntryRelevance? {
-        guard let s = snap, s.failed > 0 else { return nil }
-        return TimelineEntryRelevance(score: 10)
+        guard let s = snap, let score = s.relevanceScore(at: date) else { return nil }
+        return TimelineEntryRelevance(score: score)
     }
 }
 
@@ -23,13 +26,14 @@ struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> Entry { Entry(date: Date(), snap: .sample) }
     func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
         // The gallery shows made-up numbers until the app has written a snapshot.
-        completion(Entry(date: Date(), snap: DeploySnapshot.read() ?? (context.isPreview ? .sample : nil)))
+        let r = DeploySnapshot.readOutcome()
+        completion(Entry(date: Date(), snap: r.snapshot ?? (context.isPreview ? .sample : nil), problem: r.problem))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
         // The app asks for a reload after each change; this is only the fallback. A second entry once
         // the snapshot is three hours old, so "out of date" shows without the app (iOS only, see isStale).
-        let snap = DeploySnapshot.read(), now = Date()
-        var entries = [Entry(date: now, snap: snap)]
+        let r = DeploySnapshot.readOutcome(), snap = r.snapshot, now = Date()
+        var entries = [Entry(date: now, snap: snap, problem: r.problem)]
         if let s = snap, s.at.addingTimeInterval(Words.staleAfter) > now { entries.append(Entry(date: s.at.addingTimeInterval(Words.staleAfter), snap: s)) }
         completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60))))
     }
@@ -180,7 +184,7 @@ struct StatusLine: View {
     }
 }
 
-/// Medium (three rows), large (six) and extra large (ten, iPad and Mac).
+/// Medium (three rows), large (six) and extra large (ten, iPad only: the Mac has no extra-large widget).
 struct ListView: View {
     let snap: DeploySnapshot
     let date: Date
@@ -265,12 +269,15 @@ struct ProjectRow: View {
 
 struct NoSnapshotView: View {
     var notConnected = false
+    var problem: DeploySnapshot.ReadProblem? = nil
     @Environment(\.words) private var w
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Label("Deploy Center", systemImage: "paperplane.fill").font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
             Spacer()
             Text(notConnected ? w("Connect Deploy Center to your accounts to fill this widget.", "Verbinde Deploy Center mit deinen Konten, um dieses Widget zu füllen.")
+                 : problem == .appNewer ? w("Update Deploy Center: the app is newer than this widget.", "Aktualisiere Deploy Center: Die App ist neuer als dieses Widget.")
+                 : problem == .unreadable ? w("The widget could not read its data. Open Deploy Center to write it again.", "Das Widget konnte seine Daten nicht lesen. Öffne Deploy Center, um sie neu zu schreiben.")
                               : w("Open Deploy Center once to fill this widget.", "Öffne Deploy Center einmal, um dieses Widget zu füllen."))
                 .font(.caption).foregroundStyle(.secondary)
         }
@@ -299,13 +306,13 @@ struct AccessoryView: View {
                 .accessibilityElement(children: .ignore).accessibilityLabel(s.spoken(w))
             case .accessoryInline:
                 Label(w("\(w.n(s.waitingPRs, ("PR", "PR"), ("PRs", "PRs"))) waiting", "\(w.n(s.waitingPRs, ("PR", "PR"), ("PRs", "PRs"))) \(s.waitingPRs == 1 ? "wartet" : "warten")")
-                      + (s.failed > 0 ? w(" · \(s.failed) failed", " · \(s.failed) Fehler") : ""), systemImage: worst(s))
+                      + (s.failed > 0 ? w(" · \(s.failed) failed", " · \(s.failed) fehlgeschlagen") : ""), systemImage: worst(s))
             default:
                 VStack(alignment: .leading, spacing: 1) {
                     Label(w("\(s.waitingPRs) waiting", "\(s.waitingPRs) wartend"), systemImage: "paperplane.fill").font(.headline).widgetAccentable()
                     Text(w.n(s.waitingProjects, ("project", "Projekt"), ("projects", "Projekte"))
                          + (s.building > 0 ? w(" · \(s.building) building", " · \(s.building) im Bau") : "")
-                         + (s.failed > 0 ? w(" · \(s.failed) failed", " · \(s.failed) Fehler") : ""))
+                         + (s.failed > 0 ? w(" · \(s.failed) failed", " · \(s.failed) fehlgeschlagen") : ""))
                         .font(.caption)
                     if let p = s.projects.first { Text(p.name).font(.caption2).lineLimit(1).privacySensitive() }
                 }
@@ -348,7 +355,7 @@ struct DeployWidgetView: View {
             case .systemExtraLarge: ListView(snap: s, date: entry.date, rows: 10)
             default: ListView(snap: s, date: entry.date, rows: 3)
             }
-        } else { NoSnapshotView(notConnected: entry.snap?.connected == false) }
+        } else { NoSnapshotView(notConnected: entry.snap?.connected == false, problem: entry.problem) }
     }
 }
 
@@ -377,17 +384,65 @@ struct ProblemsWidget: Widget {
             .configurationDisplayName(Words(DeploySnapshot.read())("Failed deploys", "Fehlgeschlagene Deploys"))
             .description(Words(DeploySnapshot.read())("Only the projects whose deploy failed or still builds.",
                                                       "Nur die Projekte, deren Deploy fehlschlug oder noch baut."))
-            .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+            .supportedFamilies(Self.families)
+    }
+    static var families: [WidgetFamily] {
+        #if os(iOS)
+        [.systemSmall, .systemMedium, .systemLarge, .accessoryCircular, .accessoryRectangular]   // the lock screen: the number of failures
+        #else
+        [.systemSmall, .systemMedium, .systemLarge]
+        #endif
     }
 }
+
+#if os(iOS)
+/// Lock screen: only the number of failed deploys (and the first one's name), nothing else.
+struct ProblemsAccessoryView: View {
+    let snap: DeploySnapshot
+    @Environment(\.widgetFamily) var family
+    @Environment(\.words) private var w
+    var body: some View {
+        let n = snap.failed
+        let icon = n == 0 ? "checkmark.circle" : "xmark.octagon.fill"
+        let spoken = n == 0 ? w("No failed deploys", "Keine fehlgeschlagenen Deploys")
+                            : w.n(n, ("failed deploy", "fehlgeschlagener Deploy"), ("failed deploys", "fehlgeschlagene Deploys"))
+        switch family {
+        case .accessoryRectangular:
+            VStack(alignment: .leading, spacing: 1) {
+                Label(spoken, systemImage: icon).font(.headline).widgetAccentable()
+                if let p = snap.projects.first(where: { $0.status == .failed }) { Text(p.name).font(.caption).lineLimit(1).privacySensitive() }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .ignore).accessibilityLabel(spoken)
+        default:
+            ZStack {
+                AccessoryWidgetBackground()
+                VStack(spacing: 0) {
+                    Image(systemName: icon).font(.caption2)
+                    Text("\(n)").font(.title3.weight(.bold).monospacedDigit()).minimumScaleFactor(0.6)
+                }
+            }
+            .accessibilityElement(children: .ignore).accessibilityLabel(spoken)
+        }
+    }
+}
+#endif
 
 struct ProblemsWidgetView: View {
     @Environment(\.widgetFamily) var family
     let entry: Entry
     var body: some View {
         Group {
+            #if os(iOS)
+            if family == .accessoryCircular || family == .accessoryRectangular {
+                if let s = entry.snap, s.connected != false { ProblemsAccessoryView(snap: s) }
+                else { NoSnapshotView(notConnected: entry.snap?.connected == false, problem: entry.problem) }
+            } else if let s = entry.snap, s.connected != false { ProblemsView(snap: s, date: entry.date, rows: family == .systemLarge ? 8 : family == .systemMedium ? 3 : 2) }
+            else { NoSnapshotView(notConnected: entry.snap?.connected == false, problem: entry.problem) }
+            #else
             if let s = entry.snap, s.connected != false { ProblemsView(snap: s, date: entry.date, rows: family == .systemLarge ? 8 : family == .systemMedium ? 3 : 2) }
-            else { NoSnapshotView(notConnected: entry.snap?.connected == false) }
+            else { NoSnapshotView(notConnected: entry.snap?.connected == false, problem: entry.problem) }
+            #endif
         }
         .environment(\.words, Words(entry.snap))
         .containerBackground(.fill.tertiary, for: .widget)
@@ -450,7 +505,7 @@ struct NextDeployView: View {
     var body: some View {
         Group {
             if let s = entry.snap, s.connected != false { NextDeployContent(snap: s, date: entry.date, family: family) }
-            else { NoSnapshotView(notConnected: entry.snap?.connected == false) }
+            else { NoSnapshotView(notConnected: entry.snap?.connected == false, problem: entry.problem) }
         }
         .environment(\.words, Words(entry.snap))
         .containerBackground(.fill.tertiary, for: .widget)
@@ -568,10 +623,15 @@ private func phaseIcon(_ p: DeployActivity.ContentState.Phase, _ w: Words, rollb
 
 /// Running: a clock from the start. Ended: the time it took.
 @ViewBuilder private func elapsed(_ ctx: ActivityViewContext<DeployActivity>) -> some View {
+    let w = Words(german: ctx.attributes.german)
     if ctx.state.phase == .running && !ctx.isStale {
+        // VoiceOver says what the number is: "Running for", then the clock.
         Text(timerInterval: ctx.attributes.started...Date.distantFuture, countsDown: false)
+            .accessibilityLabel(w("Running for", "Läuft seit"))
+            .accessibilityValue(Text(timerInterval: ctx.attributes.started...Date.distantFuture, countsDown: false))
     } else {
-        Text(Duration.seconds(max(0, ctx.state.updated.timeIntervalSince(ctx.attributes.started))).formatted(.time(pattern: .minuteSecond)))
+        let t = Duration.seconds(max(0, ctx.state.updated.timeIntervalSince(ctx.attributes.started))).formatted(.time(pattern: .minuteSecond))
+        Text(t).accessibilityLabel(w("Took \(t)", "Dauerte \(t)"))
     }
 }
 
@@ -585,6 +645,7 @@ private func line(_ ctx: ActivityViewContext<DeployActivity>, _ w: Words) -> Str
 
 struct DeployActivityView: View {
     let ctx: ActivityViewContext<DeployActivity>
+    @ScaledMetric(relativeTo: .title3) private var timeWidth = 80.0
     var body: some View {
         let w = Words(german: ctx.attributes.german)
         HStack(spacing: 12) {
@@ -594,7 +655,9 @@ struct DeployActivityView: View {
                 Text(line(ctx, w)).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 0)
-            elapsed(ctx).font(.title3.monospacedDigit()).multilineTextAlignment(.trailing).frame(maxWidth: 80, alignment: .trailing)
+            // The width grows with Dynamic Type, and 1:05:00 scales down instead of being cut off.
+            elapsed(ctx).font(.title3.monospacedDigit()).lineLimit(1).minimumScaleFactor(0.6).multilineTextAlignment(.trailing)
+                .frame(maxWidth: timeWidth, alignment: .trailing)
         }
         .accessibilityElement(children: .combine)
     }

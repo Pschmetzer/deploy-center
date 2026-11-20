@@ -3,6 +3,10 @@
 #
 # Every weekday morning: open or update the issue "Deploys waiting – <date>" and post the
 # digest to your webhook, with a button to approve-deploy. Deploys nothing.
+#
+# GitHub switches scheduled workflows off after 60 days without activity in a public repo, and
+# the digest then stops without an error. A push, an issue or a run by hand starts it again;
+# the status page's "staleHours" is the other way to notice.
 name: daily digest
 
 on:
@@ -13,6 +17,11 @@ on:
 permissions:
   contents: read
   issues: write
+
+# A run by hand during the cron run would read "no issue today" in both and open two.
+concurrency:
+  group: digest
+  cancel-in-progress: false
 
 jobs:
   digest:

@@ -42,6 +42,8 @@ cfg="$(jq -c '
      hideMessages: ((.hideMessages // false) or (.strict // false)),
      showAuthors: (.showAuthors // false),
      timeline: (.timeline // 30),
+     # At most this many entries per project, so one busy project does not push the others out of the list.
+     timelinePerProject: (.timelinePerProject // 10),
      # The language of the page: its texts, the feed titles and "Updated" in status.json.
      lang: ((.lang // "en") | if . == "en" or . == "de" then . else error("lang must be en or de") end),
      # Your own wording for any text of the page (keys as in the text table below, e.g. "live", "failed",
@@ -129,8 +131,16 @@ check_of() {
   echo "$r"
 }
 
+# The newest entries first, at most timelinePerProject of each project, then timeline in all.
+cap_timeline='sort_by(.at) | reverse
+  | (reduce .[] as $e ({n: {}, out: []}; ($e.name + "/" + ($e.platform // "")) as $k
+      | if (.n[$k] // 0) < $cfg.timelinePerProject then .n[$k] += 1 | .out += [$e] else . end) | .out) | .[0:$cfg.timeline]'
 tmp_hist="$(mktemp)"; trap 'rm -f "$tmp_hist"' EXIT
 extra='{}'
+# Site checks run one after the other, each up to about two minutes in the worst case: the whole
+# round gets a budget (STATUSPAGE_CHECK_BUDGET seconds, default 480); a site not reached by then
+# is left unchecked (no card line) and said on stderr, so the job still ends in time.
+check_start=$SECONDS; budget="${STATUSPAGE_CHECK_BUDGET:-480}"; case "$budget" in ''|*[!0-9]*) budget=480 ;; esac
 while IFS=$'\t' read -r i name changed url; do
   n='[]'; c='null'
   if [ "$notes" = 1 ] && [ "$changed" = true ]; then
@@ -142,7 +152,9 @@ while IFS=$'\t' read -r i name changed url; do
       n="$(notes_of "$name" | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {kind: .[0], text: (.[1:] | join("\t")), author: false})')"
     fi
   fi
-  if [ "$check" = 1 ] && [ -n "$url" ]; then
+  if [ "$check" = 1 ] && [ -n "$url" ] && [ $((SECONDS - check_start)) -ge "$budget" ]; then
+    echo "Site check of $name skipped: the ${budget}s budget for site checks is used up (STATUSPAGE_CHECK_BUDGET)." >&2
+  elif [ "$check" = 1 ] && [ -n "$url" ]; then
     read -r code secs <<<"$(check_of "$url")"
     c="$(jq -n -c --arg code "$code" --arg s "$secs" '($code | tonumber? // 0) as $c
       | {up: (($c >= 200 and $c < 400) or $c == 401 or $c == 403), code: $c, ms: (($s | tonumber? // 0) * 1000 | round)}')"
@@ -164,7 +176,7 @@ if [ ! -f "$journal" ]; then
       | (if ($s | test("fail|error")) then "failed" elif ($s | test("^(ready|live|success|succeeded|deployed|active)$")) then "live" else empty end) as $r
       | {at, name: $n, platform: $p, result: $r, seconds: null, label: $l}' <<<"$h" >> "$tmp_hist" 2>/dev/null || true
   done < <(jq -r '.[] | select(.found) | [.name, .platform, .label] | @tsv' <<<"$picked")
-  timeline="$(jq -s -c --argjson cfg "$cfg" 'sort_by(.at) | reverse | .[0:$cfg.timeline]' "$tmp_hist")"
+  timeline="$(jq -s -c --argjson cfg "$cfg" "$cap_timeline" "$tmp_hist")"
 elif [ -f "$journal" ]; then
   timeline="$(jq -R -c 'fromjson? // empty' "$journal" | jq -s -c --argjson cfg "$cfg" '
     map(select(type == "object" and (.result == "live" or .result == "failed")) | . as $e
@@ -173,7 +185,7 @@ elif [ -f "$journal" ]; then
            seconds: (.seconds | if type == "number" then round else null end),
            label: ((.name as $n | .platform as $pl | $cfg.projects | map(select(.name == $n and (.platform == null or .platform == $pl))) | .[0].label) // .name)}
         | select(.at != null))
-    | sort_by(.at) | reverse | .[0:$cfg.timeline]')"
+    | '"$cap_timeline")"
 fi
 
 # The page's texts, English and German (config "lang").
@@ -182,14 +194,14 @@ texts='{
         "failed":"Failed","building":"Deploying","notYet":"Not deployed yet","unknown":"Unknown","feed":"Feed","projects":"Projects",
         "unread":"Could not be read just now.","lastDeploy":"Last deploy","siteUp":"Site up","siteDown":"Site not reachable",
         "next":"Coming next","waiting":"Changes waiting to ship.","recent":"Recent deploys","noDeploys":"No deploys recorded yet.",
-        "wentLive":"went live","deployFailed":"deploy failed","siteDown":"is not reachable","tookSeconds":"took","footerUtc":"Made with Deploy Center. Times in UTC.",
+        "wentLive":"went live","deployFailed":"deploy failed","siteDownVerb":"is not reachable","tookSeconds":"took","footerUtc":"Made with Deploy Center. Times in UTC.",
         "footer":"Made with Deploy Center.","stale":"This page was last made {n} hours ago and may be out of date.",
         "staleDays":"This page was last made {n} days ago and may be out of date."},
  "de": {"updated":"Aktualisiert","depUpdate":"Abhängigkeit aktualisiert: ","never":"nie","live":"Live","liveFailed":"Live · letzter Deploy fehlgeschlagen",
         "failed":"Fehlgeschlagen","building":"Wird deployt","notYet":"Noch nicht deployt","unknown":"Unbekannt","feed":"Feed","projects":"Projekte",
         "unread":"Ließ sich gerade nicht lesen.","lastDeploy":"Letzter Deploy","siteUp":"Seite erreichbar","siteDown":"Seite nicht erreichbar",
         "next":"Als Nächstes","waiting":"Änderungen warten darauf, live zu gehen.","recent":"Letzte Deploys","noDeploys":"Noch keine Deploys aufgezeichnet.",
-        "wentLive":"ging live","deployFailed":"Deploy fehlgeschlagen","siteDown":"ist nicht erreichbar","tookSeconds":"dauerte","footerUtc":"Erstellt mit Deploy Center. Zeiten in UTC.",
+        "wentLive":"ging live","deployFailed":"Deploy fehlgeschlagen","siteDownVerb":"ist nicht erreichbar","tookSeconds":"dauerte","footerUtc":"Erstellt mit Deploy Center. Zeiten in UTC.",
         "footer":"Erstellt mit Deploy Center.","stale":"Diese Seite wurde vor {n} Stunden zuletzt erstellt und ist vielleicht nicht aktuell.",
         "staleDays":"Diese Seite wurde vor {n} Tagen zuletzt erstellt und ist vielleicht nicht aktuell."}}'
 L="$(jq -c --arg l "$(jq -r .lang <<<"$cfg")" --argjson o "$(jq -c .texts <<<"$cfg")" '.[$l] + $o' <<<"$texts")"
@@ -201,7 +213,7 @@ jq -n --argjson cfg "$cfg" --argjson p "$picked" --argjson x "$extra" --argjson 
   # author false: a Markdown line "msg – author" (an older CLI), cut at the last " – ".
   def strip_author($a): if $a == false then (if $cfg.showAuthors then . else sub(" – [^–]*$"; "") end)
                         elif $cfg.showAuthors and $a != null then . + " – " + $a else . end;
-  {title: $cfg.title, description: $cfg.description, generatedAt: (now | floor), lang: $cfg.lang, staleHours: $cfg.staleHours,
+  {schema: 1, title: $cfg.title, description: $cfg.description, generatedAt: (now | floor), lang: $cfg.lang, staleHours: $cfg.staleHours,
    url: ($cfg.baseUrl | if . != "" and (endswith("/") | not) then . + "/" else . end),
    projects: [$p | to_entries[] | .value as $v | ($x[.key | tostring] // {notes: [], check: null}) as $e
      | {name: $v.label, platform: $v.platform, state: (if $v.found then $v.state else "unknown" end),
@@ -293,10 +305,11 @@ jq -r --argjson L "$L" '
   # A site that did not answer when the page was made is an entry too, dated by the page.
   ($s.projects[] | select(.check != null and .check.up == false) |
     "  <entry>",
-    "    <title>\(.name | x) \($L.siteDown | x)</title>",
-    "    <id>urn:deploy-center:check:\(.platform // "" | x):\(.name | @uri | x):\($s.generatedAt)</id>",
+    "    <title>\(.name | x) \($L.siteDownVerb | x)</title>",
+    # The id has no date: the same ongoing outage is one entry, not a new one for every daily run.
+    "    <id>urn:deploy-center:check:\(.platform // "" | x):\(.name | @uri | x)</id>",
     "    <updated>\($s.generatedAt | todate)</updated>",
-    "    <summary type=\"text\">\(.name | x) \($L.siteDown | x) (HTTP \(.check.code))</summary>",
+    "    <summary type=\"text\">\(.name | x) \($L.siteDownVerb | x) (HTTP \(.check.code))</summary>",
     (if $link != "" then "    <link href=\"\($link | x)\"/>" else empty end),
     "  </entry>"),
   "</feed>"' "$out/status.json" > "$out/feed.xml"

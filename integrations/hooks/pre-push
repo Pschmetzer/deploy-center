@@ -48,12 +48,14 @@ killtree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do killtree "$c"; d
 limit="${DEPLOYS_PREPUSH_TIMEOUT:-20}"; case "$limit" in ''|*[!0-9]*) limit=20 ;; esac
 # list --json exits 1 when one platform could not be read; what it printed still counts.
 ( exec "$DEPLOYS" list --json >"$tmp/a" 2>/dev/null </dev/null ) & ap=$!; disown "$ap" 2>/dev/null
-waited=0
+# Real seconds (SECONDS), not loop passes: starting a process and `kill -0` cost time too. The
+# fallback reads below get their own budget, so a slow `list` does not eat it.
+started=$SECONDS
 while kill -0 "$ap" 2>/dev/null; do
-  if [ "$waited" -ge $((limit * 5)) ]; then
+  if [ $((SECONDS - started)) -ge "$limit" ]; then
     killtree "$ap"; echo "deploys: no answer within ${limit}s, push not checked." >&2; exit 0
   fi
-  sleep 0.2; waited=$((waited + 1))
+  sleep 0.2
 done
 a="$(cat "$tmp/a" 2>/dev/null)"
 vp="" rp=""
@@ -67,13 +69,14 @@ if ! jq -e 'type=="array" and length > 0' >/dev/null 2>&1 <<<"$a"; then
       exec "$DEPLOYS" render list --json >"$tmp/r" 2>/dev/null </dev/null
     fi
   ) & rp=$!; disown "$rp" 2>/dev/null
+  started=$SECONDS
 fi
 while { [ -n "$vp" ] && kill -0 "$vp" 2>/dev/null; } || { [ -n "$rp" ] && kill -0 "$rp" 2>/dev/null; }; do
-  if [ "$waited" -ge $((limit * 5)) ]; then
+  if [ $((SECONDS - started)) -ge "$limit" ]; then
     [ -n "$vp" ] && killtree "$vp"; [ -n "$rp" ] && killtree "$rp"
     echo "deploys: no answer within ${limit}s, push not checked." >&2; exit 0
   fi
-  sleep 0.2; waited=$((waited + 1))
+  sleep 0.2
 done
 v="$(cat "$tmp/v" 2>/dev/null)"; r="$(cat "$tmp/r" 2>/dev/null)"
 jq -e 'type=="array"' >/dev/null 2>&1 <<<"$v" || v='[]'
@@ -85,15 +88,16 @@ hits="$(jq -rn --argjson a "$a" --argjson v "$v" --argjson r "$r" --arg repo "$r
   | map(select(.auto and ((.repo // "") | ascii_downcase | sub("^github\\.com/"; "")) == ($repo | ascii_downcase)))
   | .[] as $p | $br[] as $b
   | select(($p.platform | IN("vercel", "cloudflare", "amplify")) or $p.ref == $b)
-  | "\($p.platform)  \($p.name)  (\(if $p.ref == $b then "production" else "preview" end), branch \($b))"
+  | "\($p.platform)  \($p.name)  (\(if $p.ref == $b then "production" else "preview" end), branch \($b))\t\("deploys \($p.platform) autodeploy-off \($p.name | if test("^[A-Za-z0-9._:-]+$") then . else @sh end)")"
 ' "${branches[@]}" 2>/dev/null)" || exit 0
 [ -n "$hits" ] || exit 0
 
 n="$(printf '%s\n' "$hits" | wc -l | tr -d ' ')"
 {
   echo "deploys: this push starts $n build(s), auto-deploy is still on for:"
-  printf '%s\n' "$hits" | sed 's/^/  /'
-  echo "  Turn it off: deploys <platform> autodeploy-off <project> (in the app: the auto-deploy switch)"
+  printf '%s\n' "$hits" | cut -f1 | sed 's/^/  /'
+  echo "  Turn it off (or use the auto-deploy switch in the app):"
+  printf '%s\n' "$hits" | cut -f2 | sort -u | sed 's/^/    /'
 } >&2
 if [ "$(git config --bool deploys.prepush.block 2>/dev/null)" = true ]; then
   echo "  Push stopped (deploys.prepush.block). Push anyway: git push --no-verify" >&2

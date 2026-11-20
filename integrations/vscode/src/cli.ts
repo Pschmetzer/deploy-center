@@ -60,11 +60,24 @@ export interface RunResult {
 
 export type Runner = (args: string[], timeoutMs: number) => Promise<RunResult>;
 
-/** The environment for the CLI: Homebrew's folders on PATH (for jq, gh, vercel), never a colour code. */
+// What the CLI gets of the editor's environment: an allowlist, like the MCP server's and Raycast's. Editors
+// and their other extensions often hold tokens in their environment (model keys, NPM_TOKEN); GIT_ASKPASS and
+// GIT_SSH_COMMAND run programs.
+const FOR_CLI = new RegExp(
+  "^(?:PATH|HOME|USER|LOGNAME|SHELL|TMPDIR|TERM|TZ|LANG|LANGUAGE|LC_[A-Z_]+|XDG_[A-Z_]+|" +
+    "(?:HTTPS?|NO|ALL)_PROXY|(?:https?|no|all)_proxy|SSL_CERT_(?:FILE|DIR)|NODE_EXTRA_CA_CERTS|CURL_CA_BUNDLE|" +
+    "DEPLOYS_[A-Z0-9_]+|VERCEL_[A-Z0-9_]+|RENDER_[A-Z0-9_]+|NETLIFY_[A-Z0-9_]+|CLOUDFLARE_[A-Z0-9_]+|CF_[A-Z0-9_]+|" +
+    "COOLIFY_[A-Z0-9_]+|DIGITALOCEAN_[A-Z0-9_]+|DO_[A-Z0-9_]+|AWS_[A-Z0-9_]+|GH_[A-Z0-9_]+|GITHUB_TOKEN|GITLAB_[A-Z0-9_]+|" +
+    "GIT_TERMINAL_PROMPT|GIT_SSL_CAINFO|GIT_SSL_CAPATH|GIT_CONFIG_NOSYSTEM)$",
+);
+
+/** The environment for the CLI: the allowlisted variables, Homebrew's folders on PATH (for jq, gh, vercel), never a colour code. */
 export function childEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const parts = (env.PATH ?? "").split(path.delimiter).filter(Boolean);
+  const out: NodeJS.ProcessEnv = {};
+  for (const [k, v] of Object.entries(env)) if (FOR_CLI.test(k)) out[k] = v;
+  const parts = (out.PATH ?? "").split(path.delimiter).filter(Boolean);
   for (const d of ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]) if (!parts.includes(d)) parts.push(d);
-  return { ...env, PATH: parts.join(path.delimiter), NO_COLOR: "1" };
+  return { ...out, PATH: parts.join(path.delimiter), NO_COLOR: "1" };
 }
 
 const MAX_OUTPUT = 32 * 1024 * 1024;

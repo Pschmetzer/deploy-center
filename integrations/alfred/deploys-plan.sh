@@ -30,7 +30,8 @@ out="$("$bin" plan --json </dev/null 2>/dev/null)"
 jq -e 'type == "object" and (.projects | type == "array")' >/dev/null 2>&1 <<<"$out" || say "Could not work out the plan" "Run deploys plan in a terminal to see why"
 
 jq -c --arg q "$query" '
-  def usd: if . == null then "?" else "$\(. * 100 | round / 100)" end;
+  # Two decimals always: $1.20, not $1.2.
+  def usd: if . == null then "?" else (. * 100 | round) as $c | "$\($c / 100 | floor).\(if ($c % 100) < 10 then "0" else "" end)\($c % 100)" end;
   def skipped: .action == "would-skip" or .action == "held-by-rule";
   (.total) as $t
   | {items: (

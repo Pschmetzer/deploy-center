@@ -1,0 +1,19 @@
+#!/bin/bash
+# deploys — a small wrapper the plugin puts on the PATH of Claude Code's shell, so the skills' `deploys …`
+# works for someone who installed the Mac app and never put its CLI on the PATH. It runs, in this order:
+# $DEPLOYS, the CLI inside the app bundle (the order of the MCP server and the editor add-ons), then a
+# `deploys` on the PATH that is not this file. It changes nothing else: same arguments, same exit code.
+if [ -n "${DEPLOYS:-}" ] && [ -x "$DEPLOYS" ] && [ "$DEPLOYS" != "$0" ]; then exec "$DEPLOYS" "$@"; fi
+for c in "/Applications/Deploy Center.app/Contents/Resources/deploys" \
+         "$HOME/Applications/Deploy Center.app/Contents/Resources/deploys"; do
+  [ -x "$c" ] && exec "$c" "$@"
+done
+self="$(cd "$(dirname "$0")" && pwd -P)"
+IFS=:
+for d in $PATH; do
+  [ -n "$d" ] || continue
+  [ "$(cd "$d" 2>/dev/null && pwd -P)" = "$self" ] && continue
+  [ -x "$d/deploys" ] && exec "$d/deploys" "$@"
+done
+echo "deploys is not installed: get Deploy Center from https://deploycenter.app (the CLI is inside the app)." >&2
+exit 127

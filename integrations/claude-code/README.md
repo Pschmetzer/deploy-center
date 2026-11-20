@@ -70,7 +70,11 @@ user says so".
   asks GitHub at every start) prints the same line when a session opens in a repository with
   waiting commits. `DEPLOYS_SESSION_HINT=off` turns it off for one shell.
 - It finds `deploys` in `DEPLOYS`, then on `PATH`, then in `/Applications/Deploy Center.app` and
-  `~/Applications/Deploy Center.app`.
+  `~/Applications/Deploy Center.app`. The plugin's `bin/deploys` puts a small wrapper on Claude Code's
+  PATH that does the same for the skills, so someone who installed only the Mac app (the CLI is inside it)
+  needs no PATH entry. A `deploys` you installed yourself is used when the app is not there.
+- After a push, the line names a project whose newest build failed (`/deploy-center:deploys-fix <project>`), and
+  says so when auto-deploy is still on for one of the projects instead of claiming the push did not go live.
 
 ## MCP server
 

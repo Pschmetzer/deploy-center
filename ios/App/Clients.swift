@@ -252,11 +252,22 @@ enum RepoRef {
         var t = s.trimmingCharacters(in: .whitespaces)
         if t.hasSuffix(".git") { t.removeLast(4) }
         if t.hasSuffix("/") { t.removeLast() }
-        guard t.contains("://") || t.hasPrefix("git@") else { return (t.isEmpty ? nil : t, nil) }
-        // https://host/owner/name or git@host:owner/name
-        let rest = t.hasPrefix("git@") ? String(t.dropFirst(4)) : String(t[t.range(of: "://")!.upperBound...])
-        let host = String(rest.prefix { $0 != "/" && $0 != ":" })
-        let path = String(rest.dropFirst(host.count + 1))
+        // user@host:owner/name (scp style), or scheme://[user[:password]@]host[:port]/owner/name
+        let scheme = t.range(of: "://")
+        let scp = scheme == nil && t.contains("@") && t.contains(":")
+        guard scheme != nil || scp else { return (t.isEmpty ? nil : t, nil) }
+        let authority: String, path: String
+        if let r = scheme {
+            let rest = String(t[r.upperBound...])
+            authority = String(rest.prefix { $0 != "/" })
+            path = String(rest.dropFirst(authority.count + 1))
+        } else {
+            authority = String(t.prefix { $0 != ":" })
+            path = String(t.dropFirst(authority.count + 1))
+        }
+        // The host alone: no user or password in front, no port behind.
+        var host = String(authority.split(separator: "@", omittingEmptySubsequences: false).last ?? "")
+        if !scp, let c = host.firstIndex(of: ":") { host = String(host[..<c]) }
         let h = host.lowercased().replacingOccurrences(of: "www.", with: "")
         if h == "github.com" { return (path.isEmpty ? nil : path, nil) }
         let name = h.contains("gitlab") ? "GitLab" : h.contains("bitbucket") ? "Bitbucket" : host
@@ -273,6 +284,13 @@ struct RollbackTarget: Equatable {
 }
 
 /// One deploy in a project's history (newest first in lists).
+/// How often a followed deploy is asked for: every 6 s at first (short builds end soon), every 15 s after two
+/// minutes, every 30 s after ten. Fewer than 100 asks in 20 minutes instead of 200: kinder to the battery
+/// and to the provider's rate limit.
+enum PollEvery {
+    static func seconds(elapsed: TimeInterval) -> Double { elapsed < 120 ? 6 : elapsed < 600 ? 15 : 30 }
+}
+
 /// How long this project's builds usually take: the median of the finished ones in the history. Nil with
 /// fewer than three (then the progress shows the old five-minute guess).
 enum BuildTime {

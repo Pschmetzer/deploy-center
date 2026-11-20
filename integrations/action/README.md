@@ -39,6 +39,7 @@ Renovate can keep the tag current. Give the job a `timeout-minutes`: with a wron
 | `when-green` | `false` | `true`: with `deploy: true`, only commits whose CI checks passed are started (`deploy-changed --when-green`); a project with failing or still running checks is left out. |
 | `strict` | `false` | `true`: with `when-green`, a project whose checks are still running after the wait is left out (`--strict`). |
 | `by-rules` | `false` | `true`: only what a `deploy` rule of `rules.json` matches is started; `hold` rules always count (`--by-rules`). Applies to `deploy: dry-run` as well. |
+| `max-cost` | none | A number of US dollars: fail before anything is deployed when the estimate of the next deploy (`deploys plan --json`) is higher. An estimate, not a bill; when it cannot be priced the action warns and goes on. |
 | `fail-on-risk` | none | `red` (or `yellow`): fail before anything is deployed when a project with changes has that risk or higher (migrations, lockfiles, config, size; see `deploys risk`). Empty only reports it. |
 | `vercel-cli-version` | `65.12.1` | Installed only when no `vercel` is on the runner, into the runner's temp folder (no global install), and kept in the Actions cache per version and runner type, so later runs skip the npm install. |
 
@@ -48,14 +49,20 @@ Renovate can keep the tag current. Give the job a `timeout-minutes`: with a wron
 | `names` | Their names, comma-separated. |
 | `projects` | The JSON array from `deploys changed --json`. |
 | `started`, `failed` | How many deploys were started, and how many failed to start. |
+| `started-json` | With `deploy: true`: the started deploys as a JSON array of `{platform, name, id, url}` (`url` may be `null`), for a PR comment, a smoke test or a Slack step. |
+| `plan` | With `deploy: dry-run`: what would be started, a JSON array of `{platform, name, action}` from `deploys deploy-changed --json`. Nothing was started. |
 | `deployed` | `true` when every start succeeded and every state could be read. Otherwise the step fails, after writing the outputs. |
 | `risk`, `risky` | The highest risk of what waits (`green`, `yellow`, `red`; empty when nothing was compared), and the projects that are yellow or red. |
 | `states` | With `wait`: JSON, project name to `ready`, `failed`, `timeout` or `unknown` (the platform could not be asked). |
 | `failed-builds`, `live` | With `wait`: the projects whose build failed, and `true` when every build went live in time. |
 
 As a gate on pull requests or before a scheduled deploy, `fail-on-risk: red` turns a red risk into
-a failed check, so a migration or a lockfile change gets a look first. Cost estimates are not part
-of the action.
+a failed check, so a migration or a lockfile change gets a look first. `max-cost: 5` does the same
+for the estimated cost of the next deploy.
+
+`plan` feeds an approval step: run the action with `deploy: dry-run`, show `steps.<id>.outputs.plan`
+in a job summary or a message, and let a second job with `environment:` (required reviewers) run
+the real `deploy: true`.
 
 The outputs `count`, `names` and `projects` still list every changed project the tokens see; only
 the deploy is limited to `repo`. How: every other project goes into `ignored.json` of the run's own
@@ -68,7 +75,7 @@ Each step also writes a short summary to the job page. When some project's state
 the step warns and leaves that project out. It is never counted as up to date.
 
 The example [examples/deploy-on-marker.yml](examples/deploy-on-marker.yml) deploys only when the
-last commit of a push says `[deploy]`, or when someone runs the workflow by hand and ticks the box.
+last commit of a push starts with `[deploy]`, or when someone runs the workflow by hand and ticks the box.
 For a time-based deploy, see [../../examples/daily-deploy.yml](../../examples/daily-deploy.yml).
 
 Not tested yet: a run on GitHub's runners against real accounts. The steps' scripts are tested

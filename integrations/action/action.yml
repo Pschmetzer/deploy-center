@@ -70,6 +70,13 @@ inputs:
       Empty: the risk is only reported.
     required: false
     default: ""
+  max-cost:
+    description: >-
+      A number of US dollars: fails the action, before anything is deployed, when the estimate of
+      what the next deploy would start (deploys plan --json, total.usd) is higher. An estimate, not
+      a bill. When the CLI cannot price the plan, the action warns and goes on. Empty: no limit.
+    required: false
+    default: ""
   when-green:
     description: >-
       "true": with deploy: true, only commits whose CI checks passed are started
@@ -121,6 +128,9 @@ outputs:
   plan:
     description: 'With deploy: dry-run: what would be started, as a JSON array ({platform, name, action}) from deploys deploy-changed --json. Nothing was started.'
     value: ${{ steps.plan.outputs.plan }}
+  started-json:
+    description: 'With deploy: true: the deploys that were started, a JSON array of {platform, name, id, url} (url may be null), for a PR comment, a smoke test or a Slack step.'
+    value: ${{ steps.deploy.outputs.started-json || '[]' }}
   states:
     description: 'With wait: a JSON object, project name to ready, failed, timeout or unknown (could not be asked).'
     value: ${{ steps.wait.outputs.states || '{}' }}
@@ -198,6 +208,7 @@ runs:
         ONLY: ${{ inputs.only }}
         EXCLUDE: ${{ inputs.exclude }}
         FAIL_ON_RISK: ${{ inputs.fail-on-risk }}
+        MAX_COST: ${{ inputs.max-cost }}
       run: |
         set -euo pipefail
         # Exit 1 with a list: some project's state could not be read (named above, left out).
@@ -243,6 +254,20 @@ runs:
             fi ;;
           *) echo "::error::fail-on-risk must be red, yellow or empty"; exit 1 ;;
         esac
+        # max-cost: a cost gate, also before anything starts. The estimate is the CLI's (deploys plan).
+        if [ -n "${MAX_COST:-}" ]; then
+          [[ "$MAX_COST" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "::error::max-cost must be a number of US dollars, like 5 or 2.50"; exit 1; }
+          plan_cost="$("$DEPLOYS" plan --json </dev/null)" || true
+          usd="$(echo "$plan_cost" | jq -r '.total.usd // empty' 2>/dev/null)" || usd=""
+          if [ -z "$usd" ]; then
+            echo "::warning::max-cost: the next deploy could not be priced (deploys plan --json); the limit was not checked."
+          elif awk -v u="$usd" -v m="$MAX_COST" 'BEGIN { exit !(u > m) }'; then
+            echo "::error::the next deploy is estimated at \$$usd, above max-cost \$$MAX_COST (an estimate, see deploys plan). Nothing was deployed."
+            exit 1
+          else
+            echo "Estimated cost of the next deploy: \$$usd (max-cost \$$MAX_COST)."
+          fi
+        fi
 
     - name: Plan (dry run)
       id: plan
@@ -323,14 +348,15 @@ runs:
           # For the wait step: the deploy id of each start, for deploys watch.
           [ -z "${RUNNER_TEMP:-}" ] || echo "$out" | jq -c 'map(select(.action == "started"))' > "$RUNNER_TEMP/deploys-started.json"
           started="$(echo "$out" | jq '[.[] | select(.action == "started")] | length')"
+          started_json="$(echo "$out" | jq -c '[.[] | select(.action == "started") | {platform, name, id: (.id // null), url: (.url // null)}]')"
           failed="$(echo "$out" | jq '[.[] | select(.action == "failed")] | length')"
         else
           # Something may have started; the counts are unknown, so the step fails.
           echo "$out"; echo "::error::deploys deploy-changed --yes --json did not answer a list; what started is unknown."
-          started=""; failed=""; rc=1
+          started=""; failed=""; started_json="[]"; rc=1
         fi
         {
-          echo "started=${started:-0}"; echo "failed=${failed:-0}"
+          echo "started=${started:-0}"; echo "failed=${failed:-0}"; echo "started-json=${started_json:-[]}"
           if [ "$rc" = 0 ]; then echo "deployed=true"; else echo "deployed=false"; fi
         } >> "$GITHUB_OUTPUT"
         exit "$rc"
