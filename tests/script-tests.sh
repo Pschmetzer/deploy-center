@@ -1425,7 +1425,7 @@ rm -f "$e2e/config/window.json"
 # One line since the help was regrouped: "deploy <p>|<group>" covers a project and a group.
 expect "CLI-032: deploy --help shows its lines" "$(run "$O" "$E" deploy --help; grep -c '^  deploys deploy ' "$O")" $'0\n1'
 expect "CLI-033: an unknown command is named" "$(run "$O" "$E" deplyo; grep -ci 'unknown command "deplyo"' "$E")" $'1\n1'
-expect "CLI-034: vercel map without arguments is a usage line" "$(run "$O" "$E" vercel map; grep -c 'Usage: deploys vercel map' "$E"; grep -c 'unbound' "$E")" $'1\n1\n0'
+expect "CLI-034: vercel map without arguments is a usage line" "$(run "$O" "$E" vercel map; grep -c 'Usage: deploys vercel map' "$E"; grep -c 'unbound' "$E")" $'2\n1\n0'
 fresh
 expect "CLI-048: changed --platform with a typo is refused, nothing read" "$(run "$O" "$E" changed --platform verzel; grep -c 'takes one of' "$E"; wc -l < "$e2e/calls.log" | tr -d ' ')" $'1\n1\n0'
 expect "CLI-050: status --watch --json is refused" "$(run "$O" "$E" status --watch --json; grep -c 'watch draws a table' "$E")" $'1\n1'

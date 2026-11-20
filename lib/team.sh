@@ -57,9 +57,6 @@ team_fetch_one() {
     if grep -qiE 'rate limit|secondary rate|HTTP 429' "$err"; then echo "GitHub's rate limit is reached; try again later" > "$f.err"
     elif grep -qE 'HTTP 40[13]|Bad credentials|auth login' "$err"; then echo "no access to the repo (HTTP 401/403): gh auth login, or ask for access" > "$f.err"
     else grep -v '^[[:space:]]*$' "$err" | tail -n 1 | cut -c1-200 > "$f.err"; fi
-  elif gh api "repos/$repo" --jq .id 2>&1 </dev/null | grep -q 'HTTP 404'; then
-    # 404 on both file names: the repo has no such file, or it was deleted or renamed, or this login cannot see it.
-    echo "the repo was not found: deleted, renamed, or no access for this login" > "$f.err"
   else
     printf '{"repo":"%s","none":true,"fetchedAt":%s}\n' "$repo" "$now" > "$f"; rm -f "$f.err"
   fi

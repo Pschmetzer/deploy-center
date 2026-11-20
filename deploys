@@ -2110,7 +2110,6 @@ scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Call
     sc_update "$id" '{"step":"pr"}'
     local n body url; n="$(sed -n '/^## Fixed/,/^## /p' "$log" | grep -c '^- ' || true)"
     body="$(mktemp)"
-    trap_fn exit_rm "$body"
     # The report goes into a public PR: masked like every log that leaves this Mac (withheld when perl is missing).
     { af_mask < "$log" 2>/dev/null || echo "(The report is withheld: it could not be masked. See the scan log on the Mac.)"
       printf '\n---\nFound and fixed by a local Claude Code bug scan from Deploy Center. Review before merging; it is never merged or deployed by itself.\n'; } > "$body"
