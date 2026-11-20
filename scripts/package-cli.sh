@@ -61,8 +61,18 @@ else
   dir="$stage/$name"
   mkdir -p "$dir"
   cp deploys VERSION LICENSE README-CLI.md "$dir/"
-  [ -d providers ] && cp -R providers "$dir/providers"
-  [ -d lib ] && cp -R lib "$dir/lib"
+  # Only what git tracks: a plain cp -R would take .DS_Store, editor backups and untracked drafts
+  # (providers/foo.sh.bak with an example token) along.
+  if git rev-parse --git-dir >/dev/null 2>&1; then
+    while IFS= read -r f; do
+      [ -f "$f" ] || continue
+      mkdir -p "$dir/$(dirname "$f")"; cp "$f" "$dir/$f"
+    done < <(git ls-files -- providers lib)
+  else
+    [ -d providers ] && cp -R providers "$dir/providers"
+    [ -d lib ] && cp -R lib "$dir/lib"
+    find "$dir" \( -name '.DS_Store' -o -name '*~' -o -name '*.bak' -o -name '*.orig' -o -name '*.swp' \) -delete
+  fi
   if [ -f man/deploys.1 ]; then mkdir -p "$dir/man" && cp man/deploys.1 "$dir/man/"; fi
   if [ -f integrations/hooks/pre-push ]; then mkdir -p "$dir/integrations/hooks" && cp integrations/hooks/pre-push "$dir/integrations/hooks/"; fi
   chmod -R u=rwX,go=rX "$dir"

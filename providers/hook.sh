@@ -30,6 +30,15 @@ HOOK_CAPS='{"off":false,"sha":false,"cancel":false,"rollback":false,"logs":false
 HOOK_KEYCHAIN_PREFIX="deploy-center-hook-"
 
 hook_config() { echo "$CONFIG_DIR/hooks.json"; }
+# file_lock / file_unlock come from deploys; run alone, this stand-in does the same (noclobber lock file).
+declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+declare -F file_lock >/dev/null || file_lock() {
+  local i=0
+  if [ -e "$1.lock" ] && [ "${2:-10}" != 0 ] && [ $(( $(date +%s) - $(mtime "$1.lock" 2>/dev/null || date +%s) )) -ge "${2:-10}" ]; then rm -rf "$1.lock"; fi
+  while [ "$i" -lt 50 ]; do ( set -C; : > "$1.lock" ) 2>/dev/null && return 0; i=$((i + 1)); sleep 0.1; done
+  return 1
+}
+declare -F file_unlock >/dev/null || file_unlock() { rm -rf "$1.lock" 2>/dev/null || true; }
 hook_state_file() { echo "$CONFIG_DIR/hook-state.json"; }
 hook_list_raw() { local f; f="$(hook_config)"; if [ -s "$f" ]; then cat "$f"; else echo '[]'; fi; }
 hook_state() { local f; f="$(hook_state_file)"; if [ -s "$f" ]; then cat "$f"; else echo '{}'; fi; }
@@ -219,15 +228,11 @@ hook_head() {
 }
 
 hook_record() {
-  local n="$1" rec="$2" st f lock i=0
-  f="$(hook_state_file)"; lock="$f.lock"
-  # Two triggers at once (a group deploy) must not overwrite each other: a mkdir lock, given up
-  # after five seconds (a crashed run's lock older than a minute is taken over).
-  while ! mkdir "$lock" 2>/dev/null; do
-    if [ -d "$lock" ] && [ $(( $(date +%s) - $(mtime "$lock" 2>/dev/null || date +%s) )) -ge 60 ]; then rmdir "$lock" 2>/dev/null; continue; fi
-    i=$((i + 1)); [ "$i" -lt 50 ] || { echo "Warning: hook state is locked; the trigger of $n is not recorded" >&2; return 0; }
-    sleep 0.1
-  done
+  local n="$1" rec="$2" st f
+  f="$(hook_state_file)"
+  # Two triggers at once (a group deploy) must not overwrite each other: file_lock (a lock file
+  # made with noclobber), given up after five seconds, a crashed run's lock taken over after a minute.
+  file_lock "$f" 60 || { echo "Warning: hook state is locked; the trigger of $n is not recorded" >&2; return 0; }
   # A broken state file is kept aside and started anew, with a warning: the trigger did happen.
   if ! st="$(hook_state | jq -c --arg n "$n" --argjson r "$rec" '.[$n] = $r' 2>/dev/null)"; then
     cp "$f" "$f.bak" 2>/dev/null || true
@@ -235,7 +240,7 @@ hook_record() {
     st="$(jq -nc --arg n "$n" --argjson r "$rec" '{($n): $r}')"
   fi
   echo "$st" | hook_write "$f"
-  rmdir "$lock" 2>/dev/null || true
+  file_unlock "$f"
 }
 
 # Fire the hook once (never again on failure: it may already have started a build).

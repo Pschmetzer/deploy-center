@@ -32,6 +32,14 @@ NETLIFY_IGNORE_LINE='ignore = "[ -z \"$INCOMING_HOOK_TITLE\" ]"'
 declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
 # GNU first: on Linux `stat -f` means the file system and "succeeds" with the wrong answer.
 declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+# file_lock / file_unlock come from deploys; run alone, this stand-in does the same (noclobber lock file).
+declare -F file_lock >/dev/null || file_lock() {
+  local i=0
+  if [ -e "$1.lock" ] && [ "${2:-10}" != 0 ] && [ $(( $(date +%s) - $(mtime "$1.lock" 2>/dev/null || date +%s) )) -ge "${2:-10}" ]; then rm -rf "$1.lock"; fi
+  while [ "$i" -lt 50 ]; do ( set -C; : > "$1.lock" ) 2>/dev/null && return 0; i=$((i + 1)); sleep 0.1; done
+  return 1
+}
+declare -F file_unlock >/dev/null || file_unlock() { rm -rf "$1.lock" 2>/dev/null || true; }
 netlify_config_dir() { echo "${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}"; }
 netlify_hooks_file() {
   local d f; d="$(netlify_config_dir)"; f="$d/netlify-hooks.json"
@@ -49,16 +57,11 @@ netlify_hooks_file() {
 # A mkdir lock: two runs at once (a list refresh and an autodeploy-off) must not lose each
 # other's change. A lock older than a minute is a crashed run's.
 netlify_hooks_edit() {
-  local f tmp lock i=0 m rc=0; f="$(netlify_hooks_file)"; lock="$f.lock"
-  while ! mkdir "$lock" 2>/dev/null; do
-    m="$(mtime "$lock" 2>/dev/null)" || m=""
-    [ -z "$m" ] || [ $(( $(date +%s) - m )) -lt 60 ] || { rmdir "$lock" 2>/dev/null; continue; }
-    i=$((i + 1)); [ "$i" -lt 50 ] || { echo "Netlify: $f is locked by another run" >&2; return 1; }
-    sleep 0.1
-  done
+  local f tmp rc=0; f="$(netlify_hooks_file)"
+  file_lock "$f" 60 || { echo "Netlify: $f is locked by another run" >&2; return 1; }
   tmp="$(umask 077; mktemp)"
   if jq "$@" "$f" > "$tmp"; then mv "$tmp" "$f" && chmod 600 "$f" || rc=1; else rm -f "$tmp"; rc=1; fi
-  rmdir "$lock" 2>/dev/null || true
+  file_unlock "$f"
   return "$rc"
 }
 declare -F b64d >/dev/null || b64d() { base64 -D 2>/dev/null || base64 -d; }

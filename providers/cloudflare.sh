@@ -33,6 +33,14 @@ USER="${USER:-$(id -un)}"
 declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
 # GNU first: on Linux `stat -f` means the file system and "succeeds" with the wrong answer.
 declare -F mtime >/dev/null || mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
+# file_lock / file_unlock come from deploys; run alone, this stand-in does the same (noclobber lock file).
+declare -F file_lock >/dev/null || file_lock() {
+  local i=0
+  if [ -e "$1.lock" ] && [ "${2:-10}" != 0 ] && [ $(( $(date +%s) - $(mtime "$1.lock" 2>/dev/null || date +%s) )) -ge "${2:-10}" ]; then rm -rf "$1.lock"; fi
+  while [ "$i" -lt 50 ]; do ( set -C; : > "$1.lock" ) 2>/dev/null && return 0; i=$((i + 1)); sleep 0.1; done
+  return 1
+}
+declare -F file_unlock >/dev/null || file_unlock() { rm -rf "$1.lock" 2>/dev/null || true; }
 # A second start of the same project within a minute is refused (as in `deploys`).
 declare -F start_lock >/dev/null || start_lock() {
   local d="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}/locks" f; mkdir -p "$d"; f="$d/$(echo "$1" | tr '/ ' '__')"
@@ -46,17 +54,13 @@ declare -F start_lock >/dev/null || start_lock() {
 cf_state() { [ -s "$CLOUDFLARE_STATE" ] && cat "$CLOUDFLARE_STATE" || echo '{}'; }
 # cf_state_set <jq filter> [jq args...]: change the state file in one step.
 cf_state_set() {
-  local f="$1" tmp lock i=0; shift
-  mkdir -p "$CONFIG_DIR"; tmp="$(umask 077; mktemp)"; lock="$CLOUDFLARE_STATE.lock"
-  # A mkdir lock: two runs at once must not lose each other's change. A lock older than a
-  # minute is a crashed run's.
-  while ! mkdir "$lock" 2>/dev/null; do
-    [ $(( $(date +%s) - $(mtime "$lock" 2>/dev/null || date +%s) )) -lt 60 ] || { rmdir "$lock" 2>/dev/null; continue; }
-    i=$((i + 1)); [ "$i" -lt 50 ] || { rm -f "$tmp"; die "$CLOUDFLARE_STATE is locked by another run"; }
-    sleep 0.1
-  done
-  cf_state | jq "$@" "$f" > "$tmp" && mv "$tmp" "$CLOUDFLARE_STATE" || { rm -f "$tmp"; rmdir "$lock" 2>/dev/null; die "Could not write $CLOUDFLARE_STATE"; }
-  rmdir "$lock" 2>/dev/null || true
+  local f="$1" tmp; shift
+  mkdir -p "$CONFIG_DIR"; tmp="$(umask 077; mktemp)"
+  # file_lock (a lock file made with noclobber, taken over after a minute): two runs at once must
+  # not lose each other's change. A mkdir lock does not hold on the Rust coreutils of Ubuntu 26.04.
+  file_lock "$CLOUDFLARE_STATE" 60 || { rm -f "$tmp"; die "$CLOUDFLARE_STATE is locked by another run"; }
+  cf_state | jq "$@" "$f" > "$tmp" && mv "$tmp" "$CLOUDFLARE_STATE" || { rm -f "$tmp"; file_unlock "$CLOUDFLARE_STATE"; die "Could not write $CLOUDFLARE_STATE"; }
+  file_unlock "$CLOUDFLARE_STATE"
 }
 
 # The self-tests per project, younger than DEPLOYS_CLOUDFLARE_SELFTEST_TTL seconds (30 days): a
