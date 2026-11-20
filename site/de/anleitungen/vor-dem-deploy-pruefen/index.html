@@ -172,13 +172,13 @@ deploys notes web       # dasselbe als Release Notes (Markdown)</code></pre>
 </table></div>
 <p><code>deploy-changed</code> ohne <code>--yes</code> nennt ein rotes Risiko neben dem Projekt. In der App zeigt eine Zeile nur bei Rot einen roten Punkt; Gelb bleibt still, und die Details nennen jeden Grund.</p>
 <h2 id="secrets">3. Suche nach Secrets in dem, was wartet</h2>
-<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys secrets web &amp;&amp; deploys deploy web --yes     # ein Gate in einem Skript
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys secrets web &amp;&amp; deploys deploy web     # ein Gate in einem Skript
 git diff A..B | deploys secrets --stdin             # ein Diff, den du hineinleitest</code></pre>
 <p>Es sieht nur die Zeilen an, die in dem, was live gehen soll, hinzugefügt wurden, mit denselben Mustern, die Logs maskieren (Schlüssel, Tokens, private Schlüssel). Es gibt Dateinamen und die maskierte Zeile aus, nie das Secret, und endet mit Exit 1, wenn es eines findet. Es braucht <code>perl</code>.</p>
 <div class="note"><p><b>Kein vollständiger Scanner.</b> <code>deploys secrets</code> ist ein schnelles Gate. Für gitleaks, OSV-Scanner und Semgrep auf einer frischen Kopie des Repositorys nimm <code>deploys check start owner/repo</code>, siehe <a href="/docs/scan/">die Scan-Docs</a> (englisch).</p></div>
 <h2 id="plan">4. Stelle die Prüfungen vor den Deploy</h2>
 <pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys plan --when-green        # die Liste mit Schätzung je Build, nichts startet
-deploys risk web &amp;&amp; deploys secrets web &amp;&amp; deploys deploy web --yes</code></pre>
+deploys risk web &amp;&amp; deploys secrets web &amp;&amp; deploys deploy web</code></pre>
 <p>Ein rotes Risiko ist eine Information, keine Sperre: Du liest die Gründe und entscheidest. Kombiniere es mit <a href="/de/anleitungen/nur-bei-gruenem-ci-deployen/">CI, das grün sein muss</a>, und <a href="/de/anleitungen/automatischer-rollback-nach-deploy/">einer Rollback-Prüfung</a>.</p>
 
 <h2 id="faq">Fragen</h2>

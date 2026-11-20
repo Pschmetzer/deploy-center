@@ -98,7 +98,7 @@
     "name": "Which commit is deployed?",
     "acceptedAnswer": {
      "@type": "Answer",
-     "text": "The commit that was checked (--sha). A newer push goes out in the next run."
+     "text": "The commit that was checked (--sha), on hosts that can deploy a given commit, such as Vercel, Render and AWS Amplify. Netlify and Cloudflare Pages cannot, so a build there starts from the newest commit of the branch, which can be newer than the one checked. On the others, a newer push goes out in the next run."
     }
    },
    {
@@ -186,7 +186,7 @@
 <main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Deploy only when CI is green</h1>
-<p class="answer">Run <code>deploys deploy-changed --when-green --yes</code>. For each project it reads the head commit's checks, waits while they run, skips the project if they failed, and deploys exactly the commit it checked.</p>
+<p class="answer">Run <code>deploys deploy-changed --when-green --yes</code>. For each project it reads the head commit's checks, waits while they run, skips the project if they failed, and, on hosts that can deploy a given commit, deploys exactly the commit it checked.</p>
 <p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 <p class="langnote"><a href="/de/anleitungen/nur-bei-gruenem-ci-deployen/" hreflang="de" lang="de">Deutsche Fassung</a></p>
 
@@ -198,7 +198,7 @@ deploys deploy-changed --when-green --wait 45m --yes --json   # one JSON record 
 <div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>
   <thead><tr><th scope="col">CI</th><th scope="col">What happens</th></tr></thead>
   <tbody>
-    <tr><th scope="row">green (passed, skipped or neutral)</th><td>deployed, at exactly that commit</td></tr>
+    <tr><th scope="row">green (passed, skipped or neutral)</th><td>deployed, at exactly that commit where the host can deploy a given commit</td></tr>
     <tr><th scope="row">no checks at all</th><td>deployed, since there is nothing to wait for</td></tr>
     <tr><th scope="row">pending (queued or running)</th><td>asked again after 10 s, 20 s, 40 s and so on (at most 2 minutes apart), up to <code>--wait</code> (default <code>30m</code>)</td></tr>
     <tr><th scope="row">red (failure, timeout, cancel, action required)</th><td>skipped, with the checks that failed</td></tr>
@@ -221,7 +221,7 @@ deploys deploy-changed --when-green --wait 45m --yes --json   # one JSON record 
 <h2 id="faq">Questions</h2>
   <details><summary>Does <code>--when-green</code> deploy a project without any CI?</summary><p>Yes. With no checks at all there is nothing to wait for, so it deploys. A commit younger than <code>DEPLOYS_CI_GRACE</code> seconds with no check yet counts as pending instead.</p></details>
   <details><summary>What if an optional check is always red?</summary><p>Set <code>DEPLOYS_CI_IGNORE</code> to a regular expression for its name so it does not hold every deploy back.</p></details>
-  <details><summary>Which commit is deployed?</summary><p>The commit that was checked (<code>--sha</code>). A newer push goes out in the next run.</p></details>
+  <details><summary>Which commit is deployed?</summary><p>The commit that was checked (<code>--sha</code>), on hosts that can deploy a given commit, such as Vercel, Render and AWS Amplify. Netlify and Cloudflare Pages cannot, so a build there starts from the newest commit of the branch, which can be newer than the one checked. On the others, a newer push goes out in the next run.</p></details>
   <details><summary>Does it work in CI or a scheduled job?</summary><p>Yes. Combine it with a schedule, see <a href="/guides/scheduled-daily-deploy/">a daily deploy</a>, and give the job a <code>GH_TOKEN</code>.</p></details>
 
 <div class="ctabox">

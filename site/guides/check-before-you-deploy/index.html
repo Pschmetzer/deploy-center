@@ -204,13 +204,13 @@ deploys notes web       # the same as release notes (Markdown)</code></pre>
 </table></div>
 <p><code>deploy-changed</code> without <code>--yes</code> names a red risk next to the project. In the app a row shows a red dot only for red; yellow stays quiet, and the details list every reason.</p>
 <h2 id="secrets">3. Look for secrets in what waits</h2>
-<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys secrets web &amp;&amp; deploys deploy web --yes     # a gate in a script
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys secrets web &amp;&amp; deploys deploy web     # a gate in a script
 git diff A..B | deploys secrets --stdin             # a diff you pipe in</code></pre>
 <p>It looks only at the lines that were added in what waits to go live, with the same patterns that mask logs (keys, tokens, private keys). It prints file names and the masked line, never the secret, and exits 1 when it finds one. It needs <code>perl</code>.</p>
 <div class="note"><p><b>Not a full scanner.</b> <code>deploys secrets</code> is a quick gate. For gitleaks, OSV-Scanner and Semgrep on a fresh copy of the repository, use <code>deploys check start owner/repo</code>, see <a href="/docs/scan/">the scan docs</a>.</p></div>
 <h2 id="plan">4. Put the checks in front of the deploy</h2>
 <pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys plan --when-green        # the list with an estimate per build, nothing starts
-deploys risk web &amp;&amp; deploys secrets web &amp;&amp; deploys deploy web --yes</code></pre>
+deploys risk web &amp;&amp; deploys secrets web &amp;&amp; deploys deploy web</code></pre>
 <p>A red risk is information, not a block: you read the reasons and decide. Combine it with <a href="/guides/deploy-only-when-ci-is-green/">CI that must be green</a> and <a href="/guides/automatic-rollback-after-deploy/">a rollback check</a>.</p>
 
 <h2 id="faq">Questions</h2>

@@ -5,7 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Nur bei grünem CI deployen · Deploy Center</title>
-<meta name="description" content="Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt genau den geprüften Commit.">
+<meta name="description" content="Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt den geprüften Commit, wo der Anbieter das kann.">
 <meta name="author" content="Deploy Center">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
@@ -22,7 +22,7 @@
 <meta property="article:modified_time" content="2026-11-20">
 <meta property="article:published_time" content="2026-11-20">
 <meta property="og:title" content="Nur bei grünem CI deployen · Deploy Center">
-<meta property="og:description" content="Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt genau den geprüften Commit.">
+<meta property="og:description" content="Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt den geprüften Commit, wo der Anbieter das kann.">
 <meta property="og:url" content="https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
 <meta property="og:image:type" content="image/png">
@@ -31,7 +31,7 @@
 <meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Nur bei grünem CI deployen · Deploy Center">
-<meta name="twitter:description" content="Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt genau den geprüften Commit.">
+<meta name="twitter:description" content="Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt den geprüften Commit, wo der Anbieter das kann.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
 <meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
@@ -46,7 +46,7 @@
   "@context": "https://schema.org",
   "@type": "TechArticle",
   "headline": "Nur bei grünem CI deployen",
-  "description": "Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt genau den geprüften Commit.",
+  "description": "Liefere nur Commits aus, deren Checks bestanden haben: deploys deploy-changed --when-green wartet auf Checks und deployt den geprüften Commit, wo der Anbieter das kann.",
   "url": "https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/",
   "mainEntityOfPage": "https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/",
   "datePublished": "2026-11-20",
@@ -98,7 +98,7 @@
     "name": "Welcher Commit wird deployt?",
     "acceptedAnswer": {
      "@type": "Answer",
-     "text": "Der geprüfte Commit (--sha). Ein neuerer Push geht im nächsten Lauf raus."
+     "text": "Der geprüfte Commit (--sha), bei Anbietern, die einen bestimmten Commit deployen können, etwa Vercel, Render und AWS Amplify. Netlify und Cloudflare Pages können das nicht; dort startet ein Build vom neuesten Commit des Branches, der neuer sein kann als der geprüfte. Bei den anderen geht ein neuerer Push im nächsten Lauf raus."
     }
    },
    {
@@ -148,7 +148,7 @@
 <main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Startseite</a> › <a href="/de/anleitungen/">Anleitungen</a></p>
 <h1>Nur bei grünem CI deployen</h1>
-<p class="answer">Führe <code>deploys deploy-changed --when-green --yes</code> aus. Je Projekt liest es die Checks des Head-Commits, wartet, solange sie laufen, überspringt das Projekt, wenn sie fehlschlugen, und deployt genau den Commit, den es geprüft hat.</p>
+<p class="answer">Führe <code>deploys deploy-changed --when-green --yes</code> aus. Je Projekt liest es die Checks des Head-Commits, wartet, solange sie laufen, überspringt das Projekt, wenn sie fehlschlugen, und deployt, bei Anbietern, die einen bestimmten Commit deployen können, genau den Commit, den es geprüft hat.</p>
 <p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-20">20. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
 <p class="langnote"><a href="/guides/deploy-only-when-ci-is-green/" hreflang="en" lang="en">English version</a></p>
 
@@ -160,7 +160,7 @@ deploys deploy-changed --when-green --wait 45m --yes --json   # ein JSON-Eintrag
 <div class="tablewrap" role="region" aria-label="Tabelle" tabindex="0"><table>
   <thead><tr><th scope="col">CI</th><th scope="col">Was passiert</th></tr></thead>
   <tbody>
-    <tr><th scope="row">grün (bestanden, übersprungen oder neutral)</th><td>deployt, genau auf diesem Commit</td></tr>
+    <tr><th scope="row">grün (bestanden, übersprungen oder neutral)</th><td>deployt, genau auf diesem Commit, wo der Anbieter einen bestimmten Commit deployen kann</td></tr>
     <tr><th scope="row">gar keine Checks</th><td>deployt, denn es gibt nichts abzuwarten</td></tr>
     <tr><th scope="row">ausstehend (wartet oder läuft)</th><td>wird nach 10 s, 20 s, 40 s usw. erneut gefragt (höchstens 2 Minuten Abstand), bis <code>--wait</code> (Standard <code>30m</code>)</td></tr>
     <tr><th scope="row">rot (Fehler, Timeout, Abbruch, Aktion nötig)</th><td>übersprungen, mit den fehlgeschlagenen Checks</td></tr>
@@ -183,7 +183,7 @@ deploys deploy-changed --when-green --wait 45m --yes --json   # ein JSON-Eintrag
 <h2 id="faq">Fragen</h2>
   <details><summary>Deployt <code>--when-green</code> ein Projekt ganz ohne CI?</summary><p>Ja. Ohne Checks gibt es nichts abzuwarten, also deployt es. Ein Commit, der jünger als <code>DEPLOYS_CI_GRACE</code> Sekunden ist und noch keinen Check hat, zählt stattdessen als ausstehend.</p></details>
   <details><summary>Was, wenn ein optionaler Check immer rot ist?</summary><p>Setze <code>DEPLOYS_CI_IGNORE</code> auf einen regulären Ausdruck für seinen Namen, damit er nicht jeden Deploy aufhält.</p></details>
-  <details><summary>Welcher Commit wird deployt?</summary><p>Der geprüfte Commit (<code>--sha</code>). Ein neuerer Push geht im nächsten Lauf raus.</p></details>
+  <details><summary>Welcher Commit wird deployt?</summary><p>Der geprüfte Commit (<code>--sha</code>), bei Anbietern, die einen bestimmten Commit deployen können, etwa Vercel, Render und AWS Amplify. Netlify und Cloudflare Pages können das nicht; dort startet ein Build vom neuesten Commit des Branches, der neuer sein kann als der geprüfte. Bei den anderen geht ein neuerer Push im nächsten Lauf raus.</p></details>
   <details><summary>Funktioniert es in CI oder einem geplanten Job?</summary><p>Ja. Kombiniere es mit einem Zeitplan, siehe <a href="/de/anleitungen/taeglicher-deploy-nach-zeitplan/">täglicher Deploy</a>, und gib dem Job ein <code>GH_TOKEN</code>.</p></details>
 
 <div class="ctabox">

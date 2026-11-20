@@ -167,8 +167,13 @@
 <p>Netlify setzt <code>CACHED_COMMIT_REF</code> (der Commit des letzten Builds) und <code>COMMIT_REF</code> (der Commit, der gebaut wird). Vergleiche die Ordner dazwischen:</p>
 <pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-toml"><span class="c"># netlify.toml, im Ordner der Site</span>
 [build]
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../../packages/ui"</code></pre>
-<p>Schlägt der Befehl fehl, etwa weil es keinen früheren Build zum Vergleichen gibt, endet er mit einem Wert ungleich 0, und Netlify baut: die sichere Richtung.</p>
+  ignore = "bash scripts/netlify-ignore.sh"</code></pre>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash"><span class="c">#!/usr/bin/env bash</span>
+<span class="c"># scripts/netlify-ignore.sh  -  Exit 0 = Build überspringen, Exit 1 = bauen</span>
+[ -n "${CACHED_COMMIT_REF:-}" ] || exit 1                 # kein früherer Build: bauen
+[ "$CACHED_COMMIT_REF" != "$COMMIT_REF" ] || exit 1       # nichts zum Vergleichen: bauen
+git diff --quiet "$CACHED_COMMIT_REF" "$COMMIT_REF" -- . ../../packages/ui</code></pre>
+<p>Die ersten zwei Zeilen sind wichtig: Gibt es keinen gecachten Build zum Vergleichen, können die beiden Referenzen fehlen oder gleich sein, und <code>git diff</code> eines Commits mit sich selbst endet mit 0 und bricht den Build ab. Schlägt ein Befehl fehl, endet er ebenfalls mit einem Wert ungleich 0, und Netlify baut: die sichere Richtung.</p>
 <h2 id="render">4. Render</h2>
 <p>Nutze in <b>Settings → Build &amp; Deploy</b> des Dienstes die <b>Build Filters</b>: Pfade, die einbezogen, und Pfade, die ignoriert werden. Eine Änderung außerhalb der einbezogenen Pfade deployt nicht. Trage die geteilten Pakete, die der Dienst importiert, als einbezogene Pfade ein, sonst verpasst er eine Änderung, die ihn betrifft.</p>
 <h2 id="cloudflare">5. Cloudflare Pages</h2>
@@ -182,7 +187,7 @@
 </ul>
 <div class="note"><p><b>Wenn Regeln zu viel sind.</b> Soll Production einfach live gehen, wenn du es entscheidest, ist <a href="/guides/ignored-build-step-or-auto-deploy-off/">Auto-Deploy abzuschalten</a> (englisch) ein Schalter pro Projekt statt einer Regel pro Projekt.</p></div>
 <h2 id="dc">7. Was Deploy Center ergänzt</h2>
-<p><code>deploys changed</code> zählt Commits je Projekt, und <code>deploys explain &lt;project&gt;</code> sagt, warum ein Projekt als geändert zählt oder nicht. Prüfe damit eine Regel: Nach einem Push, der einen Ordner berührt hat, sollte nur dieses Projekt wartende Commits zeigen.</p>
+<p><code>deploys changed</code> zählt die wartenden Commits je Projekt aus der Historie des Repositorys, und <code>deploys explain &lt;project&gt;</code> sagt, warum ein Projekt als geändert zählt oder nicht. Sie zeigen, was auf einen Deploy wartet; die Pfadregeln deines Anbieters wenden sie nicht an, ein reiner Docs-Push kann also trotzdem mehrere Projekte auflisten. Eine Regel prüfst du in der Build-Liste des Anbieters nach einem Push: Projekte, die sie überspringen soll, zeigen einen abgebrochenen oder übersprungenen Build.</p>
 
 <h2 id="faq">Fragen</h2>
   <details><summary>Funktioniert eine Regel bei allen Anbietern?</summary><p>Nein. Jeder Anbieter liest seine eigene Einstellung, mit derselben Idee: die Ordner, von denen ein Projekt abhängt, mit dem letzten Build vergleichen.</p></details>

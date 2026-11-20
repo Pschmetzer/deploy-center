@@ -217,8 +217,13 @@
 <p>Netlify sets <code>CACHED_COMMIT_REF</code> (the commit of the last build) and <code>COMMIT_REF</code> (the commit being built). Compare the folders between them:</p>
 <pre tabindex="0" role="region" aria-label="Code example"><code class="language-toml"><span class="c"># netlify.toml, in the site's folder</span>
 [build]
-  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ../../packages/ui"</code></pre>
-<p>If the command errors, for example because there is no earlier build to compare with, it exits non-zero and Netlify builds, which is the safe direction.</p>
+  ignore = "bash scripts/netlify-ignore.sh"</code></pre>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash"><span class="c">#!/usr/bin/env bash</span>
+<span class="c"># scripts/netlify-ignore.sh  -  exit 0 = skip the build, exit 1 = build</span>
+[ -n "${CACHED_COMMIT_REF:-}" ] || exit 1                 # no earlier build: build
+[ "$CACHED_COMMIT_REF" != "$COMMIT_REF" ] || exit 1       # nothing to compare with: build
+git diff --quiet "$CACHED_COMMIT_REF" "$COMMIT_REF" -- . ../../packages/ui</code></pre>
+<p>The first two lines matter: when there is no cached build to compare with, the two references can be missing or equal, and <code>git diff</code> of a commit with itself would exit 0 and cancel the build. A command that errors also exits non-zero and Netlify builds, which is the safe direction.</p>
 <h2 id="render">4. Render</h2>
 <p>In the service's <b>Settings → Build &amp; Deploy</b> use <b>Build Filters</b>: paths to include and paths to ignore. A change outside the included paths does not deploy. List the shared packages the service imports as included paths, or it will miss a change that affects it.</p>
 <h2 id="cloudflare">5. Cloudflare Pages</h2>
@@ -232,7 +237,7 @@
 </ul>
 <div class="note"><p><b>When rules are too much.</b> If production should simply go live when you decide, <a href="/guides/ignored-build-step-or-auto-deploy-off/">turning auto-deploy off</a> is one switch per project instead of one rule per project.</p></div>
 <h2 id="dc">7. What Deploy Center adds</h2>
-<p><code>deploys changed</code> counts commits per project, and <code>deploys explain &lt;project&gt;</code> says why a project is or is not counted as changed. Use them to check a rule: after a push that touched one folder, only that project should show commits waiting.</p>
+<p><code>deploys changed</code> counts the commits waiting per project from the repository's history, and <code>deploys explain &lt;project&gt;</code> says why a project is or is not counted as changed. They show what waits to be deployed; they do not apply your host's path rules, so a docs-only push can still list several projects. To check a rule, look at the host's own build list after a push: the projects it should skip show a cancelled or skipped build.</p>
 
 <h2 id="faq">Questions</h2>
   <details><summary>Does one rule work for all hosts?</summary><p>No. Each host reads its own setting, with the same idea: compare the folders a project depends on with the last build.</p></details>
