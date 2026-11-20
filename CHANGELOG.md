@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- CI: the macOS job no longer fails on the Docker compose check it cannot run (it runs in the Linux job).
+- CI: the macOS job no longer fails on the Docker compose check it cannot run (it runs in the Linux job), and the VS Code test fixture logs each CLI call in one write, so two calls at once cannot mix their lines.
 - Integrations: the MCP server has three more read-only tools, `deploys_digest` (the last days from the journal), `deploys_freeze` (are deploys closed now, which times are set) and `deploys_ci` (the CI verdict of a commit; it does not wait).
 - Mac app: quick filter chips above the list (Failed, Waiting, Running, Platform) with counts and the shortcuts ⌥⌘1 to ⌥⌘4; they write the search operators (`is:failed`, `is:waiting`, new `is:running`, `platform:x`), so typing and chips agree. The footer shows a lock when `deploys freeze` has closed times set: "Deploys closed: reason" while closed, "N closed times, open now" otherwise (checked every minute). The history window has a Week page (deploys, failures, rollbacks, forced starts against the week before, busiest day, projects, latest failures, copy as Markdown). A waiting row has a button that copies its waiting commits for a chat (tokens masked), and the savings banner folds to one line and remembers it.
 - Autofix: a merged fix no longer says "Fix merged – deploy now" once a newer build has failed. If the fix's own commit failed, the row says the fix failed; if a later commit broke the build, the new failure is handed over instead. `build.sh --install` no longer stops with a false Hardened Runtime error.
