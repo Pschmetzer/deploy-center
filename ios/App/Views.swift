@@ -11,6 +11,8 @@ import UserNotifications
 @MainActor
 final class Asks: ObservableObject {
     @Published var deploy: PhoneProject?
+    /// Several waiting projects at once: one question, one Face ID.
+    @Published var deployAll: [PhoneProject]?
     @Published var rollback: (project: PhoneProject, target: RollbackTarget)?
     /// The project whose rollback target is being looked up.
     @Published var finding: String?
@@ -260,6 +262,15 @@ struct DeployQuestions: ViewModifier {
                     Text(p.deploySummary)
                 }
             }
+            .confirmationDialog(L("Deploy \(asks.deployAll?.count ?? 0) projects?", "\(asks.deployAll?.count ?? 0) Projekte deployen?"),
+                                isPresented: Binding(get: { asks.deployAll != nil }, set: { if !$0 { asks.deployAll = nil } }),
+                                titleVisibility: .visible, presenting: asks.deployAll) { all in
+                Button(L("Deploy all", "Alle deployen")) { Task { await store.deployMany(all) } }
+                Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+            } message: { all in
+                Text(all.map(\.name).joined(separator: ", ") + L(". Each build can cost build minutes. One \(store.unlockName) question for all.",
+                                                                  ". Jeder Build kann Build-Minuten kosten. Eine \(store.unlockName)-Frage für alle."))
+            }
             .confirmationDialog(L("Roll back \(asks.rollback?.project.name ?? "")?", "\(asks.rollback?.project.name ?? "") zurückrollen?"),
                                 isPresented: Binding(get: { asks.rollback != nil }, set: { if !$0 { asks.rollback = nil } }),
                                 titleVisibility: .visible, presenting: asks.rollback) { r in
@@ -398,6 +409,12 @@ struct ProjectList: View {
                           systemImage: "wifi.slash").font(.footnote).foregroundStyle(.secondary)
                 }
                 Summary(store: store)
+                let ready = store.projects.filter { $0.group == .waiting && asks.canDeploy($0, store) }
+                if ready.count >= 2 {
+                    Button { asks.deployAll = ready } label: {
+                        Label(L("Deploy all \(ready.count) waiting …", "Alle \(ready.count) wartenden deployen …"), systemImage: "paperplane.fill")
+                    }
+                }
                 let auto = store.projects.filter(\.autoDeploy).count
                 if auto > 0 {
                     // The point of the app: these build on every push, and every build costs.
@@ -558,7 +575,10 @@ struct Summary: View {
         let failed = Stat(value: store.projects.filter(\.failed).count, label: L("failed", "Fehler"), tint: .red)
         Group {
             // Four in a row get too tight from the largest standard text size on: two rows of two then.
-            if size >= .xxxLarge {
+            if size.isAccessibilitySize {
+                // One column: at accessibility sizes even two stats side by side do not fit (IDEEN-12 C46).
+                VStack(alignment: .leading, spacing: 10) { prs; projects; building; failed }
+            } else if size >= .xxxLarge {
                 Grid(verticalSpacing: 12) { GridRow { prs; projects }; GridRow { building; failed } }
             } else {
                 HStack(spacing: 0) { prs; projects; building; failed }

@@ -495,14 +495,25 @@ final class PhoneStore: ObservableObject {
         confirmDeployKey = key
     }
 
-    func deploy(_ p: PhoneProject) async {
+    /// Several at once with one Face ID question (IDEEN-12 C54); each still follows its own build.
+    func deployMany(_ ps: [PhoneProject]) async {
+        let todo = ps.filter { running[$0.key] == nil }
+        guard !todo.isEmpty else { return }
+        if !demo {
+            guard requireOnline() else { return }
+            guard await authenticate(L("Deploy \(todo.count) projects", "\(todo.count) Projekte deployen")) else { return }
+        }
+        for p in todo { Task { await deploy(p, authenticated: true) } }
+    }
+
+    func deploy(_ p: PhoneProject, authenticated: Bool = false) async {
         // Taken before Face ID: a second tap meanwhile must not start a second build.
         guard running[p.key] == nil else { return }
         running[p.key] = "starting"; defer { running[p.key] = nil; deployIds[p.key] = nil }
         // The demo deploys nothing: no device code needed (App Review devices may have none).
         if demo { await simulate(p, L("Deploy started (demo).", "Deploy gestartet (Demo)."), L("\(p.name) is live (demo).", "\(p.name) ist live (Demo).")); return }
         guard requireOnline() else { return }
-        guard await authenticate(L("Deploy \(p.name)", "\(p.name) deployen")) else { return }
+        if !authenticated { guard await authenticate(L("Deploy \(p.name)", "\(p.name) deployen")) else { return } }
         let started = Date()
         do {
             let id: String
