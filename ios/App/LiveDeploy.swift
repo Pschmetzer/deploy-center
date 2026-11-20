@@ -35,6 +35,13 @@ final class LiveDeploy {
         }
     }
 
+    /// Ends the activity of one run that is no longer followed.
+    static func end(key: String) {
+        for a in Activity<DeployActivity>.activities where a.attributes.key == key {
+            Task { await a.end(content(.unknown, L("No longer followed", "Wird nicht mehr verfolgt"), final: true), dismissalPolicy: .immediate) }
+        }
+    }
+
     /// Every activity at once and without a lock-screen stay: their text names projects (keys removed).
     static func endAll() {
         for a in Activity<DeployActivity>.activities {

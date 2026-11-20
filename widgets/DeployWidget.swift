@@ -203,7 +203,7 @@ struct ListView: View {
                 } else {
                     ForEach(snap.projects.prefix(rows)) { p in Link(destination: link(p)) { ProjectRow(p: p) } }
                     // The snapshot lists at most ten rows: the rest is counted from the totals.
-                    let more = snap.waitingProjects + snap.building + snap.failed - rows
+                    let more = snap.waitingProjects + snap.building + snap.failed - min(rows, snap.projects.count)
                     if more > 0 {
                         Text(w("+\(more) more", "+\(more) weitere")).font(.caption2).foregroundStyle(.secondary)
                     }

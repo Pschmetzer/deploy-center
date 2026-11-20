@@ -553,7 +553,9 @@ final class PhoneStore: ObservableObject {
     func resumeFollowed() async {
         guard !demo else { return }
         for run in FollowedRuns.fresh() {
-            guard let p = projects.first(where: { $0.key == run.key }), running[p.key] == nil else { FollowedRuns.remove(run.key); continue }
+            // A project that is gone: its run and its activity end. A run another window already follows keeps its record.
+            guard let p = projects.first(where: { $0.key == run.key }) else { FollowedRuns.remove(run.key); LiveDeploy.end(key: run.key); continue }
+            guard running[p.key] == nil else { continue }
             Task { defer { running[p.key] = nil; deployIds[p.key] = nil }; await follow(p, run.id) }
         }
     }
@@ -719,7 +721,7 @@ final class PhoneStore: ObservableObject {
         var canceledByUser = false
         // The person may never have been asked: the end of this deploy is reported to them in the background.
         // The system question comes after our own sentence (an alert in the window), not in the middle of the deploy.
-        if await Notes.needsAsk { askNotes = true }
+        if await Notes.needsAsk, !UserDefaults.standard.bool(forKey: "notesAskDeclined") { askNotes = true }
         while Date() < end && !Task.isCancelled {
             try? await Task.sleep(for: .seconds(PollEvery.seconds(elapsed: Date().timeIntervalSince(start))))
             let s: String

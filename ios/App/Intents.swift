@@ -76,6 +76,12 @@ struct OpenProjectIntent: OpenIntent {
     }
 }
 
+/// An intent that says no, with a sentence Siri and Shortcuts show.
+struct IntentRejected: Error, CustomLocalizedStringResourceConvertible {
+    let text: String
+    var localizedStringResource: LocalizedStringResource { LocalizedStringResource(String.LocalizationValue(text)) }
+}
+
 /// Opens the question "Deploy this project?" in the app. Nothing starts: the question still needs a tap and Face ID, Touch ID or the code.
 struct PrepareDeployIntent: AppIntent {
     static let title: LocalizedStringResource = "Prepare a deploy"
@@ -85,6 +91,10 @@ struct PrepareDeployIntent: AppIntent {
     @Parameter(title: "Project") var project: ProjectEntity
 
     @MainActor func perform() async throws -> some IntentResult {
+        // A project this app cannot deploy (a GitLab source, paused): said, not a silent "done".
+        if let p = Spoken.last()?.projects.first(where: { $0.key == project.id }), !p.deployable {
+            throw IntentRejected(text: L("\(p.name) cannot be deployed from this app.", "\(p.name) kann von dieser App nicht deployt werden."))
+        }
         PhoneStore.shared.confirmDeployKey = project.id
         return .result()
     }

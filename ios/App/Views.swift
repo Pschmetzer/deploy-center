@@ -109,7 +109,8 @@ struct RootView: View {
         // Our own sentence first, then the system's question (IDEEN-12 C12).
         .alert(L("Report the end of deploys?", "Das Ende von Deploys melden?"), isPresented: $store.askNotes) {
             Button(L("Allow", "Erlauben")) { Task { await Notes.askOnce() } }
-            Button(L("Not now", "Nicht jetzt"), role: .cancel) {}
+            // "Not now" is remembered: the question is not asked at every deploy.
+            Button(L("Not now", "Nicht jetzt"), role: .cancel) { UserDefaults.standard.set(true, forKey: "notesAskDeclined") }
         } message: {
             Text(L("Deploy Center can tell you when a deploy you started is live or has failed, even when the app is in the background. The next question is the system's.",
                    "Deploy Center kann dir sagen, wann ein gestarteter Deploy live ist oder fehlgeschlagen ist, auch wenn die App im Hintergrund ist. Die nächste Frage kommt vom System."))

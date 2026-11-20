@@ -10,7 +10,7 @@ out="${SMOKE_OUT:-build/ios-smoke}"
 mkdir -p "$out"
 bundle="app.deploycenter.ios"
 fail=0
-first_of() { xcrun simctl list devices available | grep -E "^ +$1" | head -1 | sed -E 's/^ +(.*) \(([0-9A-F-]{36})\).*/\2/'; }
+first_of() { xcrun simctl list devices available | { grep -E "^ +$1" || true; } | head -1 | sed -E 's/^ +(.*) \(([0-9A-F-]{36})\).*/\2/' || true; }
 for kind in iPhone iPad; do
   udid="$(first_of "$kind")"
   if [ -z "$udid" ]; then echo "skip $kind: no simulator"; continue; fi

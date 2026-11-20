@@ -583,7 +583,9 @@ struct Render {
             deps = ((try await http.get("/services/\(id)/deploys?limit=10")) as? [JSON] ?? []).compactMap { $0["deploy"] as? JSON }
             RenderDeps.shared.set(id, deps)
         } catch {
-            guard let old = RenderDeps.shared.recent(id) else { x.fetchError = explain(error); return x }
+            // The last good deploys keep the row useful, but the failed read is still said (the row is not "freshly read").
+            x.fetchError = explain(error)
+            guard let old = RenderDeps.shared.recent(id) else { return x }
             deps = old
         }
         if let n = deps.first {
