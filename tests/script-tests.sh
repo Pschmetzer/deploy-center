@@ -250,6 +250,8 @@ case "$m $url" in
     case "${SITE:-ok}" in
       down) printf 503 ;;
       gone) printf 000; exit 28 ;;
+      dns) printf 000; exit 6 ;;
+      body) o=""; q=""; for a in "$@"; do [ "$q" = -o ] && o="$a"; q="$a"; done; [ -z "$o" ] || [ "$o" = /dev/null ] || echo "all systems ready" > "$o"; printf 200 ;;
       notfound) printf 404 ;;
       flaky) n=$(( $(cat "$E2E/site" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$E2E/site"; [ "$n" = 1 ] && printf 502 || printf 200 ;;
       pathy) case "${*: -1}" in */bad) printf 503 ;; */moved) printf 301 ;; *) printf 200 ;; esac ;;
@@ -493,6 +495,11 @@ expect "verify: 5xx counts down, then rolls back (exit 1)" \
 expect "verify: the countdown is shown" "$(grep -o 'Rolling back web in  [0-9] s' "$E" | tr -s ' ' | paste -sd, -)" "Rolling back web in 3 s,Rolling back web in 2 s,Rolling back web in 1 s"
 expect "verify: the rollback is in the journal" "$(jq -r 'select(.result == "other") | .detail' "$DEPLOYS_JOURNAL")" "Rolled back: https://web.example.test/health answered 503 503 503"
 fresh
+expect "verify: a DNS failure is named, not just 000" "$(fresh; SITE=dns run "$O" "$E" verify web --no-rollback --tries 1 --json; grep -c 'DNS: the name does not resolve' "$E"; jq -r '.checks[0].reason' "$O")" $'2\n1\nDNS: the name does not resolve'
+expect "verify: --expect-body found" "$(fresh; SITE=body run "$O" "$E" verify web --expect-body 'systems ready' --tries 1 --json; jq -c '.healthy' "$O")" $'0\ntrue'
+expect "verify: --expect-body missing fails the check" "$(fresh; SITE=body run "$O" "$E" verify web --expect-body 'maintenance' --no-rollback --tries 1 --json; jq -r '.healthy, .checks[0].reason' "$O"; rolled)" $'2\nfalse\nthe answer does not contain the expected text\n0'
+expect "verify: --warmup asks again while the name does not resolve" "$(fresh; SITE=dns run "$O" "$E" verify web --no-rollback --tries 1 --warmup 10s --every 5 >/dev/null; grep -c 'Waiting for' "$E"; grep -c 'GET https://web.example.test' "$e2e/calls.log")" $'1\n4'
+expect "verify: --warmup takes a time" "$(run "$O" "$E" verify web --warmup soon; grep -c 'takes a time' "$E")" $'3\n1'
 expect "verify: no answer (timeout) counts as a failure too" "$(SITE=gone run "$O" "$E" verify web --rollback-after 0; rolled)" $'1\n1'
 fresh
 expect "verify: --no-rollback only reports (exit 2)" "$(SITE=down run "$O" "$E" verify web --no-rollback; rolled)" $'2\n0'
