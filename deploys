@@ -3912,15 +3912,15 @@ BASH
     declare -F freeze_main >/dev/null || die "lib/freeze.sh is not next to deploys."
     freeze_main "${@:2}" ;;
 
-  "timeline"|"timeline "*)
+  "timeline "*)
     declare -F timeline_main >/dev/null || die "lib/insights.sh is not next to deploys."
     timeline_main "${@:2}" ;;
 
-  "recovery"|"recovery "*)
+  "recovery "*)
     declare -F recovery_main >/dev/null || die "lib/insights.sh is not next to deploys."
     recovery_main "${@:2}" ;;
 
-  "when"|"when "*)
+  "when "*)
     declare -F when_main >/dev/null || die "lib/insights.sh is not next to deploys."
     when_main "${@:2}" ;;
 
