@@ -8,6 +8,7 @@ tests/team-tests.sh
 tests/install-tests.sh
 tests/release-tests.sh
 tests/checks-tests.sh
+tests/cli-misc-tests.sh
 tests/ios-rule-tests.sh
 tests/round8-tests.sh
 tests/round9-tests.sh

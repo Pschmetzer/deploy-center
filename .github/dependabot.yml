@@ -16,6 +16,10 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    # @types/vscode must not be newer than engines.vscode (vsce package refuses it): the types move with the
+    # lowest VS Code version the extension supports, by hand.
+    ignore:
+      - dependency-name: "@types/vscode"
   - package-ecosystem: npm
     directory: /integrations/raycast
     schedule:
