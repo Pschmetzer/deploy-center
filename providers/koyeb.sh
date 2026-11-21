@@ -35,10 +35,9 @@ koyeb_call() {
   declare -F http_call >/dev/null || { echo "Koyeb: lib/http.sh is missing" >&2; return 1; }
   k="$(koyeb_key)" || return 1
   [ -z "${KOYEB_TOKEN:-}" ] || fix="check KOYEB_TOKEN in the environment"
-  # shellcheck disable=SC2034  # read by http_call
-  local HTTP_AUTH="Authorization: Bearer $k" HTTP_FIX="$fix"
   e="$(mktemp)"
-  ( http_call "Koyeb" "$1" "$KOYEB_API$2" "${3:-}" ) 2>"$e" || rc=$?
+  # HTTP_AUTH and HTTP_FIX are read by http_call: set for that one call only.
+  ( HTTP_AUTH="Authorization: Bearer $k" HTTP_FIX="$fix" http_call "Koyeb" "$1" "$KOYEB_API$2" "${3:-}" ) 2>"$e" || rc=$?
   [ "$rc" = 0 ] || sed '1s/^[^ ]*Error:[^ ]* //' "$e" >&2
   rm -f "$e"; return "$rc"
 }
@@ -46,9 +45,8 @@ koyeb_call() {
 # Service ids and deployment ids are UUIDs (letters, digits, dashes).
 koyeb_valid() { case "$1" in ''|-*|*[!A-Za-z0-9-]*) return 1 ;; esac; }
 
-# shellcheck disable=SC2016
 KOYEB_JQ='
-  def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | try fromdateiso8601 catch null) else null end;
+  def t: (. // null) | if . then (sub("\\.[0-9]+Z";"Z") | try fromdateiso8601 catch null) else null end;
   def phase: if . == null then null
     elif test("^(PENDING|PROVISIONING|SCHEDULED|ALLOCATING|STARTING|HEALTHY_PENDING)$") then "building"
     elif . == "STASHED" or . == "ERRORING" or . == "ERROR" or . == "UNHEALTHY" or . == "DEGRADED" then "failed"
