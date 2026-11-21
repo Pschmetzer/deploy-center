@@ -35,7 +35,9 @@ case " $* " in *" -K - "*) conf="$(cat)" ;; esac
 cu="$(sed -n 's/^url = "\(.*\)"$/\1/p' <<<"$conf" | head -n 1)"; [ -z "$cu" ] || url="$cu"
 n=$(( $(wc -l < "$CALLS" 2>/dev/null || echo 0) + 1 ))
 [ -n "$bodyf" ] && cp "$bodyf" "$FAKE_STATE/body-$n.json"
-echo "curl $m $url ARGS[$*] BODY[${bodyf:+body-$n.json}] AUTH[$(case "$conf" in *Authorization*) echo yes ;; *) echo no ;; esac)]" >> "$CALLS"
+# Not a case inside $(...): bash 3.2 ends the $( at the first ) of a case pattern.
+auth=no; case "$conf" in *Authorization*) auth=yes ;; esac
+echo "curl $m $url ARGS[$*] BODY[${bodyf:+body-$n.json}] AUTH[$auth]" >> "$CALLS"
 case "$url" in https://logs-store.example.com/*)
   case "$*$conf" in *Authorization*|*dop_v1*) echo "token sent to the log host" >&2; exit 9 ;; esac
   printf 'Step 1/3 : npm ci\nStep 2/3 : npm run build\nbuild complete\n'; exit 0 ;;
