@@ -68,7 +68,7 @@ deploys deploy my-project --force "hotfix"   # inside a closed window; the reaso
 ## Platforms
 
 Vercel and Render are on by default; Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App
-Platform, Coolify and deploy hooks are off until `deploys providers enable <p>`
+Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages and deploy hooks are off until `deploys providers enable <p>`
 ([PROVIDERS.md](PROVIDERS.md), and one page each in [providers/](providers/)).
 
 ```bash

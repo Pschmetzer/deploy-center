@@ -212,7 +212,7 @@ A Render **Blueprint** with auto-sync can apply `render.yaml` again on a push. A
 
 ### "Netlify is off. Turn it on: deploys providers enable netlify"
 
-Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify and deploy hooks are off until you
+Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages and deploy hooks are off until you
 turn them on, so no command talks to them by accident. Run the command from the message (the name
 differs per host), then set its key. `deploys providers` lists which are on.
 
@@ -223,7 +223,9 @@ The host is on, but no key is stored for it. The message says where to create on
 `echo my-profile | deploys amplify set-key`). Each host's page has the details:
 [Netlify](providers/netlify.md), [Cloudflare Pages](providers/cloudflare.md),
 [AWS Amplify](providers/amplify.md), [DigitalOcean](providers/digitalocean.md),
-[Coolify](providers/coolify.md), [deploy hooks](providers/hook.md).
+[Coolify](providers/coolify.md), [Fly.io](providers/fly.md), [Railway](providers/railway.md),
+[Heroku](providers/heroku.md), [Firebase Hosting](providers/firebase.md), [GitHub Pages](providers/ghpages.md),
+[deploy hooks](providers/hook.md).
 
 ### "… has no build hook yet. Run: deploys netlify autodeploy-off …"
 
