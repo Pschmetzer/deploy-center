@@ -8,6 +8,8 @@ on:
   # shows up here, not at the next unrelated pull request. The Website workflow publishes after a push only.
   schedule:
     - cron: "23 5 * * 1"
+  # By hand (Actions tab, or `gh workflow run CI`): the same checks on any branch, e.g. after a runner image change.
+  workflow_dispatch:
 
 permissions:
   contents: read
