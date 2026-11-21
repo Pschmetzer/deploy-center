@@ -31,6 +31,8 @@ if [ -z "$only" ]; then
   step "personal data and file sizes"
   run scripts/check-public.sh
   run scripts/check-size.sh
+  run python3 -I scripts/check-bash32.py
+  run python3 -I scripts/check-secrets.py
   step plutil
   if have plutil; then run plutil -lint scripts/*.plist.example; fi
 fi

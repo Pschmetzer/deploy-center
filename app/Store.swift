@@ -710,6 +710,7 @@ final class Store: ObservableObject {
             doctorError = error.localizedDescription; return
         }
         guard doctor?.jq == true else { return }
+        // Before anything that asks `observer`: a team observer Mac must not act as a normal one in the meantime.
         Task { await readTeamObserver() }
         if scriptVersion == nil {
             Task { if let v = try? await Tool.run(["--version"], timeout: 10) {
@@ -2046,6 +2047,23 @@ final class Store: ObservableObject {
         return c >= 500 ? .broken : .odd
     }
 
+    /// A page that answered below 400 and now says 401/403: a wrong env variable or a WAF rule after the deploy.
+    nonisolated static func accessLost(before: Int?, now: Int) -> Bool {
+        guard let b = before, b < 400 else { return false }
+        return now == 401 || now == 403
+    }
+    /// The last status code of each project's first address, this run only.
+    private var lastCodes: [String: Int] = [:]
+    private func noteAccessChange(_ item: Item, _ code: Int, url: URL) {
+        let k = Self.key(item), seen = k + "|" + url.absoluteString   // per address: a new check path is no change
+        defer { lastCodes[seen] = code }
+        guard Self.accessLost(before: lastCodes[seen], now: code) else { return }
+        say(L("\(item.name) now answers \(code)", "\(item.name) antwortet jetzt mit \(code)"),
+            L("It answered fine before. Check the environment variables and any firewall or protection rule.",
+              "Vorher antwortete die Seite normal. Umgebungsvariablen und Firewall- oder Schutzregeln prüfen."), ok: false,
+            project: item.name, key: k)
+    }
+
     /// No cache: the check must see what the site says now, not a stored answer.
     nonisolated private static let probeSession: URLSession = {
         let c = URLSessionConfiguration.ephemeral
@@ -2107,6 +2125,8 @@ final class Store: ObservableObject {
             let t0 = Date()
             code = await Self.probe(url, timeout: 20)
             if Self.siteVerdict(code: code, networkUp: true) == .fine {
+                // Every address keeps its own last status; only the first is timed and watched.
+                if let c = code { noteAccessChange(item, c, url: url) }
                 if timed { noteResponseTime(item, Date().timeIntervalSince(t0)); SiteLog.note(Self.key(item), up: true) }
                 return true
             }
@@ -2178,6 +2198,7 @@ final class Store: ObservableObject {
                 let code = await Self.probe(url, timeout: 20)
                 let up = code != nil ? true : await Self.networkUp()
                 let v = Self.siteVerdict(code: code, networkUp: up)
+                if let c = code { self.noteAccessChange(item, c, url: url) }
                 seen.append(v)
                 if v == .fine || v == .broken { SiteLog.note(key, up: v == .fine) }
                 guard Self.watchFails(seen) else { continue }

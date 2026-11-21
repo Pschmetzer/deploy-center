@@ -31,10 +31,15 @@ jobs:
         run: scripts/check-public.sh
       - name: File sizes stay under their ceilings
         run: scripts/check-size.sh
+      - name: The CLI stays bash 3.2 compatible (no declare -A, mapfile, ${x,,} ...)
+        run: python3 -I scripts/check-bash32.py
+      - name: No secrets on command lines or in traces (curl -H, security -w, set -x)
+        run: python3 -I scripts/check-secrets.py
 
   test:
     runs-on: macos-15
-    timeout-minutes: 30
+    # shellcheck and the script tests alone take 20-25 minutes on a slow runner; 30 cut the integration step off.
+    timeout-minutes: 45
     env:
       # macOS minutes count tenfold: no brew self-update and no cleanup on every run.
       HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -70,6 +75,8 @@ jobs:
         run: bash tests/install-tests.sh
       - name: Release tests (release gate, bump.sh, site checks, check-public, Homebrew cask)
         run: bash tests/release-tests.sh
+      - name: Check script tests (bash 3.2 and secrets checks)
+        run: bash tests/checks-tests.sh
       - name: App tests (English and German, with the deploys JSON contract)
         run: bash tests/app-tests.sh
       - name: The "waiting" rule in deploys and in the iPhone app agree
@@ -157,6 +164,8 @@ jobs:
         run: bash tests/team-tests.sh
       - name: Release tests
         run: bash tests/release-tests.sh
+      - name: Check script tests
+        run: bash tests/checks-tests.sh
       - name: The script's "waiting" rule against the shared cases
         run: bash tests/ios-rule-tests.sh
       - name: Round 8 tests
