@@ -128,6 +128,7 @@ enum Background {
         store.forgetKeptTokens()
         await store.refreshLink()   // a cold background launch has not read the Mac's keys yet
         guard !store.demo, store.hasAccount else { return }
+        UserDefaults.standard.set(Date(), forKey: lastRunKey)
         // Nothing seen yet (first run, or the file is gone): nothing counts as new, no flood of notes.
         let before = readLast()
         let complete = await withTaskGroup(of: Bool?.self) { g in
@@ -143,6 +144,10 @@ enum Background {
         guard complete else { return }
         if let before { await store.notifyChanges(from: before) }
     }
+
+    /// When the background check last started, for Settings.
+    static let lastRunKey = "backgroundLastRun"
+    static var lastRun: Date? { UserDefaults.standard.object(forKey: lastRunKey) as? Date }
 
     private static let refusedKey = "keyRefusedNotedOn"
     /// One note a day that a provider refused the key; it names no project.

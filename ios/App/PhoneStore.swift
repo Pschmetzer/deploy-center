@@ -23,6 +23,8 @@ final class PhoneStore: ObservableObject {
     @Published var messageSerial = 0
     /// A project to show, from a widget link or a notification.
     @Published var openKey: String?
+    /// The first followed deploy: the window explains the end-of-deploy note before the system asks.
+    @Published var askNotes = false
     /// A note asked to deploy this project: the window opens the confirmation for it.
     @Published var confirmDeployKey: String?
     /// The iCloud Keychain item was read once (off the main thread); until then "no account" is not sure.
@@ -113,6 +115,8 @@ final class PhoneStore: ObservableObject {
     @discardableResult
     func setOwnToken(_ k: TokenKey, _ value: String) -> Bool {
         let ok = Keychain.set(k.rawValue, value)
+        // A limit belongs to the token that hit it: a new GitHub token is tried at once.
+        if k == .github { RateGate.clear() }
         ownCache[k] = nil; failedReadAt[k] = nil
         return ok
     }
@@ -219,11 +223,12 @@ final class PhoneStore: ObservableObject {
     private func wipeTraces() {
         teamCache = nil
         ETags.shared.removeAll()
+        HistoryCache.clear(); RenderDeps.shared.removeAll(); RateGate.clear()
         projects = []; errors = []; stale = []; loadedAt = nil; keyRefused = false
         try? FileManager.default.removeItem(at: Background.lastURL)
         if let url = DeploySnapshot.groupURL { try? FileManager.default.removeItem(at: url) }
         let d = UserDefaults.standard
-        for k in [Background.providerTimesKey, "widgetReloadAt", Notes.mutedKey, "usedQRCodes"] { d.removeObject(forKey: k) }
+        for k in [Background.providerTimesKey, Background.lastRunKey, RateGate.key, FollowedRuns.defaultsKey, "widgetReloadAt", Notes.mutedKey, "usedQRCodes"] { d.removeObject(forKey: k) }
         WidgetCenter.shared.reloadAllTimelines()
         QuickActions.update([]); Spotlight.index([], demo: demo)
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
@@ -445,7 +450,12 @@ final class PhoneStore: ObservableObject {
         return false
     }
 
+    /// True while a Face ID question of a deploy is open: the app is inactive then, but nothing needs covering.
+    @Published var authenticating = false
+
     func authenticate(_ reason: String) async -> Bool {
+        authenticating = true
+        defer { authenticating = false }
         let ctx = LAContext()
         var err: NSError?
         // Face ID or Touch ID, with the passcode as a fallback; "Biometrics only" in Settings drops the
@@ -487,14 +497,25 @@ final class PhoneStore: ObservableObject {
         confirmDeployKey = key
     }
 
-    func deploy(_ p: PhoneProject) async {
+    /// Several at once with one Face ID question (IDEEN-12 C54); each still follows its own build.
+    func deployMany(_ ps: [PhoneProject]) async {
+        let todo = ps.filter { running[$0.key] == nil }
+        guard !todo.isEmpty else { return }
+        if !demo {
+            guard requireOnline() else { return }
+            guard await authenticate(L("Deploy \(todo.count) projects", "\(todo.count) Projekte deployen")) else { return }
+        }
+        for p in todo { Task { await deploy(p, authenticated: true) } }
+    }
+
+    func deploy(_ p: PhoneProject, authenticated: Bool = false) async {
         // Taken before Face ID: a second tap meanwhile must not start a second build.
         guard running[p.key] == nil else { return }
         running[p.key] = "starting"; defer { running[p.key] = nil; deployIds[p.key] = nil }
         // The demo deploys nothing: no device code needed (App Review devices may have none).
         if demo { await simulate(p, L("Deploy started (demo).", "Deploy gestartet (Demo)."), L("\(p.name) is live (demo).", "\(p.name) ist live (Demo).")); return }
         guard requireOnline() else { return }
-        guard await authenticate(L("Deploy \(p.name)", "\(p.name) deployen")) else { return }
+        if !authenticated { guard await authenticate(L("Deploy \(p.name)", "\(p.name) deployen")) else { return } }
         let started = Date()
         do {
             let id: String
@@ -522,6 +543,25 @@ final class PhoneStore: ObservableObject {
     }
 
     /// The build this app follows, else the newest attempt the list shows.
+    /// A build that a push started (nobody pressed "Deploy" here): follow it like one started here, so the end is
+    /// reported and the Live Activity runs (IDEEN-12 C20). Starts nothing; it only watches.
+    func followBuild(_ p: PhoneProject) async {
+        guard running[p.key] == nil, p.building, let id = p.latestId, !demo else { return }
+        defer { running[p.key] = nil; deployIds[p.key] = nil }
+        await follow(p, id)
+    }
+
+    /// At launch: the deploys that were followed when the app was killed are followed again (their Live Activity is kept).
+    func resumeFollowed() async {
+        guard !demo else { return }
+        for run in FollowedRuns.fresh() {
+            // A project that is gone: its run and its activity end. A run another window already follows keeps its record.
+            guard let p = projects.first(where: { $0.key == run.key }) else { FollowedRuns.remove(run.key); LiveDeploy.end(key: run.key); continue }
+            guard running[p.key] == nil else { continue }
+            Task { defer { running[p.key] = nil; deployIds[p.key] = nil }; await follow(p, run.id) }
+        }
+    }
+
     func buildId(_ p: PhoneProject) -> String? { deployIds[p.key] ?? (p.building ? p.latestId : nil) }
 
     /// Keys of followed deploys the person canceled in the app: their "canceled" end is not a failure.
@@ -602,14 +642,23 @@ final class PhoneStore: ObservableObject {
 
     // MARK: History and build logs (read only)
 
-    func history(_ p: PhoneProject) async -> [DeployRecord]? {
+    /// `quiet`: a failure is not shown as a toast (the caller only wants the numbers, e.g. the typical build time).
+    /// Offline or failing, the last list read is returned (metadata only: ids, states, times, commit titles), not nothing.
+    func history(_ p: PhoneProject, quiet: Bool = false) async -> [DeployRecord]? {
         if demo { return DemoData.history(p) }
         do {
+            let r: [DeployRecord]
             switch p.provider {
-            case .vercel: return try await vercel().history(p)
-            case .render: return try await Render(key: token(.render) ?? "").history(p)
+            case .vercel: r = try await vercel().history(p)
+            case .render: r = try await Render(key: token(.render) ?? "").history(p)
             }
-        } catch { say(describe(error, p.provider), error: true); return nil }
+            HistoryCache.save(r, for: p.key)
+            return r
+        } catch {
+            if let old = HistoryCache.load(p.key) { return old }
+            if !quiet { say(describe(error, p.provider), error: true) }
+            return nil
+        }
     }
 
     /// The log of one deploy (else the newest attempt), masked before it is kept, shown or copied.
@@ -661,16 +710,20 @@ final class PhoneStore: ObservableObject {
                         check: (() async throws -> String)? = nil) async {
         deployIds[p.key] = rollback ? nil : id
         running[p.key] = rollback ? "rollback" : "queued"
+        // Kept while this loop runs: an app that is killed meanwhile follows the deploy again at its next launch.
+        if !rollback { FollowedRuns.add(key: p.key, id: id) }
+        defer { FollowedRuns.remove(p.key) }
         let keep = KeepAlive.start(title: rollback ? L("Rolling back \(p.name)", "\(p.name) wird zurückgerollt") : L("Deploying \(p.name)", "\(p.name) wird deployt"),
                                    subtitle: p.provider.rawValue)
         let live = LiveDeploy.start(p, rollback: rollback)
         let start = Date(), end = start.addingTimeInterval(limit)
         // The usual build time of this project, from its history: the progress bar is not a guess of five minutes.
-        let typical = BuildTime.typical(await history(p) ?? [])
+        let typical = BuildTime.typical(await history(p, quiet: true) ?? [])
         var outcome: String?, ok = false, failed = false, replaced = false, lastError: String?
         var canceledByUser = false
         // The person may never have been asked: the end of this deploy is reported to them in the background.
-        Task { await Notes.askOnce() }
+        // The system question comes after our own sentence (an alert in the window), not in the middle of the deploy.
+        if await Notes.needsAsk, !UserDefaults.standard.bool(forKey: "notesAskDeclined") { askNotes = true }
         while Date() < end && !Task.isCancelled {
             try? await Task.sleep(for: .seconds(PollEvery.seconds(elapsed: Date().timeIntervalSince(start))))
             let s: String
@@ -684,7 +737,7 @@ final class PhoneStore: ObservableObject {
             lastError = nil
             if !rollback { running[p.key] = s }
             keep.update(PhoneProject.stateWord(s), fraction: BuildTime.fraction(elapsed: Date().timeIntervalSince(start), typical: typical))
-            live.update(rollback ? PhoneProject.stateWord("rollback") : PhoneProject.stateWord(s))
+            live.update(rollback ? PhoneProject.stateWord("rollback") : PhoneProject.stateWord(s), expected: typical)
             if ["ready", "live", "succeeded"].contains(s) {
                 // After an Instant Rollback a ready deploy keeps no domain until one is promoted (Vercel docs).
                 if !rollback, p.provider == .vercel, await stagedOnly(id) {
@@ -765,11 +818,15 @@ final class PhoneStore: ObservableObject {
         }
         let order: [DeploySnapshot.Project.Status: Int] = [.building: 0, .failed: 1, .waiting: 2]
         let sorted = rows.sorted { (order[$0.status]!, -$0.prs, $0.name) < (order[$1.status]!, -$1.prs, $1.name) }
-        // No saving on the phone: the Mac app knows what auto-deploy cost before; the widget hides the line.
+        // The saving is the Mac app's figure (handed over with the keys, a month's worth); without it the widget hides the line (IDEEN-12 C37).
+        let saving: DeploySnapshot.Saving? = {
+            guard !demo, !ignoreLink, let m = linked?.savingPerMonth, m > 0 else { return nil }
+            return .init(before: m / 30, after: 0)
+        }()
         return DeploySnapshot(at: loadedAt ?? Date(), demo: demo, waitingProjects: waiting.count,
                               waitingCommits: waiting.reduce(0) { $0 + ($1.pendingCommits ?? 0) }, waitingPRs: waitingPRs,
                               building: rows.filter { $0.status == .building }.count,
-                              failed: rows.filter { $0.status == .failed }.count, saving: nil, projects: Array(sorted.prefix(10)),
+                              failed: rows.filter { $0.status == .failed }.count, byPlatform: DeploySnapshot.platformCounts(rows), saving: saving, projects: Array(sorted.prefix(10)),
                               language: appLanguage, connected: demo || hasAccount)
     }
 
@@ -817,6 +874,10 @@ final class PhoneStore: ObservableObject {
             else if (o?.failed ?? false) && !p.failed && !p.building && p.liveState != nil {
                 events.append(("recovered:" + p.key, p.key, L("\(p.name) is live again", "\(p.name) ist wieder live")))
             }
+            // A build that ran and is now live: the news that a push or deploy is through (IDEEN-12 C22).
+            else if (o?.building ?? false) && !p.building && !p.failed && p.liveState != nil && !p.canceled {
+                events.append(("live:" + p.key, p.key, L("\(p.name) is live", "\(p.name) ist live")))
+            }
             else if p.group == .waiting && o?.group != .waiting { events.append(("waiting:" + p.key, p.key, L("\(p.name) is waiting", "\(p.name) wartet"))) }
         }
         guard !events.isEmpty else { return }
@@ -848,8 +909,10 @@ enum Notes {
         let deploy = UNNotificationAction(identifier: deployAction, title: L("Deploy with Face ID", "Mit Face ID deployen"),
                                           options: [.foreground, .authenticationRequired])
         UNUserNotificationCenter.current().setNotificationCategories([
-            UNNotificationCategory(identifier: category, actions: [open, mute], intentIdentifiers: [], options: []),
-            UNNotificationCategory(identifier: waitingCategory, actions: [deploy, open, mute], intentIdentifiers: [], options: [])
+            UNNotificationCategory(identifier: category, actions: [open, mute], intentIdentifiers: [],
+                                   hiddenPreviewsBodyPlaceholder: L("Deploy Center news", "Neuigkeit von Deploy Center"), options: []),
+            UNNotificationCategory(identifier: waitingCategory, actions: [deploy, open, mute], intentIdentifiers: [],
+                                   hiddenPreviewsBodyPlaceholder: L("A project is waiting", "Ein Projekt wartet"), options: [])
         ])
     }
     /// Until the start of tomorrow, in this device's calendar.
@@ -861,23 +924,59 @@ enum Notes {
 
     /// Asks once, the first time a deploy is followed, when the person never answered: the end of a deploy
     /// is reported even if "Notify" in Settings was never switched on. A "no" is not asked again.
+    static var needsAsk: Bool {
+        get async { await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .notDetermined }
+    }
     static func askOnce() async {
-        let s = await UNUserNotificationCenter.current().notificationSettings()
-        guard s.authorizationStatus == .notDetermined else { return }
+        guard await needsAsk else { return }
         _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
     }
 
     static func post(_ body: String, project: String?, id: String? = nil, news: Bool = false) async {
         if news && muted { return }
         let c = UNMutableNotificationContent()
-        c.title = "Deploy Center"; c.body = body; c.sound = .default
+        // With "Unlock on open" the lock screen must not name projects either (IDEEN-12 C23).
+        c.title = "Deploy Center"; c.sound = .default
+        c.body = UserDefaults.standard.bool(forKey: "lockOnOpen") ? L("A project has news. Open the app.", "Ein Projekt hat Neuigkeiten. App öffnen.") : body
         // One thread per project groups its history; failures rise in the notification summary, news falls.
         c.threadIdentifier = project.map { "deploy-center-" + $0 } ?? "deploy-center"
         let kind = (id ?? "").split(separator: ":").first.map(String.init) ?? ""
-        c.relevanceScore = kind == "failed" ? 1.0 : kind == "waiting" ? 0.3 : kind == "recovered" ? 0.5 : 0.7
+        c.relevanceScore = kind == "failed" ? 1.0 : kind == "waiting" ? 0.3 : kind == "recovered" ? 0.5 : kind == "live" ? 0.5 : 0.7
+        // A failure may interrupt a Focus that allows it; news that something waits or is live does not (IDEEN-12 C24).
+        c.interruptionLevel = kind == "failed" ? .active : .passive
         c.categoryIdentifier = (id ?? "").hasPrefix("waiting:") ? waitingCategory : category
         if let project { c.userInfo = ["project": project] }
         let r = UNNotificationRequest(identifier: id ?? "deploy-\(project ?? "")", content: c, trigger: nil)
         try? await UNUserNotificationCenter.current().add(r)
+    }
+}
+
+extension PhoneStore {
+    /// "0.11.0 (42)".
+    var versionText: String {
+        let i = Bundle.main.infoDictionary
+        return "\(i?["CFBundleShortVersionString"] as? String ?? "?") (\(i?["CFBundleVersion"] as? String ?? "?"))"
+    }
+
+    /// What helps to find a problem: version, system, language, which accounts are connected, how many projects.
+    /// No key, no project name, no domain.
+    var diagnostics: String {
+        func yes(_ b: Bool) -> String { b ? "yes" : "no" }
+        return [
+            "Deploy Center for iPhone \(versionText)",
+            "iOS \(UIDevice.current.systemVersion), \(UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone")",
+            "Language: \(appIsGerman ? "de" : "en")",
+            "Vercel key: \(yes(token(.vercel) != nil)), Render key: \(yes(token(.render) != nil)), GitHub token: \(yes(token(.github) != nil))",
+            "Keys from the Mac: \(yes(linked != nil && !ignoreLink))",
+            "Projects: \(projects.count), offline: \(yes(offline)), key refused: \(yes(keyRefused)), errors: \(errors.count)",
+        ].joined(separator: "\n")
+    }
+
+    /// A new issue on GitHub with the diagnosis filled in.
+    var reportURL: URL? {
+        var c = URLComponents(string: "https://github.com/Pschmetzer/deploy-center/issues/new")
+        c?.queryItems = [URLQueryItem(name: "title", value: "iPhone app: "),
+                         URLQueryItem(name: "body", value: "What happened:\n\n\n---\n" + diagnostics)]
+        return c?.url
     }
 }

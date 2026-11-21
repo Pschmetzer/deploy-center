@@ -205,7 +205,9 @@ struct PhoneLinkSettings: View {
                     .accessibilityValue(hasVercel ? L("saved", "gespeichert") : L("not saved", "nicht gespeichert"))
                 if hasVercel { Text(L("Saved", "Gespeichert")).font(.caption).foregroundStyle(.secondary) }
                 Button(L("Save", "Sichern")) {
-                    keychainFailed = !MacSecret.set(PhoneLinkModel.vercelPhoneKey, vercel); vercel = ""
+                    // The field is emptied only when the key is saved: a failed save keeps what was typed (IDEEN-12 C4).
+                    keychainFailed = !MacSecret.set(PhoneLinkModel.vercelPhoneKey, vercel)
+                    if !keychainFailed { vercel = "" }
                     hasVercel = MacSecret.get(PhoneLinkModel.vercelPhoneKey) != nil
                     Task { await link.pushIfOn() }
                 }.disabled(vercel.isEmpty)
@@ -219,7 +221,8 @@ struct PhoneLinkSettings: View {
                     .accessibilityValue(hasGitHub ? L("saved", "gespeichert") : L("not saved", "nicht gespeichert"))
                 if hasGitHub { Text(L("Saved", "Gespeichert")).font(.caption).foregroundStyle(.secondary) }
                 Button(L("Save", "Sichern")) {
-                    keychainFailed = !MacSecret.set(PhoneLinkModel.githubOwnKey, github); github = ""
+                    keychainFailed = !MacSecret.set(PhoneLinkModel.githubOwnKey, github)
+                    if !keychainFailed { github = "" }
                     hasGitHub = MacSecret.get(PhoneLinkModel.githubOwnKey) != nil
                     Task { await link.pushIfOn() }
                 }.disabled(github.isEmpty)
@@ -287,7 +290,21 @@ struct PhoneQRSheet: View {
     /// The same code as text, for "Copy code" (a phone without a camera pastes it).
     @State private var code = ""
     @State private var copied = false
+    /// The keys behind the code, kept to make a fresh code when the minute is extended.
+    @State private var keys: LinkedKeys?
     @AppStorage("demoMode") private var demoMode = false
+
+    /// A new code with a new time and id: the phone refuses a code older than `PhoneLink.qrMaxAge`,
+    /// so extending the minute on the old one would show a code the phone no longer takes (IDEEN-12 C1).
+    private func renew() {
+        guard var k = keys else { return }
+        let old = code
+        k.updated = Date(); k.once = UUID().uuidString
+        let text = PhoneLink.qrText(k) ?? ""
+        guard !text.isEmpty, let img = PhoneQRSheet.make(text) else { return }
+        keys = k; code = text; image = img; left = 60
+        Self.clearClipboard(old); copied = false
+    }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -305,7 +322,7 @@ struct PhoneQRSheet: View {
                     // The last seconds: a bar you can see, and a way to keep the code.
                     ProgressView(value: Double(left), total: 10).frame(width: 260)
                         .accessibilityLabel(L("Time left", "Restzeit")).accessibilityValue("\(left) s")
-                    Button(L("Extend by a minute", "Um eine Minute verlängern")) { left = 60 }
+                    Button(L("Extend by a minute", "Um eine Minute verlängern")) { renew() }
                 }
             } else if empty {
                 Text(L("No keys to hand over yet: save a Vercel token for the iPhone or set up Render first.",
@@ -323,6 +340,9 @@ struct PhoneQRSheet: View {
                         // Clipboard managers that honour the marker do not keep the keys in their history.
                         Pasteboard.copy(code, concealed: true)
                         copied = true
+                        // Not only when the sheet closes: after the time a phone accepts the code, the clipboard is empty (IDEEN-12 C2).
+                        let mine = code
+                        Task { try? await Task.sleep(for: .seconds(PhoneLink.qrMaxAge)); Self.clearClipboard(mine) }
                     }
                     .disabled(inactive)
                     .help(L("For the iPhone app's \"Paste code\" (Universal Clipboard). The clipboard is cleared when this closes.",
@@ -349,6 +369,7 @@ struct PhoneQRSheet: View {
             keys.savingPerMonth = PhoneLinkModel.shared.savingPerMonth
             // One id per code: a phone can refuse one it used before (a photo of the screen).
             keys.once = UUID().uuidString
+            self.keys = keys
             code = PhoneLink.qrText(keys) ?? ""
             image = PhoneQRSheet.make(code)
             if image == nil { tooLong = true; code = ""; return }
