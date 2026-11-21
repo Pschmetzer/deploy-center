@@ -269,6 +269,12 @@ a regex for check names that do not count for \-\-when\-green (an optional check
 .B DEPLOYS_NO_JOURNAL
 1: a start from the terminal writes no journal line (tests, containers)
 .TP
+.B DEPLOYS_CALLER
+app: set by the Mac app when it runs deploys; the terminal journal line is skipped because the app writes its own (do not set it in scripts: you would lose the journal entry)
+.TP
+.B DEPLOYS_LIB
+1: source deploys only loads the functions and runs nothing (what providers/hook.sh and the tests do)
+.TP
 .B DEPLOYS_HOOK_TIMEOUT
 seconds one hooks.d script may run (default 300; 0 no limit; see "Hooks" below)
 .TP
