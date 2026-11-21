@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Providers: Deno Deploy (`deploys providers enable deno`, off until turned on). It lists the projects of one organization with their newest deployment and can redeploy that deployment as production (needs `--yes`); it never builds another commit. Token from `DENO_DEPLOY_TOKEN` or the keychain, organization from `DENO_DEPLOY_ORG`. Tested with fixtures only.
+- Tests: more cases for the team repo field (trailing slash, ssh address, letters beyond ASCII, empty) and for the quiet-hours digest at the end hour.
 - Mac app (accessibility): decorative symbols (pin, queue hourglass, CI and risk marks, empty-state icons, quick-filter chips, command-palette rows, connection status) are hidden from VoiceOver, so it no longer reads symbol names next to the text that already says the same.
 - Mac app: in a build log, the "previous / next / first error" buttons sit in a bar under the log instead of covering its last lines.
 - CLI: `deploys streak` shows, per project, how many deploys in a row went without a failure (now and the longest in the window; reads the journal only). `deploys note <project> "text"` writes one line into the journal that shows in `deploys timeline` (a text that looks like a secret is refused, nothing on a platform is touched).
@@ -160,6 +160,7 @@
 - Integrations: MCP, VS Code and Raycast pin the confirmed commit, SSH host aliases are recognized, the MCP server no longer passes `GIT_ASKPASS` or `GIT_SSH_COMMAND`, and the status page refuses redirects to private addresses.
 - Site and docs: the German README links the German pages, the man page is generated and checked, "Only when checks are green" is described as CLI only, plus accessibility fixes (focus targets, high contrast, scrollable regions, search status).
 - Website: the top navigation no longer scrolls sideways on phones (the German pages were 14 px too wide at 360 px, every page at 320 px: the brand name hides below 420 px, the calculator link below 340 px); the 404 page and the German home page set the browser theme color.
+- Providers: Deno Deploy (`deploys providers enable deno`, off until turned on). It lists the projects of one organization with their newest deployment and can redeploy that deployment as production (needs `--yes`); it never builds another commit. Token from `DENO_DEPLOY_TOKEN` or the keychain, organization from `DENO_DEPLOY_ORG`. Tested with fixtures only.
 
 ## 0.11.0
 
