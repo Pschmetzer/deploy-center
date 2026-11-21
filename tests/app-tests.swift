@@ -1115,6 +1115,10 @@ expect("team: a git remote", TeamSettings.ownerRepo("git@github.com:me/app.git")
 expect("team: a page of the repo", TeamSettings.ownerRepo("github.com/me/app/tree/main") ?? "", "me/app")
 expect("team: another host is not a repo", TeamSettings.ownerRepo("https://gitlab.com/me/app") == nil, true)
 expect("team: no slash is no repo", TeamSettings.ownerRepo("app") == nil, true)
+expect("team: a trailing slash", TeamSettings.ownerRepo("https://github.com/me/app/") ?? "", "me/app")
+expect("team: ssh address with the user", TeamSettings.ownerRepo("ssh://git@github.com/me/app.git") ?? "", "me/app")
+expect("team: letters beyond ASCII are fine", TeamSettings.ownerRepo("münchen/app") ?? "", "münchen/app")
+expect("team: empty is no repo", TeamSettings.ownerRepo("  ") == nil, true)
 expect("autofix list: an open PR is said",
        AutofixSettings.label(F(at: 1, project: "a", platform: "vercel", status: "fired", prNumber: 3, prState: "open")), L("fix PR open", "Fix-PR offen"))
 expect("autofix list: a closed PR is said",
@@ -2094,6 +2098,8 @@ do {
     var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
     let night = Date(timeIntervalSince1970: TimeInterval(1_800_000_000 - 1_800_000_000 % 86400 + 23 * 3600))   // 23:00 UTC
     expect("digest: seconds until 07:00", Int(QuietDigest.seconds(until: 7, now: night, calendar: cal)), 8 * 3600)
+    let seven = Date(timeIntervalSince1970: TimeInterval(1_800_000_000 - 1_800_000_000 % 86400 + 7 * 3600))   // 07:00 UTC
+    expect("digest: at the end hour itself the next end is tomorrow", Int(QuietDigest.seconds(until: 7, now: seven, calendar: cal)), 24 * 3600)
     var held = QuietDigest.adding("a: one", to: [], now: night)
     held = QuietDigest.adding("b: two", to: held, now: night.addingTimeInterval(60))
     expect("digest: two held", held.count, 2)
