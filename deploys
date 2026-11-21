@@ -384,6 +384,8 @@ if [ -f "$LIB_DIR/digest.sh" ]; then . "$LIB_DIR/digest.sh"; fi
 if [ -f "$LIB_DIR/freeze.sh" ]; then . "$LIB_DIR/freeze.sh"; fi
 # shellcheck source=lib/fixes.sh
 if [ -f "$LIB_DIR/fixes.sh" ]; then . "$LIB_DIR/fixes.sh"; fi
+# shellcheck source=lib/completion.sh
+if [ -f "$LIB_DIR/completion.sh" ]; then . "$LIB_DIR/completion.sh"; fi
 # Signs on this Mac that a team file counts here: read without lib/team.sh, from local files only.
 team_traces() {
   [ -s "$CONFIG_DIR/team-repos" ] && grep -q '/' "$CONFIG_DIR/team-repos" 2>/dev/null && return 0
@@ -3596,100 +3598,9 @@ case "${1:-} ${2:-}" in
     fi ;;
 
   "completion "*)
-    # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
-    # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    # The commands are read from the case labels of this script (the same source as the typo hint), so a new
-    # command is completed the day it exists; the providers and the flags are added.
-    cmds="$( { sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' "$SELF"; printf '%s\n' "${PROVIDERS[@]}" completion --help --version; } | sort -u | paste -sd' ' -)"
-    # The words that follow a command (second place), one line per command: "<command>:<words>".
-    subs_table="autodeploy:allow allowed revoke
-guard:status schedule
-schedule:daily off status
-hooks:install uninstall status
-team:add remove list refresh journal init
-scan:start status list log
-check:start show
-autofix:set-token routine list forget-token prompt status sync schedule
-rules:check
-price:set unset
-budget:set off
-journal:verify export report
-idle:--days --json
-creds:--max-age --json
-certs:--days --json
-secrets:--stdin --json
-plan:--when-green --since --json
-list:--platform --auto --manual --format --json
-ignore:--list --undo --json
-readonly:on off
-config:--refresh
-doctor:--text --fix --json
-freeze:status add remove clear --json
-digest:--days --json --no-savings
-rollback:
-cancel:"
-    verbs_of() {
-      local v="list deploy rollback status cancel autodeploy-off json" x
-      for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
-      grep -q '"keychain":"' <<<"$("${1}_meta")" && v="$v set-key"
-      echo "$v"
-    }
-    zv=""; bv=""
-    for p in "${PROVIDERS[@]}"; do
-      zv="$zv  elif [[ \$words[2] == $p && CURRENT == 3 ]]; then compadd $(verbs_of "$p")"$'\n'
-      bv="$bv  elif [ \$COMP_CWORD -eq 2 ] && [ \"\${COMP_WORDS[1]}\" = $p ]; then COMPREPLY=(\$(compgen -W \"$(verbs_of "$p")\" -- \"\$cur\"))"$'\n'
-    done
-    while IFS=: read -r _c _w; do
-      [ -n "$_w" ] || continue
-      zv="$zv  elif [[ \$words[2] == $_c && CURRENT == 3 ]]; then compadd $_w"$'\n'
-      bv="$bv  elif [ \$COMP_CWORD -eq 2 ] && [ \"\${COMP_WORDS[1]}\" = $_c ]; then COMPREPLY=(\$(compgen -W \"$_w\" -- \"\$cur\"))"$'\n'
-    done <<< "$subs_table"
-    case "${2:-zsh}" in
-      zsh) cat <<ZSH
-_deploys() {
-  local -a names; names=(\${(f)"\$(cat "$CONFIG_DIR/names" 2>/dev/null)"})
-  if (( CURRENT == 2 )); then compadd $cmds
-${zv}  elif [[ \$words[2] == ai && CURRENT == 3 ]]; then compadd explain notes ship ask slow risk set-key forget-key verify model cap status
-  elif [[ \$words[2] == providers && CURRENT == 3 ]]; then compadd enable disable
-  elif [[ \$words[2] == gitlab && CURRENT == 3 ]]; then compadd set-token forget-token
-  elif [[ \$words[2] == completion ]]; then compadd zsh bash fish
-  else compadd -a names; fi
-}
-# compdef exists only after compinit; load it if ~/.zshrc has not.
-(( \$+functions[compdef] )) || { autoload -Uz compinit && compinit; }
-compdef _deploys deploys
-ZSH
-      ;;
-      bash) cat <<BASH
-_deploys() {
-  local cur=\${COMP_WORDS[COMP_CWORD]}
-  if [ \$COMP_CWORD -eq 1 ]; then COMPREPLY=(\$(compgen -W "$cmds" -- "\$cur"))
-${bv}  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = ai ]; then COMPREPLY=(\$(compgen -W "explain notes ship ask slow risk set-key forget-key verify model cap status" -- "\$cur"))
-  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = gitlab ]; then COMPREPLY=(\$(compgen -W "set-token forget-token" -- "\$cur"))
-  else
-    # Matched by hand, not with compgen -W: that expands each word, and a name is data.
-    local n; COMPREPLY=()
-    while IFS= read -r n; do [[ \$n == "\$cur"* ]] && COMPREPLY+=("\$n"); done 2>/dev/null < "$CONFIG_DIR/names"
-  fi
-}
-complete -F _deploys deploys
-BASH
-      ;;
-      fish)
-        # deploys completion fish | source  (or save it as ~/.config/fish/completions/deploys.fish).
-        # Names are read line by line by fish itself: nothing in them is run.
-        echo "complete -c deploys -f"
-        echo "complete -c deploys -n __fish_use_subcommand -a '$cmds'"
-        for p in "${PROVIDERS[@]}"; do echo "complete -c deploys -n '__fish_seen_subcommand_from $p' -a '$(verbs_of "$p")'"; done
-        while IFS=: read -r _c _w; do
-          [ -n "$_w" ] && echo "complete -c deploys -n '__fish_seen_subcommand_from $_c' -a '$_w'"
-        done <<< "$subs_table"
-        echo "complete -c deploys -n '__fish_seen_subcommand_from ai' -a 'explain notes ship ask slow risk set-key forget-key verify model cap status'"
-        echo "complete -c deploys -n '__fish_seen_subcommand_from providers' -a 'enable disable'"
-        echo "complete -c deploys -n '__fish_seen_subcommand_from completion' -a 'zsh bash fish'"
-        printf "complete -c deploys -n 'not __fish_use_subcommand' -a '(cat %s 2>/dev/null)'\n" "$(printf '%q' "$CONFIG_DIR/names")" ;;
-      *) die "zsh, bash or fish" ;;
-    esac ;;
+    # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc (lib/completion.sh).
+    declare -F completion_main >/dev/null || die "lib/completion.sh is not next to deploys."
+    completion_main "${@:2}" ;;
 
   "details "*)
     # Everything about one repo the window shows on demand: the commits between what is live and

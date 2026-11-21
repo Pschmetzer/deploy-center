@@ -198,6 +198,19 @@ for sh in bash zsh fish; do
   expect "completion $sh: doctor --fix" "$(grep -c -- '--fix' <<<"$c")" "1"
 done
 
+# --- completion: lib/completion.sh (round 12 B, items 26-32) ---
+for sh in bash zsh fish; do
+  expect "completion $sh: ai, gitlab, providers come from the one table" "$(cli completion "$sh" | grep -c -e "ai.* -a 'explain notes" -e "words\[2\] == ai" -e '"ai" \]\|= ai \]')" "1"
+done
+cli completion bash > "$tmp/c.bash"; bash -n "$tmp/c.bash"; expect "completion bash: parses (bash -n)" "$?" "0"
+if command -v zsh >/dev/null 2>&1; then cli completion zsh > "$tmp/c.zsh"; zsh -n "$tmp/c.zsh"; expect "completion zsh: parses (zsh -n)" "$?" "0"; fi
+if command -v fish >/dev/null 2>&1; then cli completion fish > "$tmp/c.fish"; fish --no-execute "$tmp/c.fish"; expect "completion fish: parses" "$?" "0"; fi
+odd="$tmp/a b'c"; mkdir -p "$odd"
+out="$(DEPLOYS_CONFIG="$odd" env -u DEPLOYS_LIB bash ./deploys completion bash)"
+printf '%s\n' "$out" > "$tmp/c2.bash"; bash -n "$tmp/c2.bash"; expect "completion bash: a config dir with space and quote still parses" "$?" "0"
+expect "completion: unknown shell is refused" "$(cli completion tcsh >/dev/null 2>&1; echo $?)" "1"
+expect "completion: fallback list has the main commands" "$(SELF=/nonexistent completion_cmds | tr ' ' '\n' | grep -cx -e watch -e verify -e completion)" "3"
+
 # --- helpers in lib/ that had no test of their own ---
 printf 'HTTP/2 429\r\nRetry-After: 7\r\n\r\n' > "$tmp/h1"
 expect "http_retry_after: seconds" "$(http_retry_after "$tmp/h1")" "7"
