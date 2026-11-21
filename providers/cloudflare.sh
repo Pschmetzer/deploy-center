@@ -117,7 +117,7 @@ cf_call() {
     out="$( ( http_call Cloudflare "$method" "$CLOUDFLARE_API$path" "${1:-}" ) )" || exit 1
     [ "$(printf '%s' "$out" | jq -r '.success // false' 2>/dev/null)" = true ] \
       || die "Cloudflare $method $path: $(printf '%s' "$out" | jq -r '[.errors[]? | "\(.code): \(.message)"] | join("; ") | select(. != "")' 2>/dev/null || printf '%s' "$out" | head -c 300)"
-    printf '%s' "$out" | jq '.result'; return
+    printf '%s' "$out" | jq "${CF_JQ:-.result}"; return
   fi
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
   if [ "${1:-}" = -F ] || [ "${1:-}" = --form-string ]; then args+=("$@")
@@ -152,7 +152,7 @@ cf_call() {
     esac
     die "Cloudflare $method $path -> HTTP $code$hint: ${msg:-$(printf '%s' "$out" | head -c 300)}"
   fi
-  printf '%s' "$out" | jq '.result'
+  printf '%s' "$out" | jq "${CF_JQ:-.result}"
 }
 
 # The account: environment, remembered, or the only one the token can see.
@@ -214,10 +214,11 @@ cloudflare_ready() { [ -n "${CLOUDFLARE_API_TOKEN:-}" ] || ( cloudflare_key ) >/
 cloudflare_has() { ( cf_call GET "$(cf_proj "$1")" ) 2>/dev/null | jq -er '.name // empty'; }
 
 cf_projects() {
-  local page=1 all="[]" out pages err again=""
+  local page=1 all="[]" out n total err again="" per="${DEPLOYS_CLOUDFLARE_PER_PAGE:-10}"
+  case "$per" in ""|*[!0-9]*|0) per=10 ;; esac
   err="$(mktemp)"
   while :; do
-    if ! out="$( (cf_call GET "$(cf_proj)?page=$page&per_page=10") 2>"$err")"; then
+    if ! out="$( (CF_JQ='{r:.result, pages:(.result_info.total_pages // null)}' cf_call GET "$(cf_proj)?page=$page&per_page=$per") 2>"$err")"; then
       # A remembered account the token no longer reaches (a token for another account) answers
       # 404 or 403 on the list. When the token sees exactly one other account, that one is taken,
       # once, instead of failing for ever. Otherwise (several accounts, or a token without Pages
@@ -234,10 +235,11 @@ cf_projects() {
       fi
       cat "$err" >&2; rm -f "$err"; return 1
     fi
-    all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$out"))"
-    # The list endpoint pages by 10; a short page is the last.
-    pages="$(echo "$out" | jq 'length')"
-    [ "$pages" -lt 10 ] && break
+    all="$(jq -s '.[0] + .[1].r' <(echo "$all") <(echo "$out"))"
+    # The last page is the one result_info.total_pages names (the API may cap per_page below what was asked, so a
+    # short page is no sign there). Without total_pages: a page with fewer than asked, or an empty one, is the last.
+    total="$(echo "$out" | jq -r '.pages // empty')"; n="$(echo "$out" | jq '.r | length')"
+    if [ -n "$total" ]; then [ "$page" -lt "$total" ] || break; else [ "$n" -ge "$per" ] || break; fi
     page=$((page + 1)); [ "$page" -le 100 ] || break
   done
   rm -f "$err"

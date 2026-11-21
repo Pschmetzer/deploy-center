@@ -31,6 +31,9 @@ if [ -z "$only" ]; then
   step "personal data and file sizes"
   run scripts/check-public.sh
   run scripts/check-size.sh
+  step "bash 3.2 and shellcheck disables"
+  run scripts/check-bash32.sh
+  run scripts/check-disables.sh
   run python3 -I scripts/check-bash32.py
   run python3 -I scripts/check-secrets.py
   step plutil

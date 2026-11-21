@@ -24,7 +24,9 @@ mkdir -p "$tmp/bin" "$FAKE_STATE"
 cat > "$tmp/bin/curl" <<'CURL'
 #!/bin/bash
 m=GET; prev=""; data=""; for a in "$@"; do
-  [ "$prev" = -X ] && m="$a"; [ "$prev" = --data ] && data="$a"; prev="$a"; done
+  [ "$prev" = -X ] && m="$a"; [ "$prev" = --data ] && data="$a"
+  # A body goes in as a file of its own (--data-binary @file), never as --data in the process list.
+  [ "$prev" = --data-binary ] && data="$(cat "${a#@}" 2>/dev/null)"; prev="$a"; done
 url="${*: -1}"
 case " $* " in *" -K - "*) conf="$(cat)" ;; *) conf="" ;; esac
 echo "curl $m $url ARGS[$*] DATA[$data]" >> "$CALLS"

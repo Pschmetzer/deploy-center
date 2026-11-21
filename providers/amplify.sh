@@ -44,6 +44,12 @@ declare -F start_lock >/dev/null || start_lock() {
 # ---------- access ----------
 
 # The profile to pass with --profile, or nothing for the CLI's own choice. Never fails.
+# Run on its own, without deploys: lib/http.sh's helper for how many reads run at once (deploys has the full one).
+declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "${DEPLOYS_PARALLEL:-$1}"; }
+declare -F curl_url_cfg >/dev/null || curl_url_cfg() {  # (lib/http.sh has the same: a URL for `curl -K -`, so a signed link stays out of the process list)
+  case "$1" in *[[:cntrl:]]*) return 1 ;; esac
+  printf 'url = "%s"\n' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
 amp_profile() {
   if [ -n "${DEPLOYS_AMPLIFY_PROFILE:-}" ]; then
     [ "$DEPLOYS_AMPLIFY_PROFILE" = default ] || printf '%s' "$DEPLOYS_AMPLIFY_PROFILE"; return 0
@@ -242,7 +248,7 @@ amplify_json() {
     ( amp_project "$app" > "$tmpd/$n.json" ) &
     pids+=("$!")
     # Only these jobs are waited for (not others of the calling shell).
-    [ $((n % ${DEPLOYS_AMPLIFY_PARALLEL:-4})) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
+    [ $((n % $(DEPLOYS_PARALLEL="${DEPLOYS_AMPLIFY_PARALLEL:-${DEPLOYS_PARALLEL:-}}" parallel_limit 4))) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
   done < <(echo "$apps" | jq -c '.[]')
   # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
   wait ${pids[@]+"${pids[@]}"}
@@ -436,8 +442,9 @@ amplify_logs() {
       [ -n "$url" ] || continue
       : > "$hdr"
       # An empty log answers a range with 416: asked once more without one.
-      if out="$(curl -sSf --connect-timeout 10 --max-time 60 -H "Range: bytes=-$cap" -D "$hdr" "$url" 2>/dev/null)" \
-        || { : > "$hdr"; out="$(curl -sSf --connect-timeout 10 --max-time 60 "$url" 2>/dev/null)"; }; then
+      # The signed URL goes to curl on stdin, not into the process list; https only.
+      if out="$(curl_url_cfg "$url" | curl -K - -sSf --proto =https --proto-redir =https --connect-timeout 10 --max-time 60 -H "Range: bytes=-$cap" -D "$hdr" 2>/dev/null)" \
+        || { : > "$hdr"; out="$(curl_url_cfg "$url" | curl -K - -sSf --proto =https --proto-redir =https --connect-timeout 10 --max-time 60 2>/dev/null)"; }; then
         if tr -d '\r' < "$hdr" | grep -qiE '^content-range: bytes [1-9][0-9]*-'; then out="$(printf '%s\n' "$out" | sed '1d')"; fi
         printf '%s\n' "$out" | awk -v s="$step" '{print s "  " $0}'
       else

@@ -9,7 +9,7 @@
 # Opt-in: it shows up only once a hook is added.
 #
 #   deploys hook add <name> <url|-> [--repo owner/name] [--ref main] [--site https://…]
-#                    [--method POST] [--header 'Name: value'] [--body '{…}']
+#                    [--status-url https://…] [--method POST] [--header 'Name: value'] [--body '{…}']
 #   deploys hook remove <name>
 #   deploys hook list
 #   deploys hook deploy <name>          trigger the hook
@@ -99,12 +99,44 @@ hook_private_host() {
   case "$h" in *.*) return 1 ;; *) return 0 ;; esac
 }
 
+# The addresses a name has, one per line (nothing when there is no resolver or no answer). A seam
+# for the tests.
+hook_resolve() {  # hook_resolve <host>
+  if command -v getent >/dev/null 2>&1; then getent ahosts "$1" 2>/dev/null | awk '{ print $1 }' | sort -u
+  elif command -v dscacheutil >/dev/null 2>&1; then dscacheutil -q host -a name "$1" 2>/dev/null | awk '/^ip(v6)?_address:/ { print $2 }' | sort -u
+  fi
+}
+
+# For an https URL with a name in it: looks the name up, dies when an address is private or local
+# (a name like 127.0.0.1.nip.io, or one an attacker's DNS turns around later), and prints the curl
+# config line `resolve = "host:port:address"` that makes curl use the address that was checked
+# (no second lookup that could answer differently: DNS rebinding). Nothing for an address in the URL.
+hook_pin() {  # hook_pin <url>
+  local u="$1" a h port=443 addrs ip pick=""
+  case "$u" in https://*) ;; *) return 0 ;; esac
+  a="${u#*://}"; a="${a%%[/?#]*}"
+  case "$a" in \[*\]*) return 0 ;; esac
+  h="${a%%:*}"; [ "$h" = "$a" ] || port="${a##*:}"
+  case "$port" in ""|*[!0-9]*) return 0 ;; esac
+  [[ "$h" =~ ^[0-9.]+$ ]] && return 0
+  addrs="$(hook_resolve "$h")"; [ -n "$addrs" ] || return 0
+  for ip in $addrs; do
+    if [ -z "${HOOK_ALLOW_PRIVATE:-}" ] && hook_private_host "$ip"; then
+      die "The hook address $h points at a private or local address ($ip). Use --allow-private (or HOOK_ALLOW_PRIVATE=1) if that is meant."
+    fi
+    case "$ip" in *:*) [ -n "$pick" ] || pick="[$ip]" ;; *) case "$pick" in ""|"["*) pick="$ip" ;; esac ;; esac
+  done
+  printf 'resolve = "%s:%s:%s"\n' "$h" "$port" "$pick"
+}
+
 hook_check_url() {
   local u="$1" a h
   # The host exactly, not a prefix: http://localhost.example.com is someone else's machine.
   # No user@ in the address at all: http://localhost:1@evil.com is evil.com to curl.
   a="${u#*://}"; a="${a%%[/?#]*}"
   h="$a"; case "$h" in \[*\]*) h="${h%%]*}]" ;; *) h="${h%%:*}" ;; esac
+  # No user@ at all, http or https: https://evil.com@127.0.0.1/x goes to 127.0.0.1, whatever stands in front.
+  case "$u" in http://*|https://*) case "$a" in *@*) die "The hook URL has a user name in front of the host (user@host): not allowed" ;; esac ;; esac
   case "$u" in https://*) ;;
     # Plain http only to this Mac: the host exactly, with or without a port.
     http://*) case "$a" in *@*) h="" ;; esac
@@ -116,6 +148,7 @@ hook_check_url() {
   fi ;; esac
   case "$u" in *[[:space:]\"\'\\]*) die "The hook URL contains spaces, quotes or backslashes";; esac
   [ "${#u}" -le 2048 ] || die "The hook URL is longer than 2048 characters"
+  hook_pin "$u" >/dev/null
 }
 
 hook_url_save() {
@@ -258,12 +291,16 @@ hook_deploy_json() {
   method="$(echo "$e" | jq -r '.method // "POST"')"
   body="$(echo "$e" | jq -r '.body // empty')"
   repo="$(echo "$e" | jq -r '.repo // empty')"; ref="$(echo "$e" | jq -r '.ref // "main"')"
-  cfg="$(mktemp)"; out="$(mktemp)"
+  cfg="$(umask 077; mktemp)"; out="$(umask 077; mktemp)"
+  # The name is looked up here, checked, and curl is told which address to use (see hook_pin).
+  local pin lock=""
+  pin="$(hook_pin "$u")" || { rm -f "$cfg" "$out"; exit 1; }
   # The URL and the headers go to curl on stdin (a config), never on its command line.
   {
     printf 'url = %s\nrequest = %s\n' "$(hook_cq "$u")" "$(hook_cq "$method")"
     printf 'silent\nshow-error\nmax-time = 30\nproto = "=https,http"\noutput = %s\nwrite-out = "%%{http_code}"\n' "$(hook_cq "$out")"
     printf 'header = "User-Agent: deploy-center"\n'
+    [ -z "$pin" ] || printf '%s\n' "$pin"
     [ -z "$body" ] || printf 'header = "Content-Type: application/json"\ndata = %s\n' "$(hook_cq "$body")"
   } > "$cfg"
   headers="$(echo "$e" | jq -r '(.headers // {}) | to_entries[] | "\(.key)\t\(.value)"')"
@@ -279,12 +316,15 @@ hook_deploy_json() {
   if declare -F start_lock >/dev/null; then
     # In a subshell: start_lock's die would end the script here and leave the config, which
     # holds the secret URL, in the temp folder.
-    ( start_lock "hook-$n" ) >/dev/null || { rm -f "$cfg" "$out"; exit 1; }
+    lock="$( start_lock "hook-$n" )" || { rm -f "$cfg" "$out"; exit 1; }
   fi
   code="$(curl -K - < "$cfg" 2>"$out.err")" || rc=$?
   local said=""; said="$(head -c 200 "$out" 2>/dev/null | tr '\n\r\t' '   ')" || said=""
   rm -f "$cfg" "$out"
   now="$(date +%s)"
+  # Nothing can have started when the call never left (no such host, no connection: curl 6, 7) or the host
+  # refused it (4xx): the lock for a second try is not kept for a minute then. After a 5xx or a timeout it is.
+  case "$rc:$code" in 6:*|7:*|0:4[0-9][0-9]) [ -z "$lock" ] || rm -f "$lock" ;; esac
   if [ "$rc" = 0 ] && [[ "$code" =~ ^2[0-9][0-9]$ ]]; then
     rec="$(jq -nc --argjson sha "$sha" --argjson msg "$msg" --argjson at "$now" --arg c "$code" '{ok:true, http:($c|tonumber), at:$at, sha:$sha, msg:$msg}')"
     hook_record "$n" "$rec"; rm -f "$out.err"
@@ -308,8 +348,27 @@ hook_deploy_json() {
 # The contract's line: deployId<TAB>phase<TAB>state. The id is name@time of the last trigger,
 # "none" when it was never triggered. Always final ("ready" after a 2xx, never "queued"):
 # `deploys watch` waits on this line, and no later answer will ever tell it more.
+# With a statusUrl: the phase it reports now (ready, building, failed), or nothing when it does not
+# answer or says something else. The URL goes to curl on stdin, the address is the one that was checked.
+hook_remote_phase() {  # hook_remote_phase <statusUrl>
+  local u="$1" pin body v
+  pin="$(hook_pin "$u" 2>/dev/null)" || return 0
+  body="$({ printf 'url = %s\n' "$(hook_cq "$u")"; [ -z "$pin" ] || printf '%s\n' "$pin"
+    printf 'silent\nmax-time = 20\nproto = "=https,http"\nheader = "Accept: application/json"\n'; } | curl -K - 2>/dev/null)" || return 0
+  v="$(printf '%s' "$body" | jq -r '(.phase // .status // .state // .deployment.status // "") | tostring | ascii_downcase' 2>/dev/null)" || return 0
+  case "$v" in
+    ready|success|succeeded|live|deployed|completed|passed|ok) echo ready ;;
+    building|in_progress|running|queued|pending|deploying|started|initializing) echo building ;;
+    failed|failure|error|errored|canceled|cancelled) echo failed ;;
+  esac
+}
 hook_status() {
-  local n="${1:-}"; hook_known "$n" || die "No hook named \"$n\""
+  local n="${1:-}" su ph; hook_known "$n" || die "No hook named \"$n\""
+  su="$(hook_entry "$n" | jq -r '.statusUrl // empty')"
+  if [ -n "$su" ] && ph="$(hook_remote_phase "$su")" && [ -n "$ph" ]; then
+    hook_state | jq -r --arg n "$n" --arg p "$ph" '(.[$n] // null) as $s | ["\($n)@\($s.at // 0)", $p, "reported by the status address"] | @tsv'
+    return 0
+  fi
   hook_state | jq -r --arg n "$n" '(.[$n] // null) as $s
     | if $s == null then ["none", "", "never triggered"]
       else ["\($n)@\($s.at)", (if $s.ok then "ready" else "failed" end), (if $s.ok then "triggered" else "trigger failed" end)] end | @tsv'
@@ -362,14 +421,15 @@ hook_doctor() {
 # ---------- commands ----------
 
 hook_add() {
-  local n="${1:-}" u="${2:-}" repo="" ref="" site="" method="" body="" headers='{}' h k v
-  [ -n "$n" ] && [ -n "$u" ] || die "Usage: deploys hook add <name> <url|-> [--repo owner/name] [--ref main] [--site https://…] [--method POST] [--header 'Name: value'] [--body '{…}'] [--allow-private]"
+  local n="${1:-}" u="${2:-}" repo="" ref="" site="" status_url="" method="" body="" headers='{}' h k v
+  [ -n "$n" ] && [ -n "$u" ] || die "Usage: deploys hook add <name> <url|-> [--repo owner/name] [--ref main] [--site https://…] [--status-url https://…] [--method POST] [--header 'Name: value'] [--body '{…}'] [--allow-private]"
   hook_valid_name "$n"; shift 2
   while [ $# -gt 0 ]; do
     case "$1" in
       --repo) repo="${2:?--repo owner/name}"; shift;;
       --ref) ref="${2:?--ref <branch>}"; shift;;
       --site) site="${2:?--site https://…}"; shift;;
+      --status-url) status_url="${2:?--status-url https://…}"; shift;;
       --allow-private) HOOK_ALLOW_PRIVATE=1;;
       --method) method="$(echo "${2:?--method POST}" | tr '[:lower:]' '[:upper:]')"; shift;;
       --body) body="${2:?--body '{…}'}"; shift;;
@@ -389,6 +449,8 @@ hook_add() {
   case "$method" in ""|POST|GET|PUT|PATCH) ;; *) die "--method is POST, GET, PUT or PATCH";; esac
   [ -z "$repo" ] || [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "--repo is owner/name"
   [ -z "$site" ] || [[ "$site" =~ ^https?://[^[:space:]]+$ ]] || die "--site is an http(s) address"
+  # statusUrl: an address that answers JSON with the state of the last build (see hook_remote_phase).
+  [ -z "$status_url" ] || hook_check_url "$status_url"
   [ -z "$body" ] || echo "$body" | jq -e . >/dev/null 2>&1 || die "--body is JSON"
   # "-" reads the URL from stdin: it then stays out of the shell history.
   if [ "$u" = - ]; then IFS= read -r u || true; [ -n "$u" ] || die "No URL on stdin"; fi
@@ -399,7 +461,7 @@ hook_add() {
   local old existed=0 kept
   old="$(hook_entry "$n")"; [ -n "$old" ] && existed=1; [ -n "$old" ] || old='{}'
   hook_url_save "$n" "$u"
-  hook_list_raw | jq --arg n "$n" --arg m "$method" --argjson h "$headers" --arg b "$body" --arg r "$repo" --arg f "$ref" --arg s "$site" --argjson o "$old" '
+  hook_list_raw | jq --arg n "$n" --arg m "$method" --argjson h "$headers" --arg b "$body" --arg r "$repo" --arg f "$ref" --arg s "$site" --arg su "$status_url" --argjson o "$old" '
       (($o.headers // {}) + $h) as $hs
       | map(select(.name != $n)) + [{name:$n, method:(if $m != "" then $m else ($o.method // "POST") end)}
         + (if ($hs | length) > 0 then {headers:$hs} else {} end)
@@ -407,11 +469,13 @@ hook_add() {
         + (if $r != "" then {repo:$r, ref:(if $f != "" then $f else ($o.ref // "main") end)}
            elif $o.repo then {repo:$o.repo, ref:(if $f != "" then $f else ($o.ref // "main") end)}
            elif $f != "" then {ref:$f} elif $o.ref then {ref:$o.ref} else {} end)
-        + (if $s != "" then {site:$s} elif $o.site then {site:$o.site} else {} end)]
+        + (if $s != "" then {site:$s} elif $o.site then {site:$o.site} else {} end)
+        + (if $su != "" then {statusUrl:$su} elif $o.statusUrl then {statusUrl:$o.statusUrl} else {} end)]
       | sort_by(.name)' | hook_write "$(hook_config)"
   if [ "$existed" = 1 ]; then
-    kept="$(echo "$old" | jq -r --arg m "$method" --argjson h "$headers" --arg b "$body" --arg r "$repo" --arg f "$ref" --arg s "$site" '
-      [ (if $m == "" and .method then "method \(.method)" else empty end),
+    kept="$(echo "$old" | jq -r --arg m "$method" --argjson h "$headers" --arg b "$body" --arg r "$repo" --arg f "$ref" --arg s "$site" --arg su "$status_url" '
+      [ (if $su == "" and .statusUrl then "statusUrl \(.statusUrl)" else empty end),
+        (if $m == "" and .method then "method \(.method)" else empty end),
         (((.headers // {}) | keys) - ($h | keys) | select(length > 0) | "headers \(join(", "))"),
         (if $b == "" and .body then "body" else empty end),
         (if $r == "" and .repo then "repo \(.repo)" else empty end),

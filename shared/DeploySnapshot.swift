@@ -36,17 +36,17 @@ struct DeploySnapshot: Codable, Equatable {
     var version = Self.version
     var at: Date
     let demo: Bool
-    let waitingProjects: Int
-    let waitingCommits: Int
-    let waitingPRs: Int
-    let building: Int
-    let failed: Int
+    var waitingProjects: Int
+    var waitingCommits: Int
+    var waitingPRs: Int
+    var building: Int
+    var failed: Int
     /// The counts of each platform (all rows, not only the ten in `projects`), so a widget can
     /// show one platform. Nil from older apps.
     var byPlatform: [PlatformCount]? = nil
     let saving: Saving?
     /// Building and failed first, then waiting by the number of PRs; at most ten.
-    let projects: [Project]
+    var projects: [Project]
     /// "en" or "de": the language the Mac app shows, so its widgets match it. Nil from older apps.
     var language: String? = nil
     /// false: the iOS app has no account yet, so "nothing waits" would not be true. Nil from the Mac.
@@ -88,6 +88,33 @@ struct DeploySnapshot: Codable, Equatable {
     private static func isGerman(_ code: String) -> Bool { code.hasPrefix("de") }
     /// A text in the language this snapshot was written in.
     func text(_ en: String, _ de: String) -> String { Self.localized(language, en, de) }
+
+    /// The counts of each platform from all rows (not only the ten shown).
+    static func platformCounts(_ rows: [Project]) -> [PlatformCount] {
+        Set(rows.map(\.platform)).sorted().map { p in
+            let mine = rows.filter { $0.platform == p }
+            return PlatformCount(platform: p, waiting: mine.filter { $0.status == .waiting }.count,
+                                 prs: mine.filter { $0.status == .waiting }.map(\.prs).reduce(0, +),
+                                 building: mine.filter { $0.status == .building }.count, failed: mine.filter { $0.status == .failed }.count)
+        }
+    }
+
+    /// A copy for the configurable widget: one platform (nil: all) and/or only failed deploys.
+    /// The numbers come from the platform split when the snapshot has one.
+    func filtered(platform: String?, onlyFailed: Bool) -> DeploySnapshot {
+        var s = self
+        s.projects = projects.filter { (platform == nil || $0.platform == platform) && (!onlyFailed || $0.status == .failed) }
+        if let platform {
+            let c = byPlatform?.first { $0.platform == platform }
+            s.waitingProjects = c?.waiting ?? projects.filter { $0.platform == platform && $0.status == .waiting }.count
+            s.waitingPRs = c?.prs ?? projects.filter { $0.platform == platform && $0.status == .waiting }.map(\.prs).reduce(0, +)
+            s.building = c?.building ?? projects.filter { $0.platform == platform && $0.status == .building }.count
+            s.failed = c?.failed ?? projects.filter { $0.platform == platform && $0.status == .failed }.count
+            s.waitingCommits = projects.filter { $0.platform == platform && $0.status == .waiting }.map(\.commits).reduce(0, +)
+        }
+        if onlyFailed { s.waitingProjects = 0; s.waitingPRs = 0; s.waitingCommits = 0; s.building = 0 }
+        return s
+    }
 
     /// Equal apart from the time it was written: nothing a widget shows has changed.
     func sameShown(as o: DeploySnapshot) -> Bool {

@@ -236,7 +236,10 @@ gitlab_pending_of() {
   local bare nums
   bare="$(jq -r '.value.bare | if length <= 10 then .[] else empty end' "$f")"
   nums="$(for s in $bare; do gitlab_mrs_of "$host" "$id" "$s"; done | jq -sc '.')"
-  jq -c --argjson more "${nums:-[]}" '.value.prs = ((.value.nums + $more) | unique | length) | del(.value.bare, .value.nums)' "$f" > "$f.t" && mv "$f.t" "$f"
+  # --slurpfile, not --argjson: a long list is not put into one argument.
+  printf '%s' "${nums:-[]}" > "$f.n"
+  jq -c --slurpfile more "$f.n" '.value.prs = ((.value.nums + $more[0]) | unique | length) | del(.value.bare, .value.nums)' "$f" > "$f.t" && mv "$f.t" "$f"
+  rm -f "$f.n"
 }
 
 # gitlab_mrs_of <host> <project id> <sha>: the iids of the merged MRs a commit came from, one a
@@ -258,15 +261,17 @@ gitlab_mrs_of() {
 # Open merge requests: all, drafts, bots. The same record open_prs_of writes. Up to five pages
 # of 100 (a page with fewer is the last); more than 500 count as 500.
 gitlab_open_prs_of() {
-  local repo="$1" out="$2" host id page=1 chunk all="[]"
+  local repo="$1" out="$2" host id page=1 chunk all=""
   read -r host id < <(gitlab_project "$repo")
   while [ "$page" -le 5 ]; do
     chunk="$(gitlab_api "$host" "projects/$id/merge_requests?state=opened&per_page=100&page=$page" 2>/dev/null)" || return 0
     printf '%s' "$chunk" | jq -e 'type == "array"' >/dev/null 2>&1 || return 0
-    all="$(jq -c -s '.[0] + .[1]' <(printf '%s' "$all") <(printf '%s' "$chunk"))"
+    # The pages are kept one to a line and added once at the end (jq -s add): adding page by page read the whole list again each time.
+    all="$all"$'\n'"$(printf '%s' "$chunk" | jq -c .)"
     [ "$(printf '%s' "$chunk" | jq 'length')" -ge 100 ] || break
     page=$((page + 1))
   done
+  all="$(printf '%s\n' "$all" | jq -s -c 'map(select(type == "array")) | add // []')"
   printf '%s' "$all" \
     | jq -c --arg k "$repo" "$GITLAB_JQ"'{key:$k, value:{all:length, partial:(length >= 500),
         drafts:(map(select(.draft // .work_in_progress // false)) | length), bots:(map(select(.author | glbot)) | length)}}' \
@@ -365,6 +370,6 @@ gitlab_logged_in() {
 # The GitLab user, for `deploys where`.
 gitlab_user() { gitlab_api "$(gitlab_host)" user 2>/dev/null | jq -r '.username // empty' 2>/dev/null; }
 
-export -f gitlab_host githost_cache_name githost_split githost_of githost_head_of githost_pending_of githost_open_prs_of \
+par_fn gitlab_host githost_cache_name githost_split githost_of githost_head_of githost_pending_of githost_open_prs_of \
   gitlab_api gitlab_enc gitlab_project gitlab_head_of gitlab_pending_of gitlab_open_prs_of gitlab_mrs_of gitlab_token
 export GITLAB_KEYCHAIN

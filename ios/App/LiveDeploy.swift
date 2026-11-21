@@ -8,11 +8,19 @@ import Foundation
 final class LiveDeploy {
     private var activity: Activity<DeployActivity>?
     private var last: String?
+    private var lastUpdate = Date.distantPast
+    /// The same words are sent again after this long, so the activity does not go stale while the app follows it.
+    static let refreshEvery: TimeInterval = 60
 
     static func start(_ p: PhoneProject, rollback: Bool) -> LiveDeploy {
         let l = LiveDeploy()
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return l }
-        let attrs = DeployActivity(project: p.name, platform: p.provider.rawValue, started: Date(), rollback: rollback, german: appIsGerman, key: p.key)
+        // After a cold start of a followed deploy (FollowedRuns) the activity on the lock screen is picked up again, not doubled (IDEEN-12 C21).
+        if let old = Activity<DeployActivity>.activities.first(where: { $0.attributes.key == p.key && $0.activityState == .active }) {
+            l.activity = old
+            return l
+        }
+        let attrs = DeployActivity(project: p.name, platform: p.provider.rawValue, started: Date(), rollback: rollback, german: appIsGerman, key: p.key, domain: p.domain)
         l.activity = try? Activity.request(attributes: attrs, content: content(.running, PhoneProject.stateWord("queued")), pushType: nil)
         return l
     }
@@ -20,7 +28,16 @@ final class LiveDeploy {
     /// At launch nothing is followed yet: an activity that is still on the lock screen belongs to a run that
     /// ended with the app (killed, or out of background time) and would say "Building" for hours. Ended now.
     static func endOrphans() {
-        for a in Activity<DeployActivity>.activities {
+        // A run the app was following when it was killed is picked up again at launch (PhoneStore.resumeFollowed): its activity stays.
+        let keep = Set(FollowedRuns.fresh().map(\.key))
+        for a in Activity<DeployActivity>.activities where !(a.attributes.key.map(keep.contains) ?? false) {
+            Task { await a.end(content(.unknown, L("No longer followed", "Wird nicht mehr verfolgt"), final: true), dismissalPolicy: .immediate) }
+        }
+    }
+
+    /// Ends the activity of one run that is no longer followed.
+    static func end(key: String) {
+        for a in Activity<DeployActivity>.activities where a.attributes.key == key {
             Task { await a.end(content(.unknown, L("No longer followed", "Wird nicht mehr verfolgt"), final: true), dismissalPolicy: .immediate) }
         }
     }
@@ -32,16 +49,20 @@ final class LiveDeploy {
         }
     }
 
-    private static func content(_ phase: DeployActivity.ContentState.Phase, _ words: String, final: Bool = false) -> ActivityContent<DeployActivity.ContentState> {
-        ActivityContent(state: .init(phase: phase, words: words, updated: Date()),
+    private static func content(_ phase: DeployActivity.ContentState.Phase, _ words: String, final: Bool = false,
+                                expected: TimeInterval? = nil) -> ActivityContent<DeployActivity.ContentState> {
+        ActivityContent(state: .init(phase: phase, words: words, updated: Date(), expected: expected),
                         staleDate: final ? nil : Date().addingTimeInterval(DeployActivity.staleAfter))
     }
 
     /// A new state, or the same one again so that it does not go stale while the app follows it.
-    func update(_ words: String) {
+    func update(_ words: String, expected: TimeInterval? = nil) {
         guard let a = activity else { return }
-        last = words
-        Task { await a.update(Self.content(.running, words)) }
+        // Not on every poll: a changed text, or the minute's refresh (IDEEN-12 C5).
+        let now = Date()
+        guard words != last || now.timeIntervalSince(lastUpdate) >= Self.refreshEvery else { return }
+        last = words; lastUpdate = now
+        Task { await a.update(Self.content(.running, words, expected: expected)) }
     }
 
     /// The end: shown for a quarter of an hour on the lock screen, then gone.

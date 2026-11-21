@@ -20,7 +20,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --out) [ $# -ge 2 ] || die "--out needs a folder"; out="$(abs "$2")"; shift 2 ;;
     --ref) [ $# -ge 2 ] || die "--ref needs a commit"; ref="$2"; shift 2 ;;
-    -h|--help) sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,/^[^#]/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     -*) die "unknown option: $1" ;;
     *) f="$(abs "$1")"; [ -f "$f" ] || die "no file $1"; extra+=("$f"); shift ;;
   esac

@@ -116,9 +116,12 @@ unset DEPLOYS_JOURNAL
 # --- completion: commands come from the case labels, and the second word is completed for the multi-command ones ---
 cli() { env -u DEPLOYS_LIB bash ./deploys "$@"; }
 comp="$(cli completion bash)"
-expect "completion: a command of the case labels (rollback) is offered" "$(grep 'COMP_CWORD -eq 1 \]; then' <<<"$comp" | grep -c -w rollback)" "1"
-expect "completion bash: schedule completes daily off status" "$(grep -c 'COMP_WORDS\[1\]}" = schedule \]; then COMPREPLY=(\$(compgen -W "daily off status"' <<<"$comp")" "1"
-expect "completion zsh: autofix completes its subcommands" "$(cli completion zsh | grep -c 'words\[2\] == autofix && CURRENT == 3 \]\]; then compadd set-token routine')" "1"
+# The bash completion is run, not read: what a word completes to is what counts.
+bcomp() { bash -c 'eval "$1"; shift; COMP_WORDS=("$@"); COMP_CWORD=$(( $# - 1 )); _deploys; echo "${COMPREPLY[*]}"' _ "$comp" "$@"; }
+expect "completion: a command of the case labels (rollback) is offered" "$(bcomp deploys roll)" "rollback"
+expect "completion bash: schedule completes daily off status" "$(bcomp deploys schedule '')" "daily off status"
+expect "completion bash: after --json the command word is still found" "$(bcomp deploys --json schedule '')" "daily off status"
+expect "completion zsh: autofix completes its subcommands" "$(cli completion zsh | grep -c -F 'cmd == autofix && $pos == 3 ]]; then compadd -- set-token routine')" "1"
 expect "completion fish: hooks completes install uninstall status" "$(cli completion fish | grep -c "seen_subcommand_from hooks' -a 'install uninstall status'")" "1"
 
 echo
