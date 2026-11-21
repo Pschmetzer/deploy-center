@@ -344,7 +344,7 @@ struct CommandPalette: View {
     private func row(_ cmd: PaletteCommand, selected: Bool) -> some View {
         Button { run(cmd) } label: {
             HStack(spacing: 10) {
-                Image(systemName: cmd.symbol).frame(width: 18).foregroundStyle(selected ? Color.white : Color.secondary)
+                Image(systemName: cmd.symbol).frame(width: 18).foregroundStyle(selected ? Color.white : Color.secondary).accessibilityHidden(true)
                 Text(cmd.title).lineLimit(1)
                 if case .project(let v, _) = cmd.kind, v.asks {
                     Text(L("asks first", "fragt vorher")).font(.caption2)

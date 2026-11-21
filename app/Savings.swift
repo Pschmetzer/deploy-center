@@ -447,7 +447,7 @@ struct SavingsEntry: View {
                 .help(collapsed ? L("Show the savings line", "Ersparnis-Zeile zeigen") : L("Fold the savings line", "Ersparnis-Zeile einklappen"))
                 .accessibilityLabel(collapsed ? L("Show the savings line", "Ersparnis-Zeile zeigen") : L("Fold the savings line", "Ersparnis-Zeile einklappen"))
                 .accessibilityValue(collapsed ? L("folded", "eingeklappt") : L("shown", "sichtbar"))
-            Image(systemName: icon).foregroundStyle(neutral ? Color.secondary : Color.good)
+            Image(systemName: icon).foregroundStyle(neutral ? Color.secondary : Color.good).accessibilityHidden(true)
             if collapsed {
                 Text(L("Savings", "Ersparnis")).font(.callout).foregroundStyle(.secondary)
                 Spacer()
@@ -636,7 +636,7 @@ struct SimulatorView: View {
                 .font(.caption).foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 28) {
                 headline(L("Auto-deploy would cost", "Auto-Deploy würde kosten"), s.autoMonth, color: .red)
-                Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                Image(systemName: "arrow.right").foregroundStyle(.secondary).accessibilityHidden(true)
                 headline(L("Deploying once a day", "Einmal am Tag deployen"), s.dailyMonth, color: Color.good)
             }
             if let d = s.savingMonth.usd, d > 0 {

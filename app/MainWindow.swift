@@ -1342,7 +1342,7 @@ struct ContentView: View {
         } else if !showsAll && platform == nil {
             // Switched on in Settings, but this version of the app cannot list it yet.
             VStack(spacing: 8) {
-                Image(systemName: "hourglass").font(.system(size: 34)).foregroundStyle(.secondary)
+                Image(systemName: "hourglass").font(.system(size: 34)).foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(L("\(currentLabel) is coming soon", "\(currentLabel) kommt bald")).font(.headline)
                 Text(L("This version of Deploy Center cannot list \(currentLabel) projects yet.",
                        "Diese Version von Deploy Center kann \(currentLabel)-Projekte noch nicht anzeigen."))
@@ -1365,7 +1365,7 @@ struct ContentView: View {
             RenderKeySetup(store: store)
         } else if let p = platform, errorFillsWindow(p), let err = store.lastLoadError[p]?.message ?? store.loadError[p] {
             VStack(spacing: 10) {
-                Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.orange).accessibilityHidden(true)
                 Text(L("Could not load \(p.rawValue)", "\(p.rawValue) konnte nicht geladen werden")).font(.headline)
                 Text(Demo.scrub(err, items: allItems)).font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).textSelection(.enabled)
                 if store.loading.contains(p) { ProgressView().controlSize(.small) }
@@ -1381,7 +1381,7 @@ struct ContentView: View {
             let hiddenHits = appliedSearch.isEmpty ? 0 : inScope.filter { store.isHidden($0)
                 && Row.matches(Demo.on ? Demo.mask($0.name) : $0.name, SearchQuery(appliedSearch).text) }.count
             VStack(spacing: 8) {
-                Image(systemName: !appliedSearch.isEmpty ? "magnifyingglass" : elsewhere.isEmpty ? "checkmark.seal.fill" : "checkmark.circle").font(.system(size: 34))
+                Image(systemName: !appliedSearch.isEmpty ? "magnifyingglass" : elsewhere.isEmpty ? "checkmark.seal.fill" : "checkmark.circle").font(.system(size: 34)).accessibilityHidden(true)
                     .foregroundStyle(appliedSearch.isEmpty && elsewhere.isEmpty ? Color.good : .secondary)
                 Text(!appliedSearch.isEmpty ? L("Nothing matches “\(appliedSearch)”", "Nichts passt zu „\(appliedSearch)“")
                      : elsewhere.isEmpty ? L("Everything is live", "Alles ist live")
@@ -1408,7 +1408,7 @@ struct ContentView: View {
         } else if visible.isEmpty {
             let hiddenHere = scopes.flatMap { store.items[$0] ?? [] }.filter { store.isHidden($0) }.count
             VStack(spacing: 8) {
-                Image(systemName: hiddenHere > 0 ? "eye.slash" : "tray").font(.system(size: 34)).foregroundStyle(.secondary)
+                Image(systemName: hiddenHere > 0 ? "eye.slash" : "tray").font(.system(size: 34)).foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(hiddenHere > 0 ? L("All projects here are hidden", "Alle Projekte hier sind ausgeblendet") : L("No projects here", "Keine Projekte hier"))
                     .font(.headline)
                 Text(hiddenHere > 0
