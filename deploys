@@ -386,6 +386,8 @@ if [ -f "$LIB_DIR/freeze.sh" ]; then . "$LIB_DIR/freeze.sh"; fi
 if [ -f "$LIB_DIR/fixes.sh" ]; then . "$LIB_DIR/fixes.sh"; fi
 # shellcheck source=lib/completion.sh
 if [ -f "$LIB_DIR/completion.sh" ]; then . "$LIB_DIR/completion.sh"; fi
+# shellcheck source=lib/watch.sh
+if [ -f "$LIB_DIR/watch.sh" ]; then . "$LIB_DIR/watch.sh"; fi
 # Signs on this Mac that a team file counts here: read without lib/team.sh, from local files only.
 team_traces() {
   [ -s "$CONFIG_DIR/team-repos" ] && grep -q '/' "$CONFIG_DIR/team-repos" 2>/dev/null && return 0
@@ -3385,85 +3387,9 @@ case "${1:-} ${2:-}" in
     exit "$rc" ;;
 
   "watch "*)
-    # watch <project> [<deploy id>] [--preview]
-    # Follow one deploy until it is live or failed: the given one, or the newest (production, or
-    # any target with --preview). If the newest is already finished, say so instead of "done".
-    # Exit 0 live, 1 failed, 3 the platform could not be asked (or its answer not read) five times
-    # in a row, 4 --timeout passed before it finished (it may still go live; default: no limit).
-    p="${2:?Usage: deploys watch <project> [<deploy id>] [--preview] [--timeout 30m]}"; did=""; pv=""; maxw=""
-    # watch a --and b --and c: each followed at the same time, every line starting with its project; the exit code is
-    # 1 if any failed, else 4 if any timed out, else 3 if any could not be asked, else 0.
-    case " $* " in
-      *" --and "*)
-        wnames=("$p"); wshared=(); set -- "${@:3}"
-        while [ $# -gt 0 ]; do
-          case "$1" in
-            --and) [ -n "${2:-}" ] || die "--and takes a project name"; case "$2" in -*) die "--and takes a project name";; esac; wnames+=("$2"); shift ;;
-            *) wshared+=("$1") ;;
-          esac; shift
-        done
-        # A deploy id belongs to one project: handing it to every project would watch the wrong (or no) deploy.
-        wprev=""
-        for wa in ${wshared[@]+"${wshared[@]}"}; do
-          case "$wa" in -*) ;; *) [ "$wprev" = --timeout ] || die "A deploy id belongs to one project; with --and, watch the newest deploy of each (drop \"$wa\")." ;; esac
-          wprev="$wa"
-        done
-        wd="$(mktemp -d)"; wi=0
-        for wn in "${wnames[@]}"; do
-          wi=$((wi + 1))
-          ( "$SELF" watch "$wn" ${wshared[@]+"${wshared[@]}"} 2>&1; echo $? > "$wd/$wi" ) | WNAME="$wn" perl -pe 'BEGIN { $| = 1 } s/^/[$ENV{WNAME}] /' &
-        done
-        wait
-        wrc=0
-        for ((wi = 1; wi <= ${#wnames[@]}; wi++)); do
-          c="$(cat "$wd/$wi" 2>/dev/null || echo 3)"
-          case "$c" in 0) ;; 1) wrc=1 ;; 4) [ "$wrc" = 1 ] || wrc=4 ;; *) [ "$wrc" = 1 ] || [ "$wrc" = 4 ] || wrc=3 ;; esac
-        done
-        rm -rf "$wd"; exit "$wrc" ;;
-    esac
-    set -- "${@:3}"
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --preview) pv=1 ;;
-        --timeout) maxw="$(duration_s "${2:-}")" || die "--timeout takes a time: 90s, 30m or 2h"; shift ;;
-        -*) die "Unknown option $1. Usage: deploys watch <project> [<deploy id>] [--preview] [--timeout 30m]" ;;
-        *) did="$1" ;;
-      esac; shift
-    done
-    resolve "$p"; plat="$PLAT"
-    first=1; misses=0; waited=0; t0=$SECONDS; poll=6
-    while :; do
-      if [ -n "$maxw" ] && [ "$waited" -ge "$maxw" ]; then
-        echo "${ERED}Error:${EPLAIN} $p has not finished after $(watch_took "$waited") (--timeout); it may still go live: deploys watch $p${did:+ $did}" >&2
-        exit 4
-      fi
-      if [ -n "$did" ]; then raw="$("${plat}_status" "$PID" "$did" 2>/dev/null)" || raw=""
-      else raw="$("${plat}_latest" "$PID" ${pv:+--preview} 2>/dev/null)" || raw=""; fi
-      s="$(watch_line "$raw")"
-      if [ -z "$s" ]; then
-        # A network blip is not a failed deploy: try again, and give up only after five in a row.
-        # An answer whose phase cannot be read counts the same: it must never mean "wait for ever".
-        misses=$((misses + 1))
-        if [ -n "$raw" ]; then printf '%s  (could not read the answer of %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2
-        else printf '%s  (could not ask %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2; fi
-        [ "$misses" -lt 5 ] || { echo "Error: ${ERED}could not reach $plat; the deploy itself may be fine${EPLAIN}" >&2; exit 3; }
-        sleep "$poll"; waited=$((waited + poll)); [ $((SECONDS - t0)) -le "$waited" ] || waited=$((SECONDS - t0)); [ "$waited" -lt 120 ] || poll=15; continue
-      fi
-      misses=0; IFS=$'\t' read -r id ph st <<<"$s"
-      [ "$id" != "none" ] || die "No deploy of $p found"
-      if [ "$first" = 1 ] && [ -z "$did" ] && watch_final "$ph"; then
-        echo "Nothing is building for $p. The newest deploy ($id) is $st."
-        case "$ph" in ready) exit 0;; *) exit 1;; esac
-      fi
-      first=0
-      # The time since watch began, once there is some.
-      printf '%s  %s%s\n' "$(date +%H:%M:%S)" "$st" "$([ "$waited" = 0 ] || echo "  ($(watch_took "$waited"))")"
-      case "$ph" in
-        ready) u="$( ("${plat}_url" "$PID") 2>/dev/null || true)"; case "$u" in http*) echo "Live: $u" ;; esac; exit 0 ;;
-        failed|canceled) exit 1 ;;
-      esac
-      sleep "$poll"; waited=$((waited + poll)); [ $((SECONDS - t0)) -le "$waited" ] || waited=$((SECONDS - t0)); [ "$waited" -lt 120 ] || poll=15
-    done ;;
+    # watch <project> [<deploy id>] [--preview] [--timeout 30m] [--interval 6] [--quiet] [--json] (lib/watch.sh)
+    declare -F watch_main >/dev/null || die "lib/watch.sh is not next to deploys."
+    watch_main "${@:2}" ;;
 
   "logs "*)
     # The last lines of the newest build log of one project, or with --id of that one deploy

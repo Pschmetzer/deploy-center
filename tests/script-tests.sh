@@ -184,7 +184,7 @@ case "$*" in
   "api /v9/projects/web"*) echo '{"id":"prj_web","name":"web","targets":{"production":{"id":"dpl_old","alias":["web.example.test"]}}}' ;;
   "api /v6/deployments?projectId=web"*) echo '{"deployments":[{"uid":"dpl_old","meta":{"githubCommitSha":"bbbb"}},{"uid":"dpl_prev","meta":{"githubCommitSha":"aaaa"}}]}' ;;
   "api /v1/projects/prj_web/rollback/dpl_prev"*POST*) echo '{}' ;;
-  "api /v6/deployments?app=web"*) [ "${WSTUB:-}" = down ] && exit 1; echo '{"deployments":[{"uid":"dpl_old","state":"READY","created":1767225600000,"target":"production"}]}' ;;
+  "api /v6/deployments?app=web"*) [ "${WSTUB:-}" = down ] && exit 1; [ "${WSTUB:-}" = auth ] && { echo "vercel GET /v6/deployments -> HTTP 401 (the key is wrong or expired)" >&2; exit 1; }; echo '{"deployments":[{"uid":"dpl_old","state":"READY","created":1767225600000,"target":"production"}]}' ;;
   "api /v6/deployments"*) echo '{"deployments":[]}' ;;
   "api /v1/billing"*) [ -n "${BILL:-}" ] || exit 1; echo "$BILL" ;;
   *) exit 1 ;;
