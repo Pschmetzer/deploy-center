@@ -173,6 +173,7 @@
 - Site and docs: the German README links the German pages, the man page is generated and checked, "Only when checks are green" is described as CLI only, plus accessibility fixes (focus targets, high contrast, scrollable regions, search status).
 - Website: the top navigation no longer scrolls sideways on phones (the German pages were 14 px too wide at 360 px, every page at 320 px: the brand name hides below 420 px, the calculator link below 340 px); the 404 page and the German home page set the browser theme color.
 - Providers: Deno Deploy (`deploys providers enable deno`, off until turned on). It lists the projects of one organization with their newest deployment and can redeploy that deployment as production (needs `--yes`); it never builds another commit. Token from `DENO_DEPLOY_TOKEN` or the keychain, organization from `DENO_DEPLOY_ORG`. Tested with fixtures only.
+- Providers: Koyeb (`deploys providers enable koyeb`, off until turned on). It lists services with the state of their newest deployment and can redeploy a service (needs `--yes`); it never builds another commit. Token from `KOYEB_TOKEN` or the keychain. Tested with fixtures only.
 
 ## 0.11.0
 
