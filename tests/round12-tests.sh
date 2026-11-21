@@ -25,8 +25,6 @@ with_timeout 5 true; expect "with_timeout: a quick command keeps its code" "$?" 
 with_timeout 5 sh -c 'exit 7'; expect "with_timeout: another code is kept" "$?" "7"
 
 # --- watch_took, duration_s, http_retry_after, cache_name, days_ago: boundaries ---
-# watch_took is defined further down in deploys (after the sourcing guard): take its text.
-eval "$(sed -n '/^watch_took() {/,/^}/p' deploys)"
 expect "watch_took: 59 s" "$(watch_took 59)" "59s"
 expect "watch_took: 60 s" "$(watch_took 60)" "1m0s"
 expect "watch_took: 3599 s" "$(watch_took 3599)" "59m59s"
@@ -39,8 +37,9 @@ printf 'HTTP/1.1 429\r\nretry-after: 900\r\n\r\n' > "$tmp/h2"
 printf 'HTTP/1.1 429\r\nRetry-After: Wed, 21 Oct 2026 07:28:00 GMT\r\n\r\n' > "$tmp/h3"
 printf 'HTTP/1.1 429\r\nRetry-After: 1\r\nRetry-After: 3\r\n\r\n' > "$tmp/h4"
 : > "$tmp/h5"
-expect "http_retry_after: a number, capped at 60, a date or nothing is none, the last header counts" \
-  "$(http_retry_after "$tmp/h1"):$(http_retry_after "$tmp/h2"):$(http_retry_after "$tmp/h3"):$(http_retry_after "$tmp/h4"):$(http_retry_after "$tmp/h5")" "7:60::3:"
+# The wait is given as it is (http_call stops at more than a minute and says so); a date in the past is 0 seconds.
+expect "http_retry_after: a number as it is, a date as seconds from now (past: 0), nothing is none, the last header counts" \
+  "$(http_retry_after "$tmp/h1"):$(http_retry_after "$tmp/h2"):$(http_retry_after "$tmp/h3"):$(http_retry_after "$tmp/h4"):$(http_retry_after "$tmp/h5")" "7:900:0:3:"
 expect "cache_name: a_b/c and a/b_c do not meet" "$([ "$(cache_name a_b/c)" != "$(cache_name a/b_c)" ] && echo different)" "different"
 expect "cache_name: a plain key is only mapped" "$(cache_name me/app@main)" "me_app_main"
 expect "days_ago: a date" "$(days_ago 0 | grep -cE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')" "1"

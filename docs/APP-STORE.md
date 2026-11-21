@@ -12,7 +12,7 @@ behind the app are in `docs/WIDGETS-IOS.md`.
 | Simulator build, archive and export | `ios/build.sh`, `ios/build.sh --archive` (build number from the UTC time) |
 | Logic checks without a device | `ios/test.sh`: the "waiting" rule, rollback targets, GitHub reads, against made-up answers |
 | Not offered on Mac or Apple Vision Pro | `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO`, `SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO`; the store switch is separate, see below |
-| Privacy manifest | `ios/App/PrivacyInfo.xcprivacy`: no tracking, no collected data, UserDefaults reason `CA92.1` (the app's own settings). The widget extension has no manifest of its own: it reads one JSON file from the App Group container and uses no API that needs a reason. When the app or the widgets start using another such API (file timestamps, system boot time, disk space, active keyboards), add its reason to the manifest of that target |
+| Privacy manifest | `ios/App/PrivacyInfo.xcprivacy`: no tracking, no collected data, UserDefaults reason `CA92.1` (the app's own settings) and file timestamp reason `C617.1` (the age of the saved list in the app's own container, `Background.loadLast`). Checked against the code in round 12: both are used, no other required-reason API is. The widget extension has no manifest of its own: it reads one JSON file from the App Group container and uses no API that needs a reason. When the app or the widgets start using another such API (file timestamps, system boot time, disk space, active keyboards), add its reason to the manifest of that target |
 | Face ID usage text | `NSFaceIDUsageDescription` in the target's build settings |
 | Background refresh | `ios/Config/Info.plist` (`BGTaskSchedulerPermittedIdentifiers`, `UIBackgroundModes: fetch`) |
 | Export compliance | `ITSAppUsesNonExemptEncryption = NO` (only HTTPS through the system) |
@@ -127,7 +127,7 @@ second app.
 ## Before each release
 
 1. Raise `MARKETING_VERSION` in the project (the build number comes from `ios/build.sh --archive`).
-2. Run `ios/test.sh` and `ios/build.sh`, and check the demo on an iPhone and an iPad simulator.
+2. Run `ios/test.sh` and `ios/build.sh`, and check the demo on an iPhone and an iPad simulator. `ios/smoke.sh <DeployCenter.app>` does the launch part at the standard and the largest text size on both and keeps a screenshot of each (CI runs it too).
 3. When a screen has changed, make new screenshots. Launch with `-demo`; `-open <project>` and
    `-settings` open a screen directly:
 
@@ -147,7 +147,23 @@ second app.
    xcrun simctl io booted screenshot shot.png
    ```
 
-4. Check that the pbxproj holds no team id:
+   Screenshots 4 to 6 (the store page has room for ten): the Live Activity on the lock screen
+   (start a demo deploy, lock the device), the widgets on the Home Screen (small, medium, large), and
+   the Shortcuts app with "What waits to deploy". Take the German set with the German launch line
+   above; the German store page should use German screenshots, not the English ones.
+
+4. Record the app preview (up to 30 seconds, one per device size): the list, a demo deploy with
+   Face ID, the Live Activity. `xcrun simctl io booted recordVideo preview.mov` records it; App
+   Store Connect wants the exact pixel size of the device class. Re-record it when the first
+   screens change.
+
+5. Accessibility, with a person at a device (a simulator does not do this): turn on VoiceOver and
+   move through the list with the **rotor** set to Headings and to Actions. Each project row must
+   offer Deploy, Roll back and Open domain as actions; the log must read "Error:" before its first
+   error line; "Copied" must be announced once. Then Switch Control or Voice Control: the toast
+   stays long enough to be closed.
+
+6. Check that the pbxproj holds no team id:
 
    ```bash
    grep -nE "DEVELOPMENT_TEAM = [A-Z0-9]{10}" ios/DeployCenter.xcodeproj/project.pbxproj
@@ -155,7 +171,7 @@ second app.
 
    It must print nothing.
 
-5. In App Store Connect → App Privacy, check that every language of the store page has its own
+7. In App Store Connect → App Privacy, check that every language of the store page has its own
    privacy policy URL. Without one, "Add for Review" is blocked.
 
 ## Submissions
@@ -165,4 +181,4 @@ second app.
 | 2026-11-10 | 1.0 (2), with the Mac connection | Submitted for review; released automatically after approval |
 
 Each localization needs its own privacy policy URL (App Privacy → language menu); German had none
-at first and blocked "Add for Review" (now step 5 of "Before each release").
+at first and blocked "Add for Review" (now step 7 of "Before each release").

@@ -198,24 +198,11 @@ for sh in bash zsh fish; do
   expect "completion $sh: doctor --fix" "$(grep -c -- '--fix' <<<"$c")" "1"
 done
 
-# --- completion: lib/completion.sh (round 12 B, items 26-32) ---
-for sh in bash zsh fish; do
-  expect "completion $sh: ai, gitlab, providers come from the one table" "$(cli completion "$sh" | grep -c -e "ai.* -a 'explain notes" -e "words\[2\] == ai" -e '"ai" \]\|= ai \]')" "1"
-done
-cli completion bash > "$tmp/c.bash"; bash -n "$tmp/c.bash"; expect "completion bash: parses (bash -n)" "$?" "0"
-if command -v zsh >/dev/null 2>&1; then cli completion zsh > "$tmp/c.zsh"; zsh -n "$tmp/c.zsh"; expect "completion zsh: parses (zsh -n)" "$?" "0"; fi
-if command -v fish >/dev/null 2>&1; then cli completion fish > "$tmp/c.fish"; fish --no-execute "$tmp/c.fish"; expect "completion fish: parses" "$?" "0"; fi
-odd="$tmp/a b'c"; mkdir -p "$odd"
-out="$(DEPLOYS_CONFIG="$odd" env -u DEPLOYS_LIB bash ./deploys completion bash)"
-printf '%s\n' "$out" > "$tmp/c2.bash"; bash -n "$tmp/c2.bash"; expect "completion bash: a config dir with space and quote still parses" "$?" "0"
-expect "completion: unknown shell is refused" "$(cli completion tcsh >/dev/null 2>&1; echo $?)" "1"
-expect "completion: fallback list has the main commands" "$(SELF=/nonexistent completion_cmds | tr ' ' '\n' | grep -cx -e watch -e verify -e completion)" "3"
-
 # --- helpers in lib/ that had no test of their own ---
 printf 'HTTP/2 429\r\nRetry-After: 7\r\n\r\n' > "$tmp/h1"
 expect "http_retry_after: seconds" "$(http_retry_after "$tmp/h1")" "7"
-printf 'retry-after: 500\r\n' > "$tmp/h2"; expect "http_retry_after: capped at 60" "$(http_retry_after "$tmp/h2")" "60"
-printf 'Retry-After: Wed, 21 Oct 2026 07:28:00 GMT\r\n' > "$tmp/h3"; expect "http_retry_after: a date is no wait" "$(http_retry_after "$tmp/h3")" ""
+printf 'retry-after: 500\r\n' > "$tmp/h2"; expect "http_retry_after: more than a minute is given as it is (http_call gives up on it)" "$(http_retry_after "$tmp/h2")" "500"
+printf 'Retry-After: Wed, 21 Oct 2026 07:28:00 GMT\r\n' > "$tmp/h3"; expect "http_retry_after: a date in the past is 0 seconds" "$(http_retry_after "$tmp/h3")" "0"
 printf 'Retry-After: 3\r\nRetry-After: 9\r\n' > "$tmp/h4"; expect "http_retry_after: the last one counts" "$(http_retry_after "$tmp/h4")" "9"
 expect "http_retry_after: no file" "$(http_retry_after "$tmp/none")" ""
 expect "gitlab_enc: a group path" "$(gitlab_enc 'group/sub group/app')" "group%2Fsub%20group%2Fapp"

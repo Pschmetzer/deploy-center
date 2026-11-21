@@ -11,6 +11,8 @@ import UserNotifications
 @MainActor
 final class Asks: ObservableObject {
     @Published var deploy: PhoneProject?
+    /// Several waiting projects at once: one question, one Face ID.
+    @Published var deployAll: [PhoneProject]?
     @Published var rollback: (project: PhoneProject, target: RollbackTarget)?
     /// The project whose rollback target is being looked up.
     @Published var finding: String?
@@ -25,9 +27,10 @@ final class Asks: ObservableObject {
             else if store.message == nil { store.say(L("Nothing to roll back to.", "Nichts zum Zurückrollen.")) }
         }
     }
-    func canDeploy(_ p: PhoneProject, _ store: PhoneStore) -> Bool { p.deployable && !p.building && store.running[p.key] == nil }
+    /// Offline: off, and the list says why (a banner), instead of a deploy that fails after the question.
+    func canDeploy(_ p: PhoneProject, _ store: PhoneStore) -> Bool { p.deployable && !p.building && store.running[p.key] == nil && !store.offline }
     func canRollBack(_ p: PhoneProject, _ store: PhoneStore) -> Bool {
-        finding == nil && !p.paused && !p.building && store.running[p.key] == nil
+        finding == nil && !p.paused && !p.building && store.running[p.key] == nil && !store.offline
     }
 }
 
@@ -66,6 +69,7 @@ struct RootView: View {
     @SceneStorage("selection") private var selection: String?
     @State private var settings = false
     @State private var connect = false
+    @State private var captured = UIScreen.main.isCaptured
     /// A widget link that came before the list was read: name and platform.
     @State private var pendingOpen: [String]?
     /// When it was set: a link the first list does not hold is dropped after DeepLink.patience.
@@ -102,6 +106,15 @@ struct RootView: View {
             deploy: selected.flatMap { p in asks.canDeploy(p, store) ? { asks.deploy = p } : nil }))
         .deployQuestions(store: store, asks: asks)
         .sheet(isPresented: $settings) { SettingsView(store: store) }
+        // Our own sentence first, then the system's question (IDEEN-12 C12).
+        .alert(L("Report the end of deploys?", "Das Ende von Deploys melden?"), isPresented: $store.askNotes) {
+            Button(L("Allow", "Erlauben")) { Task { await Notes.askOnce() } }
+            // "Not now" is remembered: the question is not asked at every deploy.
+            Button(L("Not now", "Nicht jetzt"), role: .cancel) { UserDefaults.standard.set(true, forKey: "notesAskDeclined") }
+        } message: {
+            Text(L("Deploy Center can tell you when a deploy you started is live or has failed, even when the app is in the background. The next question is the system's.",
+                   "Deploy Center kann dir sagen, wann ein gestarteter Deploy live ist oder fehlgeschlagen ist, auch wenn die App im Hintergrund ist. Die nächste Frage kommt vom System."))
+        }
         .sheet(isPresented: $connect) { ConnectMacView(store: store) }
         .onChange(of: phase) { _, p in
             guard p == .active, !store.demo, !store.loading else { return }
@@ -143,7 +156,17 @@ struct RootView: View {
         }
         // deploycenter://select?project=<name>&platform=<Vercel|Render>, from the widget. It only shows the project.
         .onOpenURL { url in
-            guard url.scheme == "deploycenter", let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems else { return }
+            guard url.scheme == "deploycenter" else { return }
+            let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            // deploycenter://settings and deploycenter://reload: harmless. deploycenter://deploy?key=…: only opens the question; a tap and Face ID still start it (IDEEN-12 C34).
+            switch url.host {
+            case "settings": settings = true; return
+            case "reload": Task { await store.reload() }; return
+            case "deploy":
+                if let key = items.first(where: { $0.name == "key" })?.value { store.confirmDeployKey = key; selection = key }
+                return
+            default: break
+            }
             // The key is exact; name and platform are the fallback for links from an older widget or the Mac.
             if let key = items.first(where: { $0.name == "key" })?.value, !key.isEmpty {
                 if store.projects.contains(where: { $0.key == key }) { selection = key; pendingOpen = nil } else { pendingOpen = ["key:" + key]; pendingAt = Date() }
@@ -155,6 +178,7 @@ struct RootView: View {
         .task {
             Background.schedule()
             await store.reload()
+            Task { await store.resumeFollowed() }
             #if DEBUG
             // For screenshots: -open <name> selects a project, -settings shows the settings.
             let args = ProcessInfo.processInfo.arguments
@@ -177,7 +201,8 @@ struct RootView: View {
             }
             #endif
         }
-        .overlay(alignment: .bottom) {
+        // Under the list, not over its last row (IDEEN-12 C10).
+        .safeAreaInset(edge: .bottom) {
             if let m = store.message { Toast(store: store, text: m) }
         }
         .sensoryFeedback(trigger: store.messageSerial) { _, _ in
@@ -186,10 +211,15 @@ struct RootView: View {
         }
         // App lock (optional) and the cover in the app switcher: nothing of the list shows.
         .overlay {
-            if store.locked || (PhoneStore.lockOnOpen && !store.demo && phase != .active) {
+            // Not while Face ID asks: its sheet makes the app inactive too, and the cover would flicker over the question (IDEEN-12 C8).
+            if store.locked || (PhoneStore.lockOnOpen && !store.demo && phase != .active && !store.authenticating) {
                 LockCover(store: store)
+            } else if captured && !store.demo {
+                // Screen recording or mirroring: the names stay out of it (IDEEN-12 C41).
+                CapturedCover()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in captured = UIScreen.main.isCaptured }
         .onChange(of: phase) { _, p in if p == .active && store.locked { Task { await store.unlock() } } }
         // Sheets lie above the cover: close them when locking (the settings sheet takes its own QR sheet along).
         .onChange(of: store.locked) { _, on in if on { settings = false; connect = false } }
@@ -233,6 +263,15 @@ struct DeployQuestions: ViewModifier {
                 } else {
                     Text(p.deploySummary)
                 }
+            }
+            .confirmationDialog(L("Deploy \(asks.deployAll?.count ?? 0) projects?", "\(asks.deployAll?.count ?? 0) Projekte deployen?"),
+                                isPresented: Binding(get: { asks.deployAll != nil }, set: { if !$0 { asks.deployAll = nil } }),
+                                titleVisibility: .visible, presenting: asks.deployAll) { all in
+                Button(L("Deploy all", "Alle deployen")) { Task { await store.deployMany(all) } }
+                Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+            } message: { all in
+                Text(all.map(\.name).joined(separator: ", ") + L(". Each build can cost build minutes. One \(store.unlockName) question for all.",
+                                                                  ". Jeder Build kann Build-Minuten kosten. Eine \(store.unlockName)-Frage für alle."))
             }
             .confirmationDialog(L("Roll back \(asks.rollback?.project.name ?? "")?", "\(asks.rollback?.project.name ?? "") zurückrollen?"),
                                 isPresented: Binding(get: { asks.rollback != nil }, set: { if !$0 { asks.rollback = nil } }),
@@ -278,8 +317,24 @@ struct Toast: View {
         .task(id: store.messageSerial) {
             AccessibilityNotification.Announcement(store.messageIsError ? L("Error: ", "Fehler: ") + text : text).post()
             guard !store.messageIsError, !UIAccessibility.isVoiceOverRunning else { return }
-            try? await Task.sleep(for: .seconds(5))
+            // Switch Control needs longer to reach the close button (IDEEN-12 C48).
+            let slow = UIAccessibility.isSwitchControlRunning
+            try? await Task.sleep(for: .seconds(slow ? 20 : 5))
             if store.message == text { store.message = nil }
+        }
+    }
+}
+
+/// Shown while the screen is recorded or mirrored.
+struct CapturedCover: View {
+    var body: some View {
+        ZStack {
+            Rectangle().fill(.background).ignoresSafeArea()
+            VStack(spacing: 12) {
+                Image(systemName: "record.circle").font(.largeTitle).foregroundStyle(.secondary).accessibilityHidden(true)
+                Text(L("Hidden while the screen is recorded", "Verdeckt, solange der Bildschirm aufgenommen wird"))
+                    .font(.headline).multilineTextAlignment(.center)
+            }.padding()
         }
     }
 }
@@ -330,11 +385,17 @@ struct ProjectList: View {
     @Binding var selection: String?
     @Binding var settings: Bool
     @State private var query = ""
+    @State private var scope = Scope.all
+    @State private var showAllLive = false
     @FocusState private var searchFocus: Bool
     @Environment(\.openURL) private var openURL
+    static let collapseAbove = 15, collapseTo = 10
+    /// What the search covers besides the text (the scope bar under the search field).
+    enum Scope: Hashable { case all, failed, vercel, render }
 
     var body: some View {
-        if store.projects.isEmpty && !store.loading && store.loadedAt != nil {
+        // Also offline at the first start: nothing was ever read, and an empty list says nothing (IDEEN-12 C7).
+        if store.projects.isEmpty && !store.loading && (store.loadedAt != nil || store.offline) {
             EmptyState(store: store, settings: $settings)
         } else {
             list
@@ -344,7 +405,18 @@ struct ProjectList: View {
     private var list: some View {
         List(selection: $selection) {
             Section {
+                if store.offline {
+                    Label(L("Offline. You can read the list; deploying and rolling back are off until the connection is back.",
+                            "Offline. Du kannst die Liste lesen; Deployen und Zurückrollen sind aus, bis die Verbindung wieder da ist."),
+                          systemImage: "wifi.slash").font(.footnote).foregroundStyle(.secondary)
+                }
                 Summary(store: store)
+                let ready = store.projects.filter { $0.group == .waiting && asks.canDeploy($0, store) }
+                if ready.count >= 2 {
+                    Button { asks.deployAll = ready } label: {
+                        Label(L("Deploy all \(ready.count) waiting …", "Alle \(ready.count) wartenden deployen …"), systemImage: "paperplane.fill")
+                    }
+                }
                 let auto = store.projects.filter(\.autoDeploy).count
                 if auto > 0 {
                     // The point of the app: these build on every push, and every build costs.
@@ -376,9 +448,12 @@ struct ProjectList: View {
                 }
             }
             ForEach(PhoneProject.Group.allCases, id: \.self) { g in
-                let rows = store.projects.filter { $0.group == g && matches($0) }
+                let all = store.projects.filter { $0.group == g && matches($0) }
+                // A long "Up to date" list is cut to its first rows until asked for (IDEEN-12 C52); a search shows everything it finds.
+                let cut = g == .live && all.count > Self.collapseAbove && !showAllLive && query.isEmpty
+                let rows = cut ? Array(all.prefix(Self.collapseTo)) : all
                 if !rows.isEmpty {
-                    Section(g.title) {
+                    Section {
                         ForEach(rows) { p in
                             Row(p: p, running: store.running[p.key]).tag(p.key)
                                 .contextMenu { menu(p) }
@@ -398,11 +473,20 @@ struct ProjectList: View {
                                     }
                                 }
                         }
-                    }
+                        if cut {
+                            Button(L("Show all \(all.count)", "Alle \(all.count) zeigen")) { showAllLive = true }
+                        }
+                    } header: { Text(g.title) }
                 }
             }
         }
         .searchable(text: $query, prompt: L("Projects", "Projekte"))
+        .searchScopes($scope) {
+            Text(L("All", "Alle")).tag(Scope.all)
+            Text(L("Failed", "Fehler")).tag(Scope.failed)
+            Text("Vercel").tag(Scope.vercel)
+            Text("Render").tag(Scope.render)
+        }
         .searchFocused($searchFocus)
         // ⌘F, for a keyboard on the iPad.
         .background { Button("") { searchFocus = true }.keyboardShortcut("f").opacity(0).accessibilityHidden(true) }
@@ -435,6 +519,12 @@ struct ProjectList: View {
     }
 
     private func matches(_ p: PhoneProject) -> Bool {
+        switch scope {
+        case .all: break
+        case .failed: if !p.failed { return false }
+        case .vercel: if p.provider != .vercel { return false }
+        case .render: if p.provider != .render { return false }
+        }
         let q = query.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return true }
         return [p.name, p.repo ?? "", p.domain ?? "", p.provider.rawValue].contains { $0.localizedCaseInsensitiveContains(q) }
@@ -447,13 +537,18 @@ struct EmptyState: View {
     @Binding var settings: Bool
     var body: some View {
         ContentUnavailableView {
-            if store.errors.isEmpty {
+            if store.offline && store.loadedAt == nil {
+                Label(L("You are offline", "Du bist offline"), systemImage: "wifi.slash")
+            } else if store.errors.isEmpty {
                 Label(L("No projects found", "Keine Projekte gefunden"), systemImage: "tray")
             } else {
                 Label(L("Could not read your projects", "Konnte deine Projekte nicht lesen"), systemImage: "exclamationmark.triangle")
             }
         } description: {
-            if store.errors.isEmpty {
+            if store.offline && store.loadedAt == nil {
+                Text(L("Deploy Center needs a connection to read your projects. They load when you are back online.",
+                       "Deploy Center braucht eine Verbindung, um deine Projekte zu lesen. Sie laden, sobald du wieder online bist."))
+            } else if store.errors.isEmpty {
                 Text(L("The keys work, but these accounts show no projects or services. For a Vercel team, enter its team id in Settings.",
                        "Die Schlüssel funktionieren, aber diese Konten zeigen keine Projekte oder Dienste. Für ein Vercel-Team trage seine Team-ID in den Einstellungen ein."))
             } else {
@@ -482,7 +577,10 @@ struct Summary: View {
         let failed = Stat(value: store.projects.filter(\.failed).count, label: L("failed", "Fehler"), tint: .red)
         Group {
             // Four in a row get too tight from the largest standard text size on: two rows of two then.
-            if size >= .xxxLarge {
+            if size.isAccessibilitySize {
+                // One column: at accessibility sizes even two stats side by side do not fit (IDEEN-12 C46).
+                VStack(alignment: .leading, spacing: 10) { prs; projects; building; failed }
+            } else if size >= .xxxLarge {
                 Grid(verticalSpacing: 12) { GridRow { prs; projects }; GridRow { building; failed } }
             } else {
                 HStack(spacing: 0) { prs; projects; building; failed }
@@ -586,7 +684,15 @@ struct ProjectDetail: View {
         List {
             Section {
                 LabeledContent(L("Status", "Status")) {
-                    HStack(spacing: 6) { Image(systemName: p.icon).accessibilityHidden(true); Text(p.stateText) }.foregroundStyle(p.tint)
+                    // A deploy followed here shows its live state, like the row does (IDEEN-12 C9).
+                    if let r = store.running[p.key] {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.small).accessibilityHidden(true)
+                            Text(r == "rollback" ? PhoneProject.stateWord(r) : L("deploying: ", "deployt: ") + PhoneProject.stateWord(r))
+                        }.foregroundStyle(.blue)
+                    } else {
+                        HStack(spacing: 6) { Image(systemName: p.icon).accessibilityHidden(true); Text(p.stateText) }.foregroundStyle(p.tint)
+                    }
                 }
                 LabeledContent(L("Platform", "Plattform"), value: p.provider.rawValue)
                 LabeledContent(L("Auto-deploy", "Auto-Deploy")) {
@@ -653,6 +759,10 @@ struct ProjectDetail: View {
                           systemImage: "paperplane")
                 }
                 .disabled(!asks.canDeploy(p, store))
+                // A build that a push started: watch it here for the end note and the Live Activity.
+                if p.building, store.running[p.key] == nil, p.latestId != nil, !store.offline {
+                    Button { Task { await store.followBuild(p) } } label: { Label(L("Follow the build", "Build verfolgen"), systemImage: "eye") }
+                }
                 if store.buildId(p) != nil && (p.building || store.running[p.key].map { $0 != "rollback" && $0 != "starting" } == true) {
                     Button(role: .destructive) { confirmCancel = true } label: {
                         Label(L("Cancel the build …", "Build abbrechen …"), systemImage: "stop.circle")
@@ -685,6 +795,8 @@ struct ProjectDetail: View {
         .userActivity(Spotlight.activity, isActive: !store.demo && !PhoneStore.lockOnOpen) { a in
             a.title = p.name; a.userInfo = ["project": p.key]
             a.isEligibleForHandoff = true; a.isEligibleForSearch = false
+            // A Mac continues with the project's dashboard in its browser (IDEEN-12 C35); nothing is started by it.
+            a.webpageURL = p.dashboardURL
         }
         .confirmationDialog(renderAction.map { $0.title.replacingOccurrences(of: " …", with: "?") } ?? "",
                             isPresented: Binding(get: { renderAction != nil }, set: { if !$0 { renderAction = nil } }), titleVisibility: .visible) {
@@ -803,25 +915,41 @@ struct BuildLogView: View {
     let record: DeployRecord?
     @State private var log: BuildLog?
     @State private var copied = false
+    /// Filters the lines shown (the copied and shared text stays the whole masked log).
+    @State private var find = ""
+
+    private func load() async { log = nil; log = await store.buildLog(project, record) }
 
     var body: some View {
         Group {
             if let log {
                 if let problem = log.problem {
-                    ContentUnavailableView(L("No log", "Kein Log"), systemImage: "doc.text.magnifyingglass", description: Text(problem))
+                    ContentUnavailableView {
+                        Label(L("No log", "Kein Log"), systemImage: "doc.text.magnifyingglass")
+                    } description: { Text(problem) } actions: {
+                        // A log that is not there yet (a deploy that just started) or a failed read: ask again (IDEEN-12 C50).
+                        Button(L("Try again", "Erneut versuchen")) { Task { await load() } }
+                    }
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 1) {
                             ForEach(Array(log.lines.enumerated()), id: \.offset) { i, l in
-                                Text(l.isEmpty ? " " : l).font(.caption.monospaced())
-                                    .foregroundStyle(i == log.errorAt ? .red : .primary)
-                                    .fontWeight(i == log.errorAt ? .bold : .regular)
+                                if find.isEmpty || l.localizedCaseInsensitiveContains(find) {
+                                    Text(l.isEmpty ? " " : l).font(.caption.monospaced())
+                                        .foregroundStyle(i == log.errorAt ? .red : .primary)
+                                        .fontWeight(i == log.errorAt ? .bold : .regular)
+                                        // Colour is no information for VoiceOver: the first error line says so (IDEEN-12 C45).
+                                        .accessibilityLabel(i == log.errorAt ? L("Error: ", "Fehler: ") + l : l)
+                                        .accessibilityAddTraits(i == log.errorAt ? .isHeader : [])
+                                }
                             }
                         }
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding()
                     }
+                    .refreshable { await load() }
+                    .searchable(text: $find, prompt: L("Find in the log", "Im Log suchen"))
                     .safeAreaInset(edge: .bottom) {
                         Text(log.errorAt != nil ? L("From shortly before the first error line. Secrets are masked as well as known, check before sharing.",
                                                     "Ab kurz vor der ersten Fehlerzeile. Geheimnisse sind nach bestem Wissen maskiert, vor dem Teilen prüfen.")
@@ -842,9 +970,19 @@ struct BuildLogView: View {
                                                   options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(600)])
                     copied = true
                 } label: { Label(copied ? L("Copied", "Kopiert") : L("Copy", "Kopieren"), systemImage: copied ? "checkmark" : "doc.on.doc") }
+                // The masked text only, like Copy (IDEEN-12 C50).
+                ShareLink(item: full) { Image(systemName: "square.and.arrow.up") }
+                    .accessibilityLabel(L("Share the masked log", "Maskiertes Log teilen"))
             }
         }
-        .task { log = await store.buildLog(project, record) }
+        // "Copied" is said once and goes back to "Copy" (IDEEN-12 C44).
+        .task(id: copied) {
+            guard copied else { return }
+            AccessibilityNotification.Announcement(L("Copied", "Kopiert")).post()
+            try? await Task.sleep(for: .seconds(3))
+            copied = false
+        }
+        .task { await load() }
     }
 }
 
@@ -909,6 +1047,13 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // The toast lies under this sheet: an error is shown here as text, not only said to VoiceOver (IDEEN-12 C11).
+                if let m = store.message, store.messageIsError {
+                    Section {
+                        Label(m, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                        Button(L("Dismiss", "Ausblenden")) { store.message = nil }
+                    }
+                }
                 Section {
                     if store.linked != nil && !store.ignoreLink {
                         Label(L("Connected to the Mac (iCloud Keychain)", "Mit dem Mac verbunden (iCloud-Schlüsselbund)"), systemImage: "checkmark.circle.fill")
@@ -938,15 +1083,15 @@ struct SettingsView: View {
                     .disabled(testing)
                     ForEach(testResults, id: \.self) { Text($0).font(.footnote) }
                 } header: { Text(L("Accounts", "Konten")) } footer: {
-                    Text(L("Keys typed here stay in this device's keychain, never synced. Sent only to api.vercel.com, api.render.com and api.github.com.",
-                           "Hier eingetragene Schlüssel bleiben im Schlüsselbund dieses Geräts, nie synchronisiert. Gesendet nur an api.vercel.com, api.render.com und api.github.com."))
+                    Text(L("Keys typed here stay in this device's keychain, never synced. Sent only to api.vercel.com, api.render.com and api.github.com. Use the smallest scope and a short lifetime: a Vercel token for one team that expires, a read-only GitHub token.",
+                           "Hier eingetragene Schlüssel bleiben im Schlüsselbund dieses Geräts, nie synchronisiert. Gesendet nur an api.vercel.com, api.render.com und api.github.com. Nimm den kleinsten Bereich und eine kurze Laufzeit: ein Vercel-Token für ein Team, das abläuft, ein Nur-Lese-GitHub-Token."))
                 }
                 Section {
-                    Toggle(L("Unlock on open", "Beim Öffnen entsperren"), isOn: $lockOnOpen)
+                    Toggle(L("Unlock on open", "Beim Öffnen entsperren"), isOn: guarded($lockOnOpen, L("Turn off the lock", "Sperre ausschalten")))
                         .onChange(of: lockOnOpen) { _, _ in
                             Spotlight.index(store.projects, demo: store.demo); QuickActions.update(store.projects)
                         }
-                    Toggle(L("Face ID or Touch ID only (no passcode) to deploy", "Zum Deployen nur Face ID oder Touch ID (kein Code)"), isOn: $biometricsOnly)
+                    Toggle(L("Face ID or Touch ID only (no passcode) to deploy", "Zum Deployen nur Face ID oder Touch ID (kein Code)"), isOn: guarded($biometricsOnly, L("Allow the passcode to deploy", "Code zum Deployen erlauben")))
                     Toggle(L("Keep projects out of Spotlight", "Projekte nicht in Spotlight zeigen"), isOn: $noSpotlight)
                         .onChange(of: noSpotlight) { _, _ in Spotlight.index(store.projects, demo: store.demo) }
                 } footer: {
@@ -981,6 +1126,14 @@ struct SettingsView: View {
                         Text(L("Checks run in the background only when iOS allows it, which can be rarely or, in Low Power Mode, not at all. There is no server, so a note can come late or not at all.",
                                "Geprüft wird im Hintergrund nur, wenn iOS es erlaubt: manchmal selten, im Stromsparmodus gar nicht. Es gibt keinen Server, ein Hinweis kann also spät oder gar nicht kommen."))
                         if notify, let e = backgroundProblem { Text(e).foregroundStyle(Color.warningText) }
+                        if notify {
+                            // The last time iOS let the background check run (IDEEN-12 C19).
+                            if let at = Background.lastRun {
+                                Text(L("Last background check: ", "Letzte Prüfung im Hintergrund: ") + relative(at))
+                            } else {
+                                Text(L("No background check has run yet.", "Im Hintergrund wurde noch nichts geprüft."))
+                            }
+                        }
                     }
                 }
                 Section {
@@ -1000,6 +1153,9 @@ struct SettingsView: View {
                 Section {
                     Link(L("Privacy policy", "Datenschutz"), destination: URL(string: "https://deploycenter.app/datenschutz.html")!)
                     Link(L("Website and help", "Website und Hilfe"), destination: URL(string: "https://deploycenter.app")!)
+                    LabeledContent(L("Version", "Version"), value: store.versionText)
+                    // The report holds the version, the system and what is connected, never a key or a project name (IDEEN-12 C55).
+                    if let u = store.reportURL { Link(L("Report a problem …", "Fehler melden …"), destination: u) }
                 } footer: {
                     Text(L("Deploy Center is not affiliated with Vercel, Render or GitHub.",
                            "Deploy Center ist nicht mit Vercel, Render oder GitHub verbunden."))
@@ -1040,11 +1196,24 @@ struct SettingsView: View {
             .confirmationDialog(L("Remove all keys from this iPhone?", "Alle Schlüssel von diesem iPhone entfernen?"),
                                 isPresented: $confirmRemove, titleVisibility: .visible) {
                 Button(L("Remove", "Entfernen"), role: .destructive) {
-                    store.removeAllKeys(); loadFields()
+                    // With the lock or Face ID on, whoever holds an unlocked phone must not strip the protection or the keys (IDEEN-12 C38).
+                    Task {
+                        var allowed = !(lockOnOpen || biometricsOnly)
+                        if !allowed { allowed = await store.authenticate(L("Remove all keys from this iPhone", "Alle Schlüssel von diesem iPhone entfernen")) }
+                        if allowed { store.removeAllKeys(); loadFields() }
+                    }
                 }
                 Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             }
         }
+    }
+
+    /// A switch that protects: turning it ON is free, turning it OFF asks for Face ID, Touch ID or the code first.
+    private func guarded(_ b: Binding<Bool>, _ reason: String) -> Binding<Bool> {
+        Binding(get: { b.wrappedValue }, set: { on in
+            if on { b.wrappedValue = true; return }
+            Task { if await store.authenticate(reason) { b.wrappedValue = false } }
+        })
     }
 
     private func loadFields() {
@@ -1111,6 +1280,8 @@ struct SettingsView: View {
         Background.schedule()
         Task { await store.reload() }
         if !ok { saveFailed = true; return false }
+        // A token pasted into a field must not wait on the clipboard (Universal Clipboard, clipboard managers) (IDEEN-12 C39).
+        if let c = UIPasteboard.general.string, !c.isEmpty, Key.allCases.contains(where: { fields[$0] == c }) { UIPasteboard.general.items = [] }
         saved = fields
         return true
     }

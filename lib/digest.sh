@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # lib/digest.sh — `deploys digest`: the last days (a week by default) from the journal, as a few lines or JSON.
 #
-#   deploys digest [--days 7] [--json] [--no-savings]
+#   deploys digest [--days 7] [--json | --format markdown] [--no-savings]
 #
 # Counts: "deploys" are the lines with the result live, and the starts the terminal journaled as "other"
 # ("Started from the terminal ...", "Started by deploy-changed ..."); failures are "failed"; rollbacks,
@@ -56,13 +56,33 @@ digest_print() {
      else "  Savings (estimate, since auto-deploy went off\(if .savings.since then " on " + .savings.since else "" end)): \(.savings.skippedBuilds) builds skipped\(if .savings.usd != null then ", about $\(.savings.usd)" else ", price unknown (deploys price set)" end)" end)'
 }
 
+# digest_markdown: stdin is digest JSON; the same facts as Markdown (a heading, a list, tables) for a wiki or a chat.
+# Texts from the journal are written into table cells with | and line breaks made harmless.
+digest_markdown() {
+  jq -r '
+    def cell: tostring | gsub("[|]"; "\\|") | gsub("[\r\n]"; " ");
+    "## Deploys of the last \(.days) day\(if .days == 1 then "" else "s" end) (\(.since[0:10]) to \(.until[0:10]))",
+    "",
+    (if .entries == 0 then "Nothing in the journal for this time."
+     else
+       "- Deploys: **\(.deploys)**, failed: **\(.failures)**\(if .failureRate != null then " (\(.failureRate)%)" else "" end)",
+       "- Rolled back: \(.rollbacks), forced: \(.forced)",
+       (if .busiestDay then "- Busiest day: \(.busiestDay.day) (\(.busiestDay.deploys))" else empty end),
+       (if (.projects | length) > 0 then "", "| Project | Platform | Deploys | Failed |", "|---|---|---:|---:|",
+          (.projects[] | "| \(.name | cell) | \(.platform | cell) | \(.deploys) | \(.failures) |") else empty end),
+       (if (.lastFailures | length) > 0 then "", "Latest failures:", "", (.lastFailures[] | "- \(.at[0:16] | sub("T"; " ")) \(.name | cell): \(.detail | cell)") else empty end)
+     end),
+    (if .savings != null then "", "Savings (estimate): \(.savings.skippedBuilds) builds skipped\(if .savings.usd != null then ", about $\(.savings.usd)" else "" end)." else empty end)'
+}
+
 digest_main() {
-  local days=7 savings=1 jf now out sv="null"
+  local days=7 savings=1 jf now out sv="null" fmt=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
       --no-savings) savings=0 ;;
-      *) die "Unknown option $1. Usage: deploys digest [--days 7] [--json] [--no-savings]" ;;
+      --format) fmt="${2:-}"; shift; case "$fmt" in markdown|text|json) ;; *) die "--format is markdown, text or json" ;; esac ;;
+      *) die "Unknown option $1. Usage: deploys digest [--days 7] [--json | --format markdown] [--no-savings]" ;;
     esac
     shift
   done
@@ -74,5 +94,8 @@ digest_main() {
     sv="$(digest_savings "$("$SELF" ledger --json 2>/dev/null || echo null)")"
   fi
   out="$(jq -c --argjson s "${sv:-null}" --argjson a "$([ "$savings" = 1 ] && echo true || echo false)" '. + {savings:$s, savingsAsked:$a}' <<<"$out")"
-  if [ "${json:-0}" = 1 ]; then jq . <<<"$out"; else digest_print <<<"$out"; fi
+  [ "$fmt" != json ] || json=1
+  if [ "${json:-0}" = 1 ]; then jq . <<<"$out"
+  elif [ "$fmt" = markdown ]; then digest_markdown <<<"$out"
+  else digest_print <<<"$out"; fi
 }

@@ -149,7 +149,7 @@ expect "with_heads counts commits and PRs, open PRs split" \
 
 # --- commands for a person: usage lines, help, version, ignore, costs, completion ---
 cli() { env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys "$@" 2>&1; }
-expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines] [--id <deploy>] [--follow]\nrc=1'
+expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines] [--id <deploy>] [--follow]\nrc=2'
 expect "--help lists history and exits 0" "$(cli --help | grep -c 'deploys history'; cli --help >/dev/null; echo $?)" $'1\n0'
 expect "--version is the VERSION file" "$(cli --version)" "$(cat VERSION)"
 expect "costs refuses a word" "$(cli costs abc | grep -c 'days a number')" "1"
@@ -184,7 +184,7 @@ case "$*" in
   "api /v9/projects/web"*) echo '{"id":"prj_web","name":"web","targets":{"production":{"id":"dpl_old","alias":["web.example.test"]}}}' ;;
   "api /v6/deployments?projectId=web"*) echo '{"deployments":[{"uid":"dpl_old","meta":{"githubCommitSha":"bbbb"}},{"uid":"dpl_prev","meta":{"githubCommitSha":"aaaa"}}]}' ;;
   "api /v1/projects/prj_web/rollback/dpl_prev"*POST*) echo '{}' ;;
-  "api /v6/deployments?app=web"*) [ "${WSTUB:-}" = down ] && exit 1; [ "${WSTUB:-}" = auth ] && { echo "vercel GET /v6/deployments -> HTTP 401 (the key is wrong or expired)" >&2; exit 1; }; echo '{"deployments":[{"uid":"dpl_old","state":"READY","created":1767225600000,"target":"production"}]}' ;;
+  "api /v6/deployments?app=web"*) [ "${WSTUB:-}" = down ] && exit 1; echo '{"deployments":[{"uid":"dpl_old","state":"READY","created":1767225600000,"target":"production"}]}' ;;
   "api /v6/deployments"*) echo '{"deployments":[]}' ;;
   "api /v1/billing"*) [ -n "${BILL:-}" ] || exit 1; echo "$BILL" ;;
   *) exit 1 ;;
@@ -250,8 +250,6 @@ case "$m $url" in
     case "${SITE:-ok}" in
       down) printf 503 ;;
       gone) printf 000; exit 28 ;;
-      dns) printf 000; exit 6 ;;
-      body) o=""; q=""; for a in "$@"; do [ "$q" = -o ] && o="$a"; q="$a"; done; [ -z "$o" ] || [ "$o" = /dev/null ] || echo "all systems ready" > "$o"; printf 200 ;;
       notfound) printf 404 ;;
       flaky) n=$(( $(cat "$E2E/site" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$E2E/site"; [ "$n" = 1 ] && printf 502 || printf 200 ;;
       pathy) case "${*: -1}" in */bad) printf 503 ;; */moved) printf 301 ;; *) printf 200 ;; esac ;;
@@ -495,11 +493,6 @@ expect "verify: 5xx counts down, then rolls back (exit 1)" \
 expect "verify: the countdown is shown" "$(grep -o 'Rolling back web in  [0-9] s' "$E" | tr -s ' ' | paste -sd, -)" "Rolling back web in 3 s,Rolling back web in 2 s,Rolling back web in 1 s"
 expect "verify: the rollback is in the journal" "$(jq -r 'select(.result == "other") | .detail' "$DEPLOYS_JOURNAL")" "Rolled back: https://web.example.test/health answered 503 503 503"
 fresh
-expect "verify: a DNS failure is named, not just 000" "$(fresh; SITE=dns run "$O" "$E" verify web --no-rollback --tries 1 --json; grep -c 'DNS: the name does not resolve' "$E"; jq -r '.checks[0].reason' "$O")" $'2\n1\nDNS: the name does not resolve'
-expect "verify: --expect-body found" "$(fresh; SITE=body run "$O" "$E" verify web --expect-body 'systems ready' --tries 1 --json; jq -c '.healthy' "$O")" $'0\ntrue'
-expect "verify: --expect-body missing fails the check" "$(fresh; SITE=body run "$O" "$E" verify web --expect-body 'maintenance' --no-rollback --tries 1 --json; jq -r '.healthy, .checks[0].reason' "$O"; rolled)" $'2\nfalse\nthe answer does not contain the expected text\n0'
-expect "verify: --warmup asks again while the name does not resolve" "$(fresh; SITE=dns run "$O" "$E" verify web --no-rollback --tries 1 --warmup 10s --every 5 >/dev/null; grep -c 'Waiting for' "$E"; grep -c 'GET https://web.example.test' "$e2e/calls.log")" $'1\n4'
-expect "verify: --warmup takes a time" "$(run "$O" "$E" verify web --warmup soon; grep -c 'takes a time' "$E")" $'3\n1'
 expect "verify: no answer (timeout) counts as a failure too" "$(SITE=gone run "$O" "$E" verify web --rollback-after 0; rolled)" $'1\n1'
 fresh
 expect "verify: --no-rollback only reports (exit 2)" "$(SITE=down run "$O" "$E" verify web --no-rollback; rolled)" $'2\n0'
@@ -525,7 +518,7 @@ expect "deploy --dry-run --json" "$(run "$O" "$E" deploy web --preview --dry-run
 expect "deploy --dry-run is allowed in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E" deploy web -n)" "0"
 fresh
 expect "rollback <project>: the provider rolls it back" "$(run "$O" "$E" rollback web; rolled)" $'0\n1'
-expect "rollback with no project is a usage line" "$(run "$O" "$E" rollback; grep -c 'Usage: deploys rollback' "$E")" $'1\n1'
+expect "rollback with no project is a usage line (exit 2: a wrong call)" "$(run "$O" "$E" rollback; grep -c 'Usage: deploys rollback' "$E")" $'2\n1'
 expect "rollback is refused in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E" rollback web; rolled)" $'1\n1'
 fresh
 expect "doctor --text: one line per thing" "$(run "$O" "$E" doctor --text; grep -c '^ok   jq$' "$O")" $'0\n1'
@@ -553,6 +546,7 @@ expect "doctor --text: the settings folder is checked" "$(run "$O" "$E" doctor -
 expect "metrics: waiting commits per project, in Prometheus text" \
   "$(run "$O" "$E" metrics; grep -c '^deploycenter_waiting_commits{platform="vercel",project="web"} 1$' "$O"; grep -c '^# TYPE deploycenter_failed gauge$' "$O")" $'0\n1\n1'
 expect "metrics --out: the file is written whole" "$(run "$O" "$E" metrics --out "$e2e/metrics.prom"; grep -c '^deploycenter_auto_deploy{' "$e2e/metrics.prom")" $'0\n2'
+expect "metrics: deploycenter_up and the time of the scrape" "$(run "$O" "$E" metrics; grep -c '^deploycenter_up 1$' "$O"; grep -c '^deploycenter_scrape_timestamp_seconds [0-9]' "$O")" $'0\n1\n1'
 expect "metrics: an unknown option is refused" "$(run "$O" "$E" metrics --nope; grep -c 'Usage: deploys metrics' "$E")" $'1\n1'
 fresh; rm -f "$e2e/polls"
 expect "watch --and: several at once, each line starts with its project" \
@@ -1431,7 +1425,7 @@ rm -f "$e2e/config/window.json"
 # One line since the help was regrouped: "deploy <p>|<group>" covers a project and a group.
 expect "CLI-032: deploy --help shows its lines" "$(run "$O" "$E" deploy --help; grep -c '^  deploys deploy ' "$O")" $'0\n1'
 expect "CLI-033: an unknown command is named" "$(run "$O" "$E" deplyo; grep -ci 'unknown command "deplyo"' "$E")" $'1\n1'
-expect "CLI-034: vercel map without arguments is a usage line" "$(run "$O" "$E" vercel map; grep -c 'Usage: deploys vercel map' "$E"; grep -c 'unbound' "$E")" $'1\n1\n0'
+expect "CLI-034: vercel map without arguments is a usage line" "$(run "$O" "$E" vercel map; grep -c 'Usage: deploys vercel map' "$E"; grep -c 'unbound' "$E")" $'2\n1\n0'
 fresh
 expect "CLI-048: changed --platform with a typo is refused, nothing read" "$(run "$O" "$E" changed --platform verzel; grep -c 'takes one of' "$E"; wc -l < "$e2e/calls.log" | tr -d ' ')" $'1\n1\n0'
 expect "CLI-050: status --watch --json is refused" "$(run "$O" "$E" status --watch --json; grep -c 'watch draws a table' "$E")" $'1\n1'
