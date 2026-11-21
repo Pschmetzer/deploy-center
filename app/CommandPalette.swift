@@ -571,6 +571,15 @@ struct CommandPaletteHost: ViewModifier {
             .onDisappear { center.hosts = max(0, center.hosts - 1) }
     }
 
+    /// A command that does nothing says why, instead of closing the palette in silence.
+    private func refuse(_ i: Item?) {
+        let text: String
+        if store.observer { text = L("Observer mode: nothing is deployed from here.", "Beobachter-Modus: von hier wird nichts deployt.") }
+        else if let i, i.state.isActive { text = L("\(Demo.mask(i.name)) is already running.", "\(Demo.mask(i.name)) läuft bereits.") }
+        else { text = L("This project cannot be deployed from here.", "Dieses Projekt lässt sich von hier nicht deployen.") }
+        store.show(Store.Toast(text: text, ok: false))
+    }
+
     /// After the palette is gone, so a sheet or question can take its place.
     private func runChosen() {
         guard let cmd = chosen else { return }
@@ -579,7 +588,7 @@ struct CommandPaletteHost: ViewModifier {
         case .action(let a):
             switch a {
             case .deployChanged:
-                guard !store.observer else { return }
+                guard !store.observer else { refuse(nil); return }
                 // The window ticks everything with changes and asks "Put this live now?".
                 if store.waiting.projects > 0 { store.pendingDeployAll = true }
                 else { store.show(Store.Toast(text: L("Everything merged is live", "Alles Gemergte ist live"), ok: true)) }
@@ -590,7 +599,7 @@ struct CommandPaletteHost: ViewModifier {
             case .costs: sheet = .costs
             case .logSearch: sheet = .logSearch
             case .selectChanged:
-                guard !store.observer else { return }
+                guard !store.observer else { refuse(nil); return }
                 // Like ⌘A in the window: hidden projects stay out (Store.isWaiting).
                 Platform.allCases.forEach { store.selectChanged($0) }
             case .clearSelection: Platform.allCases.forEach { store.clearSelection($0) }
@@ -608,11 +617,11 @@ struct CommandPaletteHost: ViewModifier {
             let i = store.items[item.platform]?.first { $0.id == item.id } ?? item
             switch v {
             case .deploy:
-                guard i.deployable && !i.state.isActive && !store.observer else { return }
+                guard i.deployable && !i.state.isActive && !store.observer else { refuse(i); return }
                 if i.hasNewCommits || i.headSha == nil { if confirmSingle { deployItem = i } else { store.pendingDeploy = i } }
                 else { unchangedItem = i }
             case .rollback:
-                guard i.deployable && !i.state.isActive && !store.observer else { return }
+                guard i.deployable && !i.state.isActive && !store.observer else { refuse(i); return }
                 rollbackItem = i
             case .log: sheet = .log(i)
             case .open: if let l = i.link, let u = URL(string: l) { SafeLink.open(u) }
@@ -627,7 +636,7 @@ struct CommandPaletteHost: ViewModifier {
                 }
             case .notes: noteText = store.note(i) ?? ""; noteItem = i
             case .preview:
-                guard i.deployable && !i.state.isActive && !store.observer else { return }
+                guard i.deployable && !i.state.isActive && !store.observer else { refuse(i); return }
                 previewItem = i
             case .pin: store.togglePin(i)
             case .hide:
