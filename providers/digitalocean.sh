@@ -19,6 +19,12 @@
 # Files (in the deploys config folder, mode 0600, the spec can hold plain env values):
 #   do-specs/<app-id>.json   the spec as it was before the last `off` that changed something
 
+# Run on its own, without deploys: lib/http.sh's helper for how many reads run at once (deploys has the full one).
+declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "${DEPLOYS_PARALLEL:-$1}"; }
+declare -F curl_url_cfg >/dev/null || curl_url_cfg() {  # (lib/http.sh has the same: a URL for `curl -K -`, so a signed link stays out of the process list)
+  case "$1" in *[[:cntrl:]]*) return 1 ;; esac
+  printf 'url = "%s"\n' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
 DIGITALOCEAN_API="${DIGITALOCEAN_API:-https://api.digitalocean.com}"
 DIGITALOCEAN_KEYCHAIN="deploy-center-digitalocean"
 DIGITALOCEAN_DASHBOARD="https://cloud.digitalocean.com/apps"
@@ -131,7 +137,8 @@ digitalocean_call() {
 # A pre-signed log URL: https only, and without the token (it would leak to another host).
 digitalocean_fetch() {
   case "$1" in https://*) ;; *) echo "DigitalOcean: skipped a log URL that is not https" >&2; return 1 ;; esac
-  curl -sSfL --proto =https --proto-redir =https --connect-timeout 10 --max-time 120 "$1"
+  # On stdin, not in the process list; two redirects at most.
+  curl_url_cfg "$1" | curl -K - -sSfL --proto =https --proto-redir =https --max-redirs 2 --connect-timeout 10 --max-time 120
 }
 
 # Every app, all pages (links.pages.next is set while there are more).
@@ -265,7 +272,7 @@ digitalocean_json() {
     ( digitalocean_app_last "$a" > "$tmpd/$n.json" ) &
     pids+=("$!")
     # Only these jobs are waited for (not others of the calling shell).
-    [ $((n % 8)) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
+    [ $((n % $(parallel_limit 8))) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
   done < <(echo "$apps" | jq -c '.[]')
   # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
   wait ${pids[@]+"${pids[@]}"}

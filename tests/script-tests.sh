@@ -149,7 +149,7 @@ expect "with_heads counts commits and PRs, open PRs split" \
 
 # --- commands for a person: usage lines, help, version, ignore, costs, completion ---
 cli() { env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" HOME="$tmp" NO_COLOR=1 /bin/bash ./deploys "$@" 2>&1; }
-expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines] [--id <deploy>] [--follow]\nrc=1'
+expect "a missing name is a usage line" "$(cli logs; echo "rc=$?")" $'Error: Usage: deploys logs <project> [lines] [--id <deploy>] [--follow]\nrc=2'
 expect "--help lists history and exits 0" "$(cli --help | grep -c 'deploys history'; cli --help >/dev/null; echo $?)" $'1\n0'
 expect "--version is the VERSION file" "$(cli --version)" "$(cat VERSION)"
 expect "costs refuses a word" "$(cli costs abc | grep -c 'days a number')" "1"
@@ -518,7 +518,7 @@ expect "deploy --dry-run --json" "$(run "$O" "$E" deploy web --preview --dry-run
 expect "deploy --dry-run is allowed in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E" deploy web -n)" "0"
 fresh
 expect "rollback <project>: the provider rolls it back" "$(run "$O" "$E" rollback web; rolled)" $'0\n1'
-expect "rollback with no project is a usage line" "$(run "$O" "$E" rollback; grep -c 'Usage: deploys rollback' "$E")" $'1\n1'
+expect "rollback with no project is a usage line (exit 2: a wrong call)" "$(run "$O" "$E" rollback; grep -c 'Usage: deploys rollback' "$E")" $'2\n1'
 expect "rollback is refused in observer mode" "$(DEPLOYS_READONLY=1 run "$O" "$E" rollback web; rolled)" $'1\n1'
 fresh
 expect "doctor --text: one line per thing" "$(run "$O" "$E" doctor --text; grep -c '^ok   jq$' "$O")" $'0\n1'
@@ -546,6 +546,7 @@ expect "doctor --text: the settings folder is checked" "$(run "$O" "$E" doctor -
 expect "metrics: waiting commits per project, in Prometheus text" \
   "$(run "$O" "$E" metrics; grep -c '^deploycenter_waiting_commits{platform="vercel",project="web"} 1$' "$O"; grep -c '^# TYPE deploycenter_failed gauge$' "$O")" $'0\n1\n1'
 expect "metrics --out: the file is written whole" "$(run "$O" "$E" metrics --out "$e2e/metrics.prom"; grep -c '^deploycenter_auto_deploy{' "$e2e/metrics.prom")" $'0\n2'
+expect "metrics: deploycenter_up and the time of the scrape" "$(run "$O" "$E" metrics; grep -c '^deploycenter_up 1$' "$O"; grep -c '^deploycenter_scrape_timestamp_seconds [0-9]' "$O")" $'0\n1\n1'
 expect "metrics: an unknown option is refused" "$(run "$O" "$E" metrics --nope; grep -c 'Usage: deploys metrics' "$E")" $'1\n1'
 fresh; rm -f "$e2e/polls"
 expect "watch --and: several at once, each line starts with its project" \
@@ -1424,7 +1425,7 @@ rm -f "$e2e/config/window.json"
 # One line since the help was regrouped: "deploy <p>|<group>" covers a project and a group.
 expect "CLI-032: deploy --help shows its lines" "$(run "$O" "$E" deploy --help; grep -c '^  deploys deploy ' "$O")" $'0\n1'
 expect "CLI-033: an unknown command is named" "$(run "$O" "$E" deplyo; grep -ci 'unknown command "deplyo"' "$E")" $'1\n1'
-expect "CLI-034: vercel map without arguments is a usage line" "$(run "$O" "$E" vercel map; grep -c 'Usage: deploys vercel map' "$E"; grep -c 'unbound' "$E")" $'1\n1\n0'
+expect "CLI-034: vercel map without arguments is a usage line" "$(run "$O" "$E" vercel map; grep -c 'Usage: deploys vercel map' "$E"; grep -c 'unbound' "$E")" $'2\n1\n0'
 fresh
 expect "CLI-048: changed --platform with a typo is refused, nothing read" "$(run "$O" "$E" changed --platform verzel; grep -c 'takes one of' "$E"; wc -l < "$e2e/calls.log" | tr -d ' ')" $'1\n1\n0'
 expect "CLI-050: status --watch --json is refused" "$(run "$O" "$E" status --watch --json; grep -c 'watch draws a table' "$E")" $'1\n1'

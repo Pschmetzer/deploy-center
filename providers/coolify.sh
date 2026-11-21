@@ -20,6 +20,8 @@
 #   coolify-off.json  {appUuid: {auto, previews, offAt}}  the values before we turned them off,
 #                     so coolify_on can put them back.
 
+# Run on its own, without deploys: lib/http.sh's helper for how many reads run at once (deploys has the full one).
+declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "${DEPLOYS_PARALLEL:-$1}"; }
 COOLIFY_KEYCHAIN="deploy-center-coolify"
 
 # ---------- small helpers ----------
@@ -116,7 +118,9 @@ coolify_call() {
     coolify_http "$method" "$base/api/v1$path" "$body" "$key" "$fix"; return
   fi
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/json" -K -)
-  [ -n "$body" ] && args+=(-H "Content-Type: application/json" --data "$body")
+  # The body goes in through a file of our own, not as --data in the process list.
+  local bodyf=""
+  if [ -n "$body" ]; then bodyf="$(umask 077; mktemp)"; printf '%s' "$body" > "$bodyf"; args+=(-H "Content-Type: application/json" --data-binary "@$bodyf"); fi
   [ -z "${COOLIFY_HEADERS:-}" ] || args+=(-D "$COOLIFY_HEADERS")
   err="$(mktemp)"
   for try in 1 2 3; do
@@ -130,7 +134,7 @@ coolify_call() {
     break
   done
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
-  rm -f "$err"
+  rm -f "$err" ${bodyf:+"$bodyf"}
   if [[ "$code" != 2* ]]; then
     local hint="" fix="deploys coolify set-key" msg
     [ -n "${COOLIFY_TOKEN:-}" ] && fix="check COOLIFY_TOKEN in the environment"
@@ -252,7 +256,7 @@ coolify_json() {
     ( coolify_app_full "$uuid" "$apps" > "$tmpd/$n.json" ) &
     pids+=("$!")
     # Only these jobs are waited for (not others of the calling shell).
-    [ $((n % 8)) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
+    [ $((n % $(parallel_limit 8))) -ne 0 ] || { wait "${pids[@]}"; pids=(); }
   done < <(echo "$apps" | jq -r '.[].uuid')
   # ${pids[@]+...}: an empty array is "unbound" under set -u in macOS bash 3.2.
   wait ${pids[@]+"${pids[@]}"}

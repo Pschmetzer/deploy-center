@@ -3,6 +3,13 @@
 # Render, through an API key: RENDER_API_KEY, or the macOS keychain (`deploys render set-key`).
 # Sourced by `deploys`; the contract is in docs/PROVIDERS.md. A service's id is its srv-/crn- id.
 
+# Run on its own, without deploys: lib/http.sh's helper for how many reads run at once (deploys has the full one).
+declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "${DEPLOYS_PARALLEL:-$1}"; }
+declare -F par_fn >/dev/null || {
+  PAR_FNS=(); par_fn() { PAR_FNS=(${PAR_FNS[@]+"${PAR_FNS[@]}"} "$@"); }
+  # shellcheck disable=SC2163  # export -f of each function par_fn named
+  xargs_par() { ( local f; for f in ${PAR_FNS[@]+"${PAR_FNS[@]}"}; do export -f "$f"; done; exec xargs "$@" ); }
+}
 RENDER_API="https://api.render.com/v1"
 RENDER_KEYCHAIN_SERVICE="deploy-center-render"
 # The name the key was stored under before Deploy Center had its own. Still read, and removed by forget-key.
@@ -35,7 +42,7 @@ render_wait() {
   [ "$s" -le 30 ] || s=30
   echo "$s"
 }
-export -f render_wait
+par_fn render_wait
 
 # The key goes to curl on stdin so it never shows in the process list.
 render_call() {
@@ -212,6 +219,8 @@ RENDER_PHASE='def rphase: if . == null then null
 # twenty keychain reads (or twenty permission prompts).
 render_last_of() {
   local id="$1" out="$2" key
+  # The id goes into a URL path: only what a Render id is made of.
+  case "$id" in ""|*[!A-Za-z0-9_-]*) echo "Render: skipped a service id with odd characters" >&2; return 0 ;; esac
   # Whatever goes wrong, the service is written down as "not known", never left out: a missing
   # record would read as "never deployed" and make the service look changed.
   last_fail() { jq -nc --arg k "$id" --arg e "$1" '{key:$k, value:{fetchError:$e}}' > "$out/$id.json"; }
@@ -221,6 +230,7 @@ render_last_of() {
   # the whole list), and 5xx or no answer asked again too.
   local raw code try body limit=10 hdr="$out/$id.hdr"
   fetch_deploys() {
+    case "$1" in ""|*[!0-9]*) set -- 10 ;; esac
     for try in 1 2 3; do
       : > "$hdr"
       raw="$(printf 'header = "Authorization: Bearer %s"\n' "$key" \
@@ -262,7 +272,7 @@ render_last_of() {
     > "$out/$id.json" 2>/dev/null || last_fail "unreadable answer"
   [ -s "$out/$id.json" ] || last_fail "empty answer"
 }
-export -f render_last_of
+par_fn render_last_of
 
 render_json() {
   local list tmp kf lasts
@@ -276,7 +286,7 @@ render_json() {
   tmp="$(mktemp -d)"; kf="$tmp/key"
   # The key file goes on every way out: a failed key read or xargs must not leave it behind.
   if ! (umask 077; render_key > "$kf"); then rm -rf "$tmp"; exit 1; fi
-  echo "$list" | jq -r '.[].id' | xargs -P 8 -n 1 bash -c 'render_last_of "$2" "$0" "$1"' "$tmp" "$kf" || true
+  echo "$list" | jq -r '.[].id' | xargs_par -P "$(parallel_limit 8)" -n 1 bash -c 'render_last_of "$2" "$0" "$1"' "$tmp" "$kf" || true
   rm -f "$kf"
   lasts="$(cat_all "$tmp"/*.json | jq -s 'from_entries' 2>/dev/null)" || lasts=""
   rm -rf "$tmp"

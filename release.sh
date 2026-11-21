@@ -7,6 +7,7 @@
 #   ./release.sh --publish-only  publish the zip already in dist/ (after a failed upload; no new build)
 #   ./release.sh --check-addons  only check that every add-on changed since the last release has a new version
 #   ./release.sh ... --dry-run   run the checks, then only print what would be built, tagged and uploaded
+#   ./release.sh --publish-only --force-republish   replace the files of a release that is already public (refused otherwise)
 #
 # Needs a "Developer ID Application" certificate and a notarytool profile. Give them as
 # DEVELOPER_ID and NOTARY_PROFILE, or put them in .release.env (not tracked):
@@ -25,13 +26,19 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-usage() { sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'; }
+# The help is the first block of comment lines (up to the first empty comment line), not a fixed range of lines.
+usage() { awk 'NR > 1 && /^#$/ { exit } NR > 1 { sub(/^# ?/, ""); print }' "$0"; }
 die() { echo "release.sh: $*" >&2; exit 1; }
+# Temp files and folders of this run, removed on every way out (a failed upload must not leave the notes behind).
+TMPS=()
+cleanup() { [ "${#TMPS[@]}" -eq 0 ] || rm -rf "${TMPS[@]}"; }
+trap cleanup EXIT
 
-mode=build; dry=""
+mode=build; dry=""; republish=""
 for arg in "$@"; do
   case "$arg" in
     --dry-run) dry=1 ;;
+    --force-republish) republish=1 ;;
     --publish|--publish-only)
       [ "$mode" = build ] || die "use only one of --publish and --publish-only"
       mode="${arg#--}" ;;
@@ -59,9 +66,17 @@ check_addons() {  # check_addons <commit>
   [ -z "$bad" ] || die "changed since $base but still the same version:$bad. Raise their version first"
   echo "Add-on versions: fine (compared with $base)."
 }
+# --check-addons only checks; a --dry-run next to it asks for something it does not do, so it is said, not ignored.
+if [ "$mode" = "check-addons" ] && [ -n "$dry" ]; then echo "release.sh: --check-addons only checks (nothing to dry-run); drop --dry-run" >&2; exit 2; fi
 if [ "$mode" = "check-addons" ]; then check_addons HEAD; exit 0; fi
 
-[ -f .release.env ] && . ./.release.env
+# .release.env is sourced, so it is code: only a file of this user that nobody else can write.
+if [ -f .release.env ]; then
+  [ -O .release.env ] || die ".release.env is not owned by you; it is run as a script, so it is not used"
+  [ -z "$(find .release.env -perm -020 -o -perm -002 2>/dev/null)" ] || die ".release.env can be written by others (chmod 600 .release.env)"
+  # shellcheck disable=SC1091
+  . ./.release.env
+fi
 # A release always trusts the built-in key and feed: the two overrides are for local update tests
 # only. Set in a shell (or in .release.env), they would ship an app whose updates break or go elsewhere.
 for v in SPARKLE_PUBLIC_KEY SPARKLE_FEED_URL; do
@@ -84,7 +99,7 @@ TAG="v$VERSION"
 # "## [0.7.0]" and "## 0.7.0 - 2026-01-01".
 notes_of() {
   awk -v v="$VERSION" '
-    /^## / { h=$2; gsub(/[][]/, "", h); f=(h==v); next }
+    /^## / { h=$2; gsub(/[][]/, "", h); sub(/^v/, "", h); f=(h==v); next }
     f' CHANGELOG.md
 }
 
@@ -142,7 +157,7 @@ if [ "$mode" = publish-only ]; then
   [ "$SHA" = "$(awk '$1=="sha256"{print $2}' "$MARK")" ] || die "$ZIP changed since it was notarized"
   COMMIT="$(awk '$1=="commit"{print $2}' "$MARK")"
   [ -n "$COMMIT" ] || die "$MARK names no commit"
-  check="$(mktemp -d)"; trap 'rm -rf "$check"' EXIT
+  check="$(mktemp -d)"; TMPS+=("$check")
   ditto -x -k "$ZIP" "$check"
   xcrun stapler validate "$check/Deploy Center.app" >/dev/null || die "$ZIP holds an app without a notarization ticket"
 else
@@ -282,12 +297,16 @@ CLI_SHA="$(shasum -a 256 "$CLI" | cut -d' ' -f1)"
 ASSETS=("$ZIP" "$ZIP.sha256" "$CLI" "$DIST/checksums.txt")
 
 # --- publish -----------------------------------------------------------------------------
-notes="$(mktemp)"
+notes="$(mktemp)"; TMPS+=("$notes")
 { notes_of
   printf '\nNotarized by Apple: opens without a warning.\n\nSHA-256 of the zip: `%s`\n' "$SHA"
   printf '\nThe CLI on its own (macOS, Linux, CI): `curl -fsSL https://deploycenter.app/install.sh | sh` or `brew install pschmetzer/tap/deploys`. SHA-256 of %s: `%s`\n' "$(basename "$CLI")" "$CLI_SHA"; } > "$notes"
 # A new release is made as a draft: nobody can download it until its files are checked below.
 if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+  # A release that is public already has people downloading it: its files are not swapped unless asked for.
+  if [ "$(gh release view "$TAG" --repo "$REPO" --json isDraft -q .isDraft 2>/dev/null)" = false ] && [ -z "$republish" ]; then
+    die "$TAG is published already; its files are not replaced. To do it on purpose: --force-republish"
+  fi
   echo "Release $TAG exists; replacing its files."
   gh release upload "$TAG" "${ASSETS[@]}" --repo "$REPO" --clobber
   # The notes too: a resumed release must not keep those of the failed attempt.
@@ -300,7 +319,7 @@ rm -f "$notes"
 
 # The files people download must be the ones that were notarized and packed. Read back with gh
 # (signed in), which also works while the release is still a draft.
-got_dir="$(mktemp -d)"
+got_dir="$(mktemp -d)"; TMPS+=("$got_dir")
 gh release download "$TAG" --repo "$REPO" --dir "$got_dir" --pattern "$(basename "$ZIP")" --pattern "$(basename "$CLI")" \
   || { rm -rf "$got_dir"; die "could not download the files of $TAG back to check them"; }
 got="$(shasum -a 256 "$got_dir/$(basename "$ZIP")" | cut -d' ' -f1)"
@@ -318,11 +337,11 @@ echo "Published: https://github.com/$REPO/releases/tag/$TAG"
 # --- Sparkle: sign the published zip, add it to the appcast (served by the website) --------
 sig="$("$SPARKLE/bin/sign_update" --account "$SPARKLE_ACCOUNT" -p "$ZIP")" || die "sign_update failed"
 "$SPARKLE/bin/sign_update" --account "$SPARKLE_ACCOUNT" --verify "$ZIP" "$sig" >/dev/null || die "the EdDSA signature does not verify"
-notes="$(mktemp)"
+notes="$(mktemp)"; TMPS+=("$notes")
 notes_of > "$notes"
 # The oldest macOS comes from the app itself (build.sh MIN_OS), so Sparkle never offers the update
 # to a Mac it does not start on.
-min_os_dir="$(mktemp -d)"
+min_os_dir="$(mktemp -d)"; TMPS+=("$min_os_dir")
 ditto -x -k "$ZIP" "$min_os_dir"
 MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$min_os_dir/Deploy Center.app/Contents/Info.plist" 2>/dev/null || true)"
 rm -rf "$min_os_dir"

@@ -31,6 +31,10 @@ jobs:
         run: scripts/check-public.sh
       - name: File sizes stay under their ceilings
         run: scripts/check-size.sh
+      - name: Nothing bash 3.2 (macOS) does not have
+        run: scripts/check-bash32.sh
+      - name: shellcheck disables stay under their ceiling
+        run: scripts/check-disables.sh
       - name: The CLI stays bash 3.2 compatible (no declare -A, mapfile, ${x,,} ...)
         run: python3 -I scripts/check-bash32.py
       - name: No secrets on command lines or in traces (curl -H, security -w, set -x)
@@ -91,6 +95,12 @@ jobs:
         run: bash tests/welle10-tests.sh
       - name: CLI fixes tests (journal, launchd env, CI grace, request bodies)
         run: bash tests/cli-fixes-tests.sh
+      - name: CLI parses with the bash macOS ships (3.2)
+        run: |
+          /bin/bash --version | head -n 1
+          scripts/check-bash32.sh
+      - name: CLI round 12 B tests (http, hooks, watch, verify, completion, release)
+        run: bash tests/cli-r12b-tests.sh
       - name: Insights tests (timeline, recovery, when)
         run: bash tests/insights-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -192,6 +202,8 @@ jobs:
         run: bash tests/welle10-tests.sh
       - name: CLI fixes tests
         run: bash tests/cli-fixes-tests.sh
+      - name: CLI round 12 B tests
+        run: bash tests/cli-r12b-tests.sh
       - name: Insights tests
         run: bash tests/insights-tests.sh
 
