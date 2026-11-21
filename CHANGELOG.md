@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.12.0 - 2026-11-21
+
+### Highlights
+
+- Five new hosts: Fly.io, Railway, Heroku, Firebase Hosting and GitHub Pages (opt-in)
+- CLI: `watch --json`, `digest`, `streak`, `timeline`, `config export` and `import`
+- Mac app: filter chips above the list, a 401/403 check after a deploy, clearer palette commands
+- iPhone app: offline use, Live Activity and Shortcuts
+- Website: 11 new guides, security.txt and better search
+
+### All changes
+
 - Mac app: in a build log, the "previous / next / first error" buttons sit in a bar under the log instead of covering its last lines.
 - CLI: `deploys streak` shows, per project, how many deploys in a row went without a failure (now and the longest in the window; reads the journal only). `deploys note <project> "text"` writes one line into the journal that shows in `deploys timeline` (a text that looks like a secret is refused, nothing on a platform is touched).
 - CLI (watch and verify): `deploys watch` has `--json` (one line at the end; `phase` tells failed from canceled), `--interval`, `--quiet`, a little jitter between asks, a longer wait after a 429, shows why a platform could not be asked and stops at once (exit 3) when the key is refused (401/403); `watch a --and b` runs at most six at a time and Ctrl-C stops them all and removes its temp folder. `deploys verify` can check the answer's text (`--match`), a header (`--header`), the TLS certificate (`--cert-days`), wait for a fresh service (`--warmup`, `--retry-connrefused`), runs several checks at the same time, says why there was no answer (DNS, refused, timeout, TLS) and counts down in a log file without carriage returns. Global `--quiet` and `--debug` (a trace of the calls, secrets masked); `deploys exit-codes`; a missing argument is exit 2 (`die_usage`), not 1; `--force` no longer takes the next option as its reason; under `bash -x` the key and the autofix token stay out of the trace.
