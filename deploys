@@ -57,6 +57,9 @@
 #   deploys freeze [status] [--json]          the closed times of window.json and whether deploys are closed now
 #   deploys freeze add <days> <from> [<to>] [--reason "why"] | remove <n> | clear   e.g. freeze add fri 15:00
 #   deploys digest [--days 7] [--json] [--no-savings]   the last week from the journal: deploys, failures, savings
+#   deploys timeline [--days 3] [--project <p>] [--limit 50]   what happened, newest day first (from the journal)
+#   deploys recovery [--days 30] [--project <p>]   how long a failure lasted until the next deploy
+#   deploys when [--days 90] [--by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
 #   deploys doctor --fix [--json]             what to do about each problem (shown only, nothing is run)
 #   --force "why"                             deploy inside a closed window; the reason goes to the journal
 #
@@ -384,6 +387,9 @@ if [ -f "$LIB_DIR/digest.sh" ]; then . "$LIB_DIR/digest.sh"; fi
 if [ -f "$LIB_DIR/freeze.sh" ]; then . "$LIB_DIR/freeze.sh"; fi
 # shellcheck source=lib/fixes.sh
 if [ -f "$LIB_DIR/fixes.sh" ]; then . "$LIB_DIR/fixes.sh"; fi
+# timeline, recovery and when (lib/insights.sh): read-only views of the journal.
+# shellcheck source=lib/insights.sh
+if [ -f "$LIB_DIR/insights.sh" ]; then . "$LIB_DIR/insights.sh"; fi
 # Signs on this Mac that a team file counts here: read without lib/team.sh, from local files only.
 team_traces() {
   [ -s "$CONFIG_DIR/team-repos" ] && grep -q '/' "$CONFIG_DIR/team-repos" 2>/dev/null && return 0
@@ -3626,6 +3632,9 @@ config:--refresh
 doctor:--text --fix --json
 freeze:status add remove clear --json
 digest:--days --json --no-savings
+timeline:--days --project --limit --json
+recovery:--days --project --json
+when:--days --by --json
 rollback:
 cancel:"
     verbs_of() {
@@ -3902,6 +3911,18 @@ BASH
   "freeze "*)
     declare -F freeze_main >/dev/null || die "lib/freeze.sh is not next to deploys."
     freeze_main "${@:2}" ;;
+
+  "timeline"|"timeline "*)
+    declare -F timeline_main >/dev/null || die "lib/insights.sh is not next to deploys."
+    timeline_main "${@:2}" ;;
+
+  "recovery"|"recovery "*)
+    declare -F recovery_main >/dev/null || die "lib/insights.sh is not next to deploys."
+    recovery_main "${@:2}" ;;
+
+  "when"|"when "*)
+    declare -F when_main >/dev/null || die "lib/insights.sh is not next to deploys."
+    when_main "${@:2}" ;;
 
   "digest "*)
     declare -F digest_main >/dev/null || die "lib/digest.sh is not next to deploys."
