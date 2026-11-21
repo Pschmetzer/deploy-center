@@ -34,7 +34,8 @@ deploys deploy-json my-project --no-cache --yes   # build without the host's cac
 deploys deploy my-group                 # a group from deploy-center.json, in its order (TEAM.md)
 deploys plan [--when-green] [--since 1d]  # the same list with an estimate per build and the sum (starts nothing); --since: only what changed in that time
 deploys status                          # what is building now, and what failed last
-deploys watch my-project [--timeout 30m]  # follow the newest deploy until live or failed
+deploys watch my-project [--timeout 30m] [--interval 6s] [--quiet] [--json]  # follow the newest deploy until live or failed
+deploys watch a --and b --and c            # several at once (six at a time); Ctrl-C stops them all
 deploys logs my-project                 # the end of the newest build log, keys and tokens always masked
 deploys open my-project [--dashboard]   # the site, or its page at the platform
 deploys ignore my-project               # leave it out of changed / deploy-changed
@@ -48,6 +49,7 @@ deploys list                            # every project on every provider that i
 
 ```bash
 deploys verify my-project [--path /health] [--no-rollback]   # ask the site; roll back on 5xx
+deploys verify my-project --match "ok" --header "Cache-Control: no-store" --cert-days 14 --warmup 30s   # body, header, certificate, a fresh service
 deploys risk my-project                 # green/yellow/red for what waits
 deploys secrets my-project              # added lines that look like a key or token; exit 1 if any (a gate)
 git diff A..B | deploys secrets --stdin # the same on a diff you pipe in (for GitLab or any repo)
@@ -136,7 +138,7 @@ deploys autofix --preview --only vercel my-project --json   # what a hand-over w
 deploys team init me/my-repo > deploy-center.json   # a shared config from this Mac's settings (writes nothing itself)
 deploys schedule daily 09:00 [--when-green] [--by-rules]   # deploy-changed --yes once a day (launchd, or the cron line)
 deploys schedule off | status [--json]
-deploys hooks install [<repo>]          # before each push: which builds it would start (integrations/hooks)
+deploys hooks install [<repo>] [--hook pre-commit] [--yes]   # before each push: which builds it would start (integrations/hooks); --hook pre-commit stops a commit that adds a key
 deploys hooks uninstall | status [<repo>]
 eval "$(deploys completion zsh)"        # tab completion (also: bash; fish: deploys completion fish | source)
 deploys deploy --help                   # the help lines of one command
@@ -195,12 +197,28 @@ which are not live. The fields are those of [PROVIDERS.md](PROVIDERS.md) (`_json
 
 `jq -r '.[] | "\(.platform)/\(.name): \(.pendingCommits) waiting"'` turns it into one line per project.
 
+Global options, before or after the command: `--json` (the answer as JSON), `--quiet` (progress lines off: only the result),
+`--debug` (the calls to the platforms as a trace, secrets masked), `--force "why"` (a deploy inside a closed window).
+`deploys exit-codes` prints the table below in short.
+
+`deploys config export [<file>]` writes this Mac's settings (prices, rules, budget, window, providers, overrides, Vercel
+repos) as one JSON file, without keys, journal or hook URLs; `deploys config import <file> [--yes]` checks it (every part
+JSON, nothing that looks like a key or token), says what would change and writes it only with `--yes` (the old file stays
+as `<name>.bak`). `deploys digest`, `simulate` and `ledger` take `--format markdown`. `deploys metrics` also writes
+`deploycenter_up` (0 when a platform did not answer) and `deploycenter_scrape_timestamp_seconds`.
+
+`watch --json` prints one line at the end: `{project, id, phase, state, url}`; `phase` is `ready`, `failed`, `canceled`,
+`timeout` or `unreachable`. `verify` can also check the answer's text (`--match`), a response header (`--header 'Name: part'`),
+the TLS certificate (`--cert-days N`), wait for a fresh service (`--warmup 30s`) and ask again while the connection is
+refused (`--retry-connrefused`); with several checks they run at the same time, and a check that got no answer says why
+(DNS, refused, timeout, TLS) in `checks[].why`.
+
 ## Exit codes
 
 | Command | Codes |
 |---|---|
-| every command | `0` done (also "nothing to deploy"); `1` an error, something failed to start, or the state of some project could not be read (it is named and left out, never counted as current) |
-| `watch` | `0` live, `1` failed or canceled, `3` the platform could not be asked (or its answer read) five times in a row, `4` `--timeout` passed first (it may still go live) |
+| every command | `0` done (also "nothing to deploy"); `2` a wrong call (`Usage: …`, a missing argument); `1` an error, something failed to start, or the state of some project could not be read (it is named and left out, never counted as current) |
+| `watch` | `0` live, `1` failed or canceled (`--json` tells which: `phase`), `3` the platform could not be asked (or its answer read) five times in a row, or it refused the key (401/403: no waiting), `4` `--timeout` passed first (it may still go live) |
 | `deploy --wait`, `deploy <group>` | as `watch` for the member that stopped: `1` it failed, `3` it could not be followed, also when the platform accepted the start but named no deploy id (a group stops there) |
 | `verify` | `0` healthy, `1` failed and rolled back, `2` failed and not rolled back, `3` nothing was checked |
 | `ci` | `0` green (or no checks), `1` red, `2` still pending or GitHub not reachable; with `--json` always `0`, unless `--exit-code` is given |
@@ -230,6 +248,11 @@ which are not live. The fields are those of [PROVIDERS.md](PROVIDERS.md) (`_json
 | `DEPLOYS_TEAM_TTL` | seconds a shared `deploy-center.json` is cached (default 600) |
 | `DEPLOYS_AUTOFIX_PER_DAY`, `DEPLOYS_AUTOFIX_PER_PROJECT` | autofix caps per 24 h (default 6 and 2) |
 | `DEPLOYS_GITLAB_HOSTS` | self-managed GitLab hosts (docs/GITLAB.md) |
+| `DEPLOYS_HTTP_TRACE` | `1`: one line per call to a platform on stderr (method, path without query, status, time; no header, no body); `--debug` sets it |
+| `DEPLOYS_QUIET`, `DEPLOYS_DEBUG` | what the global `--quiet` and `--debug` set: only the result; the trace of the calls |
+| `DEPLOYS_PARALLEL` | how many platform or git host reads run at once in a list (default 8, at most 32; 3 while GitHub's budget is under 1000) |
+| `HTTP_DEADLINE` | seconds one platform call may take in all, tries and waits included (default 120) |
+| `DEPLOYS_CLOUDFLARE_PER_PAGE` | page size of the Cloudflare project list (default 10) |
 | `DEPLOYS_ANTHROPIC_API_KEY` | the key for `deploys ai`, before `ANTHROPIC_API_KEY` and the keychain |
 | `DEPLOYS_VERCEL_USD_PER_MIN`, `DEPLOYS_RENDER_USD_PER_MIN` | build-minute prices for `simulate` and `ledger` |
 | `DEPLOYS_TIMEOUT` | the older name of `DEPLOYS_CLI_TIMEOUT`, used where that is not set |

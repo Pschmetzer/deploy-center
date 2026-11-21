@@ -46,7 +46,10 @@ AWS
 # curl only fetches log links here: https://logs.example/<name>?... answers log-<name>.txt.
 cat > "$tmp/bin/curl" <<'CURL'
 #!/bin/bash
-url="${*: -1}"; echo "curl $url" >> "$CALLS"
+# The signed link comes in a config on stdin (-K -), never as an argument: read it from there.
+url="${*: -1}"
+case " $* " in *" -K - "*) cu="$(sed -n 's/^url = "\(.*\)"$/\1/p')"; [ -z "$cu" ] || url="$cu" ;; esac
+echo "curl $url" >> "$CALLS"
 name="${url#https://logs.example/}"; name="${name%%\?*}"
 [ -f "$FIX/log-$name.txt" ] || { echo "curl: (22) The requested URL returned error: 403" >&2; exit 22; }
 cat "$FIX/log-$name.txt"
@@ -310,6 +313,7 @@ hasnt "logs: and keeps it secret" "$out" "secret3"
 cat > "$tmp/bin/curl-range" <<'CURL'
 #!/bin/bash
 hdr=""; prev=""; for a in "$@"; do [ "$prev" = -D ] && hdr="$a"; prev="$a"; done
+cat > /dev/null
 echo "curl $*" >> "$CALLS"
 printf 'HTTP/1.1 206 Partial Content\r\nContent-Range: bytes 4000-4099/4100\r\n\r\n' > "$hdr"
 printf 'tial line\nwhole line\n'
@@ -321,7 +325,7 @@ has "logs: only the end is asked for" "$(grep -m 1 '^curl ' "$CALLS")" "Range: b
 expect "logs: the cut-off first line is left out" "$(echo "$out" | grep -c 'tial line'):$(echo "$out" | grep -c 'whole line')" "0:2"
 
 # An empty log answers the range with 416: asked again without one, not "expired".
-printf '#!/bin/bash\necho "curl $*" >> "$CALLS"\ncase "$*" in *Range*) exit 22;; esac\nexit 0\n' > "$tmp/rb/curl"
+printf '#!/bin/bash\ncat >/dev/null\necho "curl $*" >> "$CALLS"\ncase "$*" in *Range*) exit 22;; esac\nexit 0\n' > "$tmp/rb/curl"
 routes "${STD[@]}" "amplify get-job --job-id.12 get-job.json"
 out="$(PATH="$tmp/rb:$PATH" amp logs Shop)"
 expect "logs: an empty step log is not an expired link" "$(echo "$out" | grep -c 'could not be read'):$(grep -c '^curl ' "$CALLS")" "0:4"

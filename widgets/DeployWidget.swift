@@ -39,22 +39,6 @@ struct Provider: TimelineProvider {
     }
 }
 
-/// The words in the app's language: the one the snapshot names (Mac: Settings → Language; iPhone: the
-/// app's language), read once per entry; without one, the system's.
-struct Words {
-    let german: Bool
-    init(_ snap: DeploySnapshot?) {
-        german = DeploySnapshot.localized(snap?.language, "en", "de") == "de"
-    }
-    init(german: Bool) { self.german = german }
-    func callAsFunction(_ en: String, _ de: String) -> String { german ? de : en }
-    func n(_ n: Int, _ one: (String, String), _ many: (String, String)) -> String {
-        "\(n) " + (n == 1 ? self(one.0, one.1) : self(many.0, many.1))
-    }
-    /// After this long without a new snapshot the numbers are greyed and marked as old.
-    static let staleAfter: TimeInterval = 3 * 3600
-}
-
 private struct WordsKey: EnvironmentKey { static let defaultValue = Words(nil) }
 extension EnvironmentValues {
     var words: Words { get { self[WordsKey.self] } set { self[WordsKey.self] = newValue } }
@@ -219,7 +203,7 @@ struct ListView: View {
                 } else {
                     ForEach(snap.projects.prefix(rows)) { p in Link(destination: link(p)) { ProjectRow(p: p) } }
                     // The snapshot lists at most ten rows: the rest is counted from the totals.
-                    let more = snap.waitingProjects + snap.building + snap.failed - rows
+                    let more = snap.waitingProjects + snap.building + snap.failed - min(rows, snap.projects.count)
                     if more > 0 {
                         Text(w("+\(more) more", "+\(more) weitere")).font(.caption2).foregroundStyle(.secondary)
                     }
@@ -549,6 +533,64 @@ struct NextDeployContent: View {
 }
 
 #if os(iOS)
+/// Which platform the configurable widget shows.
+enum WidgetPlatform: String, AppEnum {
+    case all, vercel, render
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Platform"
+    static let caseDisplayRepresentations: [WidgetPlatform: DisplayRepresentation] = [.all: "All", .vercel: "Vercel", .render: "Render"]
+    var name: String? { self == .vercel ? "Vercel" : self == .render ? "Render" : nil }
+}
+
+struct FilterIntent: WidgetConfigurationIntent {
+    static let title: LocalizedStringResource = "What to show"
+    static let description = IntentDescription("One platform, or only failed deploys.")
+    @Parameter(title: "Platform", default: .all) var platform: WidgetPlatform
+    @Parameter(title: "Only failed deploys", default: false) var onlyFailed: Bool
+}
+
+struct FilteredProvider: AppIntentTimelineProvider {
+    private func entry(_ c: FilterIntent, preview: Bool) -> Entry {
+        let r = DeploySnapshot.readOutcome()
+        let base: DeploySnapshot? = r.snapshot ?? (preview ? DeploySnapshot.sample : nil)
+        let snap = base?.filtered(platform: c.platform.name, onlyFailed: c.onlyFailed)
+        return Entry(date: Date(), snap: snap, problem: r.problem)
+    }
+    func placeholder(in context: Context) -> Entry { Entry(date: Date(), snap: .sample) }
+    func snapshot(for configuration: FilterIntent, in context: Context) async -> Entry { entry(configuration, preview: context.isPreview) }
+    func timeline(for configuration: FilterIntent, in context: Context) async -> Timeline<Entry> {
+        let e = entry(configuration, preview: false)
+        var entries = [e]
+        // A second entry once the snapshot is three hours old, so "out of date" shows without the app (as in Provider).
+        if let s = e.snap, s.at.addingTimeInterval(Words.staleAfter) > e.date { entries.append(Entry(date: s.at.addingTimeInterval(Words.staleAfter), snap: s)) }
+        return Timeline(entries: entries, policy: .after(Date().addingTimeInterval(30 * 60)))
+    }
+}
+
+/// The same picture as the first widget, for one platform or only failures. Configured by long press → Edit Widget.
+struct FilteredWidget: Widget {
+    static let kind = "DeployCenterFiltered"
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: Self.kind, intent: FilterIntent.self, provider: FilteredProvider()) { DeployWidgetView(entry: $0) }
+            .configurationDisplayName(Words(DeploySnapshot.read())("Deploy Center, filtered", "Deploy Center, gefiltert"))
+            .description(Words(DeploySnapshot.read())("One platform, or only failed deploys.", "Eine Plattform oder nur fehlgeschlagene Deploys."))
+            .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+/// Control Center and the Action button: reads the list again. A tap opens the app, which reads it (the extension holds no keys).
+struct RefreshControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        let w = Words(DeploySnapshot.read())
+        return StaticControlConfiguration(kind: "app.deploycenter.ios.control.refresh") {
+            ControlWidgetButton(action: OpenURLIntent(URL(string: "deploycenter://reload")!)) {
+                Label(w("Refresh now", "Jetzt aktualisieren"), systemImage: "arrow.clockwise")
+            }
+        }
+        .displayName(LocalizedStringResource(String.LocalizationValue(w("Refresh now", "Jetzt aktualisieren"))))
+        .description(LocalizedStringResource(String.LocalizationValue(w("Opens Deploy Center and reads your projects again.", "Öffnet Deploy Center und liest deine Projekte neu."))))
+    }
+}
+
 /// Control Center, lock screen and Action button (iOS 18): the waiting PRs, a tap opens the app.
 /// Only reads the snapshot: the extension holds no keys, so it cannot read the accounts itself.
 struct WaitingControl: ControlWidget {
@@ -640,7 +682,8 @@ private func line(_ ctx: ActivityViewContext<DeployActivity>, _ w: Words) -> Str
     let what = ctx.state.words + " · " + ctx.attributes.platform
     guard ctx.isStale && ctx.state.phase == .running else { return what }
     let t = ctx.state.updated.formatted(date: .omitted, time: .shortened)
-    return what + w(" · as of \(t), open the app to update", " · Stand \(t), App öffnen zum Aktualisieren")
+    // Plain: the time of the last update, not an instruction (IDEEN-12 C27).
+    return what + w(" · as of \(t)", " · Stand \(t)")
 }
 
 struct DeployActivityView: View {
@@ -648,6 +691,7 @@ struct DeployActivityView: View {
     @ScaledMetric(relativeTo: .title3) private var timeWidth = 80.0
     var body: some View {
         let w = Words(german: ctx.attributes.german)
+        VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 12) {
             phaseIcon(ctx.state.phase, w, rollback: ctx.attributes.rollback).font(.title)
             VStack(alignment: .leading, spacing: 2) {
@@ -660,6 +704,17 @@ struct DeployActivityView: View {
                 .frame(maxWidth: timeWidth, alignment: .trailing)
         }
         .accessibilityElement(children: .combine)
+        // A bar over the usual build time (it runs on its own clock, no updates needed), and the domain once it is live.
+        VStack(alignment: .leading, spacing: 6) {
+            if ctx.state.phase == .running, !ctx.isStale, let t = ctx.state.expected, t >= 10 {
+                ProgressView(timerInterval: ctx.attributes.started...ctx.attributes.started.addingTimeInterval(t), countsDown: false) { EmptyView() } currentValueLabel: { EmptyView() }
+                    .accessibilityHidden(true)
+            }
+            if ctx.state.phase == .live, !ctx.attributes.rollback, let d = ctx.attributes.domain, let u = URL(string: "https://" + d) {
+                Link(w("Open \(d)", "\(d) öffnen"), destination: u).font(.subheadline)
+            }
+        }
+        }
     }
 }
 #endif
@@ -675,6 +730,8 @@ struct DeployWidgets: WidgetBundle {
         #if os(iOS)
         DeployActivityWidget()
         WaitingControl()
+        RefreshControl()
+        FilteredWidget()
         #endif
     }
 }

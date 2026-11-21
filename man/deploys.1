@@ -128,14 +128,16 @@ No key is ever printed.
   deploys completion zsh|bash|fish          tab completion (eval "$(deploys completion zsh)";
                                             fish: deploys completion fish | source)
   deploys <command> \-\-help                  the help lines of one command
+  deploys exit\-codes                        what the exit codes mean (the table of docs/CLI.md)
   deploys \-\-help | \-\-version
 .fi
 .SH EXIT STATUS
 .nf
-0 done (also "nothing to deploy"), 1 an error, something failed to start, or the
-state of some project could not be read (it is named and left out, never counted as current).
+0 done (also "nothing to deploy"), 1 an error, something failed to
+start, or the state of some project could not be read (it is named and left out, never counted as current),
+2 a wrong call (a missing argument: Usage: ...). `deploys exit\-codes` prints this block.
 Per command (docs/CLI.md has the table):
-  watch            0 live, 1 failed or canceled, 3 the platform could not be asked, 4 \-\-timeout
+  watch            0 live, 1 failed or canceled (\-\-json: phase says which), 3 the platform could not be asked or refused the key, 4 \-\-timeout
   verify           0 healthy, 1 failed and rolled back, 2 failed and not rolled back, 3 nothing checked
   ci               0 green or no checks, 1 red, 2 still pending or GitHub not reachable (\-\-json: always 0, unless \-\-exit\-code)
   doctor \-\-text \-\-strict   1 when a line says FIX
@@ -203,6 +205,21 @@ autofix caps per 24 h (default 6 and 2)
 .TP
 .B DEPLOYS_GITLAB_HOSTS
 self\-managed GitLab hosts (docs/GITLAB.md)
+.TP
+.B DEPLOYS_HTTP_TRACE
+1: one line per call to a platform on stderr (method, path without query, status, time; no header, no body); \-\-debug sets it
+.TP
+.B DEPLOYS_QUIET, DEPLOYS_DEBUG
+what the global \-\-quiet and \-\-debug set: only the result; the trace of the calls
+.TP
+.B DEPLOYS_PARALLEL
+how many platform or git host reads run at once in a list (default 8, at most 32; 3 while GitHub's budget is under 1000)
+.TP
+.B HTTP_DEADLINE
+seconds one platform call may take in all, tries and waits included (default 120)
+.TP
+.B DEPLOYS_CLOUDFLARE_PER_PAGE
+page size of the Cloudflare project list (default 10)
 .TP
 .B DEPLOYS_ANTHROPIC_API_KEY
 the key for deploys ai, before ANTHROPIC_API_KEY and the keychain

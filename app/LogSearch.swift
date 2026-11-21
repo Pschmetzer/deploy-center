@@ -61,6 +61,9 @@ struct LogSearchView: View {
     @State private var logs: [(project: String, text: String)] = []
     @State private var loading = true
     @State private var query = ""
+    @State private var unreadable = 0
+    @State private var readAt: Date?
+    @FocusState private var searchFocused: Bool
     @AppStorage("demoMode") private var demoMode = false
 
     private var failed: [Item] { store.allItems.filter { $0.failed } }
@@ -71,10 +74,12 @@ struct LogSearchView: View {
             HStack {
                 Text(L("Failed builds", "Fehlgeschlagene Builds")).font(.headline)
                 Spacer()
+                Button(L("Reload", "Neu laden")) { Task { loading = true; await load() } }.disabled(loading)
                 Button(L("Close", "Schließen")) { dismiss() }.keyboardShortcut(.cancelAction)
             }.padding(16)
             TextField(L("Search the logs of failed projects", "In den Logs fehlgeschlagener Projekte suchen"), text: $query)
                 .textFieldStyle(.roundedBorder).padding(.horizontal, 16).padding(.bottom, 10)
+                .focused($searchFocused)
                 .accessibilityLabel(L("Search the logs", "Logs durchsuchen"))
             Divider()
             if loading {
@@ -94,12 +99,17 @@ struct LogSearchView: View {
                                 Text(shown(g.sample)).font(.system(.caption, design: .monospaced)).lineLimit(3).textSelection(.enabled)
                                 Text(L("\(g.projects.count) projects: ", "\(g.projects.count) Projekte: ") + g.projects.map(shown).joined(separator: ", "))
                                     .font(.caption).foregroundStyle(.secondary)
+                                CopyButton(title: L("Copy error line", "Fehlerzeile kopieren")) { shown(g.sample) }.buttonStyle(.link).font(.caption)
                             }
-                            .accessibilityElement(children: .combine)
+                            .accessibilityElement(children: .contain)
                         }
                     } else {
                         let hits = LogGroups.search(query, in: logs)
                         if hits.isEmpty { Text(L("Nothing found.", "Nichts gefunden.")).foregroundStyle(.secondary) }
+                        if Dictionary(grouping: hits, by: \.project).values.contains(where: { $0.count >= 20 }) {
+                            Text(L("Showing at most 20 lines per project; narrow the search to see more.", "Es werden höchstens 20 Zeilen je Projekt gezeigt; Suche eingrenzen für mehr."))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                         ForEach(Array(hits.enumerated()), id: \.offset) { _, h in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(shown(h.text)).font(.system(.caption, design: .monospaced)).lineLimit(3).textSelection(.enabled)
@@ -109,19 +119,26 @@ struct LogSearchView: View {
                         }
                     }
                 }
+                if let readAt {
+                    Divider()
+                    Text(L("Read at \(uiTime(readAt))", "Gelesen um \(uiTime(readAt))")
+                         + (unreadable > 0 ? " · " + L("\(plural(unreadable, "log", "logs")) could not be read", "\(plural(unreadable, "Log", "Logs")) nicht lesbar") : ""))
+                        .font(.caption).foregroundStyle(unreadable > 0 ? Color.warningText : Color.secondary).padding(8)
+                }
             }
         }
         .frame(minWidth: 560, minHeight: 420)
-        .task { await load() }
+        .task { searchFocused = true; await load() }
     }
 
     private func load() async {
         var got: [(project: String, text: String)] = []
+        var bad = 0
         for i in failed {
             if let d = try? await Tool.run([i.platform.cli, "logs", i.id, "200"]), let t = String(data: d, encoding: .utf8) {
                 got.append((i.name, t))
-            }
+            } else { bad += 1 }
         }
-        logs = got; loading = false
+        logs = got; unreadable = bad; readAt = Date(); loading = false
     }
 }

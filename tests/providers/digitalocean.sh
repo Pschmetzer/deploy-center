@@ -31,9 +31,11 @@ m=GET; prev=""; bodyf=""; conf=""; for a in "$@"; do
   [ "$prev" = -X ] && m="$a"; [ "$prev" = --data-binary ] && bodyf="${a#@}"; prev="$a"; done
 url="${*: -1}"
 case " $* " in *" -K - "*) conf="$(cat)" ;; esac
+# A pre-signed log URL comes in the config (url = "..."), not as an argument.
+cu="$(sed -n 's/^url = "\(.*\)"$/\1/p' <<<"$conf" | head -n 1)"; [ -z "$cu" ] || url="$cu"
 n=$(( $(wc -l < "$CALLS" 2>/dev/null || echo 0) + 1 ))
 [ -n "$bodyf" ] && cp "$bodyf" "$FAKE_STATE/body-$n.json"
-echo "curl $m $url ARGS[$*] BODY[${bodyf:+body-$n.json}] AUTH[$( [ -n "$conf" ] && echo yes || echo no)]" >> "$CALLS"
+echo "curl $m $url ARGS[$*] BODY[${bodyf:+body-$n.json}] AUTH[$(case "$conf" in *Authorization*) echo yes ;; *) echo no ;; esac)]" >> "$CALLS"
 case "$url" in https://logs-store.example.com/*)
   case "$*$conf" in *Authorization*|*dop_v1*) echo "token sent to the log host" >&2; exit 9 ;; esac
   printf 'Step 1/3 : npm ci\nStep 2/3 : npm run build\nbuild complete\n'; exit 0 ;;

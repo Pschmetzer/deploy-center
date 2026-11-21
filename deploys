@@ -122,12 +122,14 @@
 #   deploys completion zsh|bash|fish          tab completion (eval "$(deploys completion zsh)";
 #                                             fish: deploys completion fish | source)
 #   deploys <command> --help                  the help lines of one command
+#   deploys exit-codes                        what the exit codes mean (the table of docs/CLI.md)
 #   deploys --help | --version
 #
-# Exit codes: 0 done (also "nothing to deploy"), 1 an error, something failed to start, or the
-# state of some project could not be read (it is named and left out, never counted as current).
+# Exit codes: 0 done (also "nothing to deploy"), 1 an error, something failed to
+# start, or the state of some project could not be read (it is named and left out, never counted as current),
+# 2 a wrong call (a missing argument: Usage: ...). `deploys exit-codes` prints this block.
 # Per command (docs/CLI.md has the table):
-#   watch            0 live, 1 failed or canceled, 3 the platform could not be asked, 4 --timeout
+#   watch            0 live, 1 failed or canceled (--json: phase says which), 3 the platform could not be asked or refused the key, 4 --timeout
 #   verify           0 healthy, 1 failed and rolled back, 2 failed and not rolled back, 3 nothing checked
 #   ci               0 green or no checks, 1 red, 2 still pending or GitHub not reachable (--json: always 0, unless --exit-code)
 #   doctor --text --strict   1 when a line says FIX
@@ -169,11 +171,29 @@ elif [ -z "${DEPLOYS_CONFIG:-}" ]; then chmod 700 "$CONFIG_DIR" 2>/dev/null || t
 # GNU first: GNU `stat -f` is the file system's status, and answers something that is no time.
 # One EXIT trap that runs every command added with trap_add (the newest first), so a later trap no longer replaces an
 # earlier one. trap_pop takes the newest off again (what `trap - EXIT` meant). $? inside a command is the exit status.
+# Functions the parallel readers (xargs bash -c) need are not exported for the whole script (that would put a
+# BASH_FUNC_* variable into every child process: git, curl, the user's hooks): par_fn names them, xargs_par
+# exports them for that one xargs only.
+PAR_FNS=()
+par_fn() { PAR_FNS=(${PAR_FNS[@]+"${PAR_FNS[@]}"} "$@"); }
+xargs_par() {
+  (
+    local f
+    # shellcheck disable=SC2163  # export -f of each function par_fn named
+    for f in ${PAR_FNS[@]+"${PAR_FNS[@]}"}; do ! declare -F "$f" >/dev/null 2>&1 || export -f "$f"; done
+    exec xargs "$@"
+  )
+}
+
 EXIT_CMDS=()
+# Each entry knows in which subshell it was added ($BASH_SUBSHELL): a $(...) that adds its own and exits must not run
+# those of the shell that started it (they would remove files the parent still needs).
+EXIT_DEPTH=()
 _exit_traps() {
   local rc=$? i
   local e
   for ((i = ${#EXIT_CMDS[@]} - 1; i >= 0; i--)); do
+    [ "${EXIT_DEPTH[$i]:-0}" = "${BASH_SUBSHELL:-0}" ] || continue
     e="${EXIT_CMDS[$i]}"
     if [ "${e:0:1}" = $'\x1e' ]; then   # trap_fn: a function and its words, called without eval
       local w=() sep=$'\x1f'; e="${e:1}"
@@ -184,19 +204,36 @@ _exit_traps() {
   done
   return "$rc"
 }
-trap_add() { EXIT_CMDS[${#EXIT_CMDS[@]}]="$1"; trap '_exit_traps' EXIT; }
+trap_add() { EXIT_DEPTH[${#EXIT_CMDS[@]}]="${BASH_SUBSHELL:-0}"; EXIT_CMDS[${#EXIT_CMDS[@]}]="$1"; trap '_exit_traps' EXIT; }
 # trap_fn <function> [word...]: the same at exit, but a function with its words (no text that is run as code, so no
 # quoting to get wrong). The words are fixed when it is added. Not for empty words. $EXIT_RC is the exit status.
 trap_fn() {
   local IFS=$'\x1f'
+  EXIT_DEPTH[${#EXIT_CMDS[@]}]="${BASH_SUBSHELL:-0}"
   EXIT_CMDS[${#EXIT_CMDS[@]}]=$'\x1e'"$*"; trap '_exit_traps' EXIT
 }
 exit_rm() { rm -f "$@"; }
 exit_rmdir() { rmdir "$@" 2>/dev/null || true; }
+exit_rmrf() { rm -rf "$@"; }
+# Every temp file or folder of this script is named deploys.XXXXXXXX (mktemp with a template of ours unless the caller
+# gives one), so one that a Ctrl-C or a kill left behind can be told from other programs' and swept: older than a day,
+# once a day, at the start of a command (not when this file is sourced as a library).
+mktemp() {
+  local a t=""
+  for a in "$@"; do case "$a" in -*) ;; *) t=1 ;; esac; done
+  if [ -n "$t" ]; then command mktemp "$@"; else command mktemp "$@" "${TMPDIR:-/tmp}/deploys.XXXXXXXX"; fi
+}
+tmp_sweep() {
+  local stamp="$CONFIG_DIR/.tmp-swept"
+  [ -n "${CONFIG_DIR:-}" ] && [ -d "$CONFIG_DIR" ] || return 0
+  [ ! -e "$stamp" ] || [ -n "$(find "$stamp" -mtime +0 2>/dev/null)" ] || return 0
+  find "${TMPDIR:-/tmp}" -maxdepth 1 -name 'deploys.????????' -user "$(id -un)" -mtime +0 -exec rm -rf {} + 2>/dev/null || true
+  : > "$stamp" 2>/dev/null || true
+}
 trap_pop() {
   local n=${#EXIT_CMDS[@]}
   [ "$n" -gt 0 ] || return 0
-  if [ "$n" -eq 1 ]; then EXIT_CMDS=(); trap - EXIT; else EXIT_CMDS=("${EXIT_CMDS[@]:0:$((n - 1))}"); fi
+  if [ "$n" -eq 1 ]; then EXIT_CMDS=(); EXIT_DEPTH=(); trap - EXIT; else EXIT_CMDS=("${EXIT_CMDS[@]:0:$((n - 1))}"); EXIT_DEPTH=("${EXIT_DEPTH[@]:0:$((n - 1))}"); fi
 }
 mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1"; }
 
@@ -226,7 +263,7 @@ file_lock() {  # file_lock <file> [stale seconds, default 10]; then file_unlock 
   return 1
 }
 file_unlock() { rm -rf "$1.lock" 2>/dev/null || true; }
-export -f mtime   # team_fetch_one runs under xargs
+par_fn mtime   # team_fetch_one runs under xargs
 # A file name for a key like owner/repo@ref: "/" and "@" become "_", as always. A key that has
 # a "_" of its own also gets its checksum, so a_b/c and a/b_c no longer meet in one file (one
 # answer was lost when they did).
@@ -235,7 +272,7 @@ cache_name() {
   case "$1" in *_*) n="$n-$(printf '%s' "$1" | cksum | cut -d' ' -f1)" ;; esac
   printf '%s' "$n"
 }
-export -f cache_name
+par_fn cache_name
 
 # with_timeout <seconds> <command...>: a command that may hang ends after that long (0 = no
 # limit): perl's alarm survives the exec, so the program itself gets the signal. Without perl,
@@ -253,11 +290,15 @@ with_timeout() {  # with_timeout <seconds> <command...>
   elif [ "$s" -gt 0 ] && command -v gtimeout >/dev/null 2>&1; then gtimeout "$s" "$@"
   else command "$@"; fi
 }
-export -f with_timeout
+par_fn with_timeout
 days_ago() { date -u -v-"$1"d +%Y-%m-%d 2>/dev/null || date -u -d "$1 days ago" +%Y-%m-%d; }
 b64d() { base64 -D 2>/dev/null || base64 -d; }
 
 die() { echo "${ERED:-}Error:${EPLAIN:-} $*" >&2; exit 1; }
+# A wrong call (a missing argument, a word that is no command): exit 2, so a script can tell it from an error (1).
+# --debug: what was decided, on stderr, masked like a log (the calls themselves are traced by lib/http.sh).
+dbg() { [ -z "${DEPLOYS_DEBUG:-}" ] || { printf 'debug: %s\n' "$*" | af_mask >&2 2>/dev/null || true; }; }
+die_usage() { echo "${ERED:-}Error:${EPLAIN:-} $*" >&2; exit 2; }
 # atomic_write <file>: stdin becomes the whole file or nothing (a temp file next to it, then mv), mode 600.
 atomic_write() {
   local t; mkdir -p "$(dirname "$1")" 2>/dev/null; t="$(mktemp "$1.XXXXXX")" || return 1
@@ -307,7 +348,7 @@ gh() {
 glab() { case "${1:-}" in api|auth) cli_limit glab "$@" ;; *) command glab "$@" ;; esac; }
 vercel() { case "${1:-}" in api|whoami|teams) cli_limit vercel "$@" ;; *) command vercel "$@" ;; esac; }
 # The parallel readers (xargs bash -c) are other shells: they get the limit too.
-export -f cli_limit gh glab vercel
+par_fn cli_limit gh glab vercel
 
 # --color=always|never|auto and --no-color anywhere on the command line (the last one wins) beat the environment.
 for _a in "$@"; do
@@ -376,6 +417,14 @@ if [ -f "$LIB_DIR/hooks.sh" ]; then . "$LIB_DIR/hooks.sh"; fi
 # One HTTP call with retries and hints, shared by the providers (lib/http.sh, PRV-130).
 # shellcheck source=lib/http.sh
 if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
+declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
+# The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
+# line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
+for _l in risk verify completion; do
+  # shellcheck source=/dev/null
+  if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
+done
+unset _l
 # rules.json ("when … then …" for the daily deploy): lib/rules.sh. Without it no rule counts.
 # shellcheck source=lib/rules.sh
 # A rules.json without lib/rules.sh to read it stops the run rather than ignore its hold rules.
@@ -463,7 +512,12 @@ while [ $# -gt 0 ]; do
     --) shift; args+=("$@"); break ;;
     --json) json=1 ;;
     --color=always|--color=never|--color=auto|--no-color) ;;   # read above, before the colours are set
-    --force) forced=1; force_reason="${2:-}"; [ $# -lt 2 ] || shift ;;
+    # The next word is the reason, unless it is an option: --force --wait must not take "--wait" as its reason.
+    --force) forced=1; case "${2:-}" in ""|-*) ;; *) force_reason="$2"; shift ;; esac ;;
+    # --quiet: only the result (watch and the waiting of deploy print no progress); --debug: what is asked
+    # of the platforms (method, path, status, time; DEPLOYS_HTTP_TRACE) and what was decided, secrets masked.
+    --quiet) export DEPLOYS_QUIET=1 ;;
+    --debug) export DEPLOYS_DEBUG=1 DEPLOYS_HTTP_TRACE=1 ;;
     --force=*) forced=1; force_reason="${1#--force=}" ;;
     *) args+=("$1") ;;
   esac
@@ -700,7 +754,7 @@ head_of() {
   fi
   rm -f "$f.err"
 }
-export -f head_of head_why
+par_fn head_of head_why
 
 # What is merged but not live: commits from the live commit to the branch, and the pull
 # requests among them (squash "(#12)" or "Merge pull request #12"). ahead_by is exact;
@@ -740,7 +794,7 @@ pending_of() {
     jq -c 'del(.value.bare, .value.nums)' "$f" > "$f.t" && mv "$f.t" "$f"
   fi
 }
-export -f pending_of
+par_fn pending_of
 
 # Pull requests still open on the repo: not merged, so not deployable yet either.
 # Drafts and bots (Dependabot, Renovate) counted apart, since they rarely mean "ship soon".
@@ -751,7 +805,7 @@ open_prs_of() {
     | jq -c --arg k "$repo" '{key:$k, value:{all:length, partial:(length >= 100), drafts:(map(select(.draft)) | length), bots:(map(select(.user.type=="Bot")) | length)}}' \
     > "$out/$(cache_name "$repo").json" 2>/dev/null || true
 }
-export -f open_prs_of
+par_fn open_prs_of
 
 # ---------- git hosts: GitHub above, GitLab in lib/githost.sh ----------
 # githost_of decides per repo; the githost_* dispatchers hand GitHub repos to the functions above.
@@ -771,7 +825,7 @@ else
   GITHOST_SLUG_JQ='(sub("^https://github.com/";"") | sub("^https?://";"") | sub("\\.git$";"") | sub("/$";""))'
   # shellcheck disable=SC2016,SC2034  # read by providers/vercel.sh
   GITHOST_VERCEL_LINK_JQ='(if .type == "gitlab" then null else "\(.org)/\(.repo)" end)'
-  export -f githost_of githost_head_of githost_pending_of githost_open_prs_of
+  par_fn githost_of githost_head_of githost_pending_of githost_open_prs_of
 fi
 
 # The default branch of a repo (GitHub or GitLab); empty when the host cannot tell.
@@ -824,34 +878,39 @@ with_heads() {
   # no heads: nothing counts as changed.
   if [ -n "${DEPLOYS_NO_GITHUB:-}" ] || ! githost_available; then echo "$list" | jq "$CHANGED_RULE"; return; fi
   tmp="$(mktemp -d)"; mkdir "$tmp/h" "$tmp/p" "$tmp/o"
+  trap_fn exit_rmrf "$tmp"
+  # GitHub's budget first: with little left, fewer reads at once (a burst of eight is what trips the secondary limit).
+  local left budget reset plim; budget="$(github_budget)"
+  left="$(echo "$budget" | jq -r '.remaining // 5000' 2>/dev/null || echo 5000)"
+  plim="$(parallel_limit 8)"; [ "${left:-5000}" -ge 1000 ] || [ "$plim" -le 3 ] || plim=3
   echo "$list" | jq -r '.[] | select(.repo and .ref) | "\(.repo) \(.ref)"' | sort -u \
-    | tr ' \n' '\000\000' | xargs -0 -r -P 8 -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
+    | tr ' \n' '\000\000' | xargs_par -0 -r -P "$plim" -n 2 bash -c 'githost_head_of "$1" "$2" "$0"' "$tmp/h"
   heads="$(cat_all "$tmp/h"/*.json | jq -s 'from_entries')"
   # An empty answer becomes {} on its own line: bash 3.2 keeps the backslash of an escaped {} default (invalid JSON).
   [ -n "$heads" ] || heads='{}'
-  list="$(echo "$list" | jq --argjson h "$heads" 'map(. + (($h["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha, headError:(.error // null)}))')"
+  # Through files (--slurpfile), not --argjson: a list of hundreds of projects is more than one argument may hold.
+  printf '%s' "$heads" > "$tmp/heads.json"
+  list="$(echo "$list" | jq --slurpfile h "$tmp/heads.json" 'map(. + (($h[0]["\(.repo)@\(.ref)"] // {}) | {headAt:.at, headMsg:.msg, headSha:.sha, headError:(.error // null)}))')"
   # With GitHub's budget nearly spent, keep it for what decides "changed" (the heads above).
-  local left budget reset; budget="$(github_budget)"
-  left="$(echo "$budget" | jq -r '.remaining // 5000' 2>/dev/null || echo 5000)"
   if [ "${left:-5000}" -lt 300 ]; then
     # Said once, on stderr (the app reads stdout): what is missing, and until when. Each project
     # says budgetLow, so a reader knows its waiting commits were not counted.
     reset="$(echo "$budget" | jq -r '.reset // 0' 2>/dev/null)"
-    reset="$(date -r "${reset:-0}" +%H:%M 2>/dev/null || date -d "@${reset:-0}" +%H:%M 2>/dev/null || echo "?")"
+    reset="$(date -d "@${reset:-0}" +%H:%M 2>/dev/null || date -r "${reset:-0}" +%H:%M 2>/dev/null || echo "?")"
     echo "GitHub API limit nearly used up ($left calls left, back at $reset): commits and pull requests were not compared." >&2
     rm -rf "$tmp"; echo "$list" | jq "$CHANGED_RULE"' | map(. + {budgetLow:true})'; return
   fi
   # Compared only where the branch moved past the live commit.
   echo "$list" | jq -r '.[] | select(.repo and .ref and .lastSha and .headSha and .lastSha != .headSha) | "\(.repo) \(.lastSha) \(.ref)"' \
-    | sort -u | tr ' \n' '\000\000' | xargs -0 -r -P 8 -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
-  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | tr '\n' '\000' | xargs -0 -r -P 8 -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
+    | sort -u | tr ' \n' '\000\000' | xargs_par -0 -r -P "$plim" -n 3 bash -c 'githost_pending_of "$1" "$2" "$3" "$0"' "$tmp/p"
+  echo "$list" | jq -r '.[] | .repo // empty' | sort -u | tr '\n' '\000' | xargs_par -0 -r -P "$plim" -n 1 bash -c 'githost_open_prs_of "$1" "$0"' "$tmp/o"
   pend="$(cat_all "$tmp/p"/*.json | jq -s 'from_entries')"
   opens="$(cat_all "$tmp/o"/*.json | jq -s 'from_entries')"
-  rm -rf "$tmp"
   [ -n "$pend" ] || pend='{}'; [ -n "$opens" ] || opens='{}'
-  echo "$list" | jq --argjson p "$pend" --argjson o "$opens" 'map(
-      (if .lastSha and .headSha and .lastSha == .headSha then {commits:0, prs:0} else ($p["\(.repo)@\(.lastSha)@\(.ref)"] // {}) end) as $x
-      | ($o[.repo // ""] // {}) as $op
+  printf '%s' "$pend" > "$tmp/pend.json"; printf '%s' "$opens" > "$tmp/opens.json"
+  echo "$list" | jq --slurpfile p "$tmp/pend.json" --slurpfile o "$tmp/opens.json" 'map(
+      (if .lastSha and .headSha and .lastSha == .headSha then {commits:0, prs:0} else ($p[0]["\(.repo)@\(.lastSha)@\(.ref)"] // {}) end) as $x
+      | ($o[0][.repo // ""] // {}) as $op
       | . + {pendingCommits:($x.commits // null), pendingPRs:($x.prs // null), pendingPartial:($x.partial // false),
              oldestPendingAt:($x.oldestAt // null), rewritten:($x.rewritten // false),
              # ahead, behind, diverged or identical: how the branch stands to what is live. Null when not compared.
@@ -860,7 +919,8 @@ with_heads() {
              risk:($x.risk // null),
              # 100 is one page: past that openPRs is a floor (as pendingPartial is for commits).
              openPRs:($op.all // null), openPartial:($op.partial // false), openDrafts:($op.drafts // null), openBots:($op.bots // null)})' \
-    | jq "$CHANGED_RULE"
+    | jq "$CHANGED_RULE" || { rm -rf "$tmp"; return 1; }
+  rm -rf "$tmp"
 }
 
 
@@ -899,6 +959,7 @@ provider_json() {
 # an empty list must never stand for "all up to date".
 all_json() {
   local t rc=0 p; t="$(mktemp -d)"
+  trap_fn exit_rmrf "$t"
   for p in $(active_providers); do
     # Its key sits in a keychain that cannot be read (locked under launchd or SSH): say that, not
     # the provider's own "no token" (Render says it itself).
@@ -1017,6 +1078,7 @@ ci_of() {  # ci_of <owner/repo> <sha or branch>: the verdict as one line of JSON
     unknown) jq -nc --arg r "$1" '{state:"unknown", final:true, reason:"the CI of \($r) cannot be read (only GitHub and GitLab)"}'; return 0 ;;
   esac
   local t rc=0; t="$(mktemp -d)"
+  trap_fn exit_rmrf "$t"
   # The combined status is paged as well (statuses, 100 to a page): one page of green must not hide a red on the next.
   gh api --paginate "repos/$1/commits/$2/status?per_page=100" > "$t/s" 2>/dev/null || rc=$((rc + 1))
   # Every page: a monorepo matrix can have more than 100 check runs, and a red one on page 2
@@ -1220,44 +1282,6 @@ journal_add() {  # journal_add <platform> <name> <result> <detail>
   [ -z "$locked" ] || file_unlock "$f"
 }
 
-# One list of "files that change how it runs" (re_*), used by risk and by details .risky.
-# What a pending diff touches, from a GitHub comparison (its .files): migrations are red, lockfiles,
-# environment files and config yellow, a large diff yellow and a very large one red. The worst wins.
-# Each reason has a kind, so the app can say it in its own language.
-# shellcheck disable=SC2089,SC2090  # a jq program, handed to jq as one argument
-RISK_DEF='def re_mig: "(^|/)(migrations?|migrate|prisma|drizzle|alembic|flyway|liquibase)/|(^|/)db/seeds?(/|\\.rb$)|\\.sql$|(^|/)(schema\\.(prisma|rb)|atlas\\.hcl|structure\\.dump)$";
-  def re_lock: "(^|/)(package-lock\\.json|npm-shrinkwrap\\.json|pnpm-lock\\.yaml|yarn\\.lock|bun\\.lockb?|Pipfile\\.lock|poetry\\.lock|uv\\.lock|Gemfile\\.lock|Cargo\\.lock|go\\.sum|composer\\.lock|pdm\\.lock|mix\\.lock|pubspec\\.lock|Package\\.resolved|deno\\.lock|package\\.json|requirements\\.txt|go\\.mod|pyproject\\.toml|Pipfile|Gemfile|composer\\.json|Cargo\\.toml|build\\.gradle(\\.kts)?|pom\\.xml|pnpm-workspace\\.yaml|\\.npmrc|bunfig\\.toml)$";
-  def re_runtime: "(^|/)(\\.nvmrc|\\.node-version|\\.python-version|\\.tool-versions|runtime\\.txt|\\.ruby-version)$";
-  def re_gen: "(^|/)(package-lock\\.json|npm-shrinkwrap\\.json|pnpm-lock\\.yaml|yarn\\.lock|bun\\.lockb?|Pipfile\\.lock|poetry\\.lock|uv\\.lock|Gemfile\\.lock|Cargo\\.lock|go\\.sum|composer\\.lock|pdm\\.lock|mix\\.lock|pubspec\\.lock|Package\\.resolved|deno\\.lock)$|\\.snap$|(^|/)__generated__/|\\.min\\.[a-z]+$";
-  def re_env: "(^|/)\\.env($|\\.(?!(example|sample|template|dist)$))";
-  def re_cfg: "(^|/)(vercel\\.json|render\\.yaml|Dockerfile|docker-compose\\.ya?ml|Procfile|(next|vite|nuxt|astro|svelte|remix)\\.config\\.[a-z]+|netlify\\.toml|_redirects|_headers|wrangler\\.(toml|jsonc?)|amplify\\.yml|nixpacks\\.toml|fly\\.toml|railway\\.(json|toml)|firebase\\.json|app\\.yaml|serverless\\.yml|Makefile|\\.gitlab-ci\\.yml)$|^\\.do/app\\.yaml$|^\\.github/(workflows|actions)/";
-  def risky_files: [(.files // [])[] | .filename | select(test(re_mig) or test(re_lock) or test(re_runtime) or test(re_env) or test(re_cfg))];
-  def risk:
-  [(.files // [])[] | .filename] as $f
-  | def hits(re): [$f[] | select(test(re))];
-    def some(fs): fs[0:3] | join(", ") + (if (fs | length) > 3 then " and \((fs | length) - 3) more" else "" end);
-  hits(re_mig) as $mig
-  | hits(re_lock) as $lock
-  | hits(re_env) as $env
-  | hits(re_cfg) as $cfg
-  | hits(re_runtime) as $rt
-  # Lockfiles, snapshots and generated code have their own note: they do not make a diff "very large".
-  | ([(.files // [])[] | select(.filename | test(re_gen) | not) | (.additions // 0) + (.deletions // 0)] | add // 0) as $sized
-  | ([(.files // [])[] | (.additions // 0) + (.deletions // 0)] | add // 0) as $lines
-  | ($f | length) as $n
-  | [ (if ($mig | length) > 0 then {kind:"migrations", level:"red", files:$mig[0:10], text:"database migrations: \(some($mig))"} else empty end),
-      (if ($lock | length) > 0 then {kind:"lockfile", level:"yellow", files:$lock[0:10], text:"dependencies changed: \(some($lock))"} else empty end),
-      (if ($rt | length) > 0 then {kind:"runtime", level:"yellow", files:$rt[0:10], text:"runtime version changed: \(some($rt))"} else empty end),
-      (if ($env | length) > 0 then {kind:"env", level:"yellow", files:$env[0:10], text:"environment files: \(some($env))"} else empty end),
-      (if ($cfg | length) > 0 then {kind:"config", level:"yellow", files:$cfg[0:10], text:"build or platform config: \(some($cfg))"} else empty end),
-      (if $sized > 3000 or $n >= 100 then {kind:"size", level:"red", files:[], text:"a very large diff: \($n) files, \($sized) lines"}
-       elif $sized > 500 or $n > 30 then {kind:"size", level:"yellow", files:[], text:"a large diff: \($n) files, \($sized) lines"} else empty end) ] as $r
-  | {level:(if any($r[]; .level == "red") then "red" elif ($r | length) > 0 then "yellow" else "green" end),
-     reasons:$r, files:$n, lines:$lines,
-     # GitHub lists 300 files of a comparison at most: from there the picture is a floor, not the whole diff.
-     partial:($n >= 300)};'
-# shellcheck disable=SC2090
-export RISK_DEF
 
 # The site of a project: its own domain first, then the platform address.
 site_url_of() {  # site_url_of <project> <platform>
@@ -1290,36 +1314,7 @@ log_new_lines() {  # log_new_lines <old file> <new file>
       for (i = idx + 1; i <= m; i++) print a[i]
     }' "$1" "$2"
 }
-# hooks.d: executable files named pre-deploy* or post-deploy* in $CONFIG_DIR/hooks.d, run around a start with
-# DEPLOYS_PLATFORM, DEPLOYS_PROJECT, DEPLOYS_SHA (and DEPLOYS_STATE after). A pre-deploy hook that exits non-zero
-# stops that start; a post-deploy hook cannot. A file that others or the group can write to, or that another account owns
-# (root excepted), is never run. A hook that runs longer than DEPLOYS_HOOK_TIMEOUT seconds (default 300, 0 = no limit)
-# is stopped and counts as failed. Their output goes to stderr.
-hook_run() {  # hook_run <pre-deploy|post-deploy> <platform> <name> [<sha>] [<state>]
-  local d="$CONFIG_DIR/hooks.d" h perm rc owner me hto="${DEPLOYS_HOOK_TIMEOUT:-300}"
-  [ -d "$d" ] || return 0
-  me="$(id -un 2>/dev/null)"
-  local dperm; dperm="$(ls -ldH "$d" | cut -c1-10)"
-  if [ "${dperm:5:1}" = w ] || [ "${dperm:8:1}" = w ]; then echo "hooks.d: the folder is writable by its group or by everyone; no hook was run (chmod go-w $d)" >&2; return 0; fi
-  for h in "$d/$1"*; do
-    # Backups and editor files are no hooks (pre-deploy.bak, pre-deploy.sh~), and a link may point anywhere.
-    case "$h" in *'~'|*.bak|*.orig|*.swp|*.disabled|*.dpkg-*|*.rpmsave|*.rpmnew) continue ;; esac
-    if [ -L "$h" ]; then echo "hooks.d: $(basename "$h") is a symbolic link and was not run" >&2; continue; fi
-    [ -f "$h" ] && [ -x "$h" ] || continue
-    perm="$(ls -ld "$h" | cut -c1-10)"
-    if [ "${perm:8:1}" = w ]; then echo "hooks.d: $(basename "$h") is writable by everyone and was not run (chmod o-w)" >&2; continue; fi
-    if [ "${perm:5:1}" = w ]; then echo "hooks.d: $(basename "$h") is writable by its group and was not run (chmod g-w)" >&2; continue; fi
-    owner="$(ls -ld "$h" | awk '{print $3}')"
-    if [ -n "$me" ] && [ "$owner" != "$me" ] && [ "$owner" != root ]; then echo "hooks.d: $(basename "$h") belongs to $owner, not to you, and was not run" >&2; continue; fi
-    rc=0
-    DEPLOYS_HOOK="$1" DEPLOYS_PLATFORM="$2" DEPLOYS_PROJECT="$3" DEPLOYS_SHA="${4:-}" DEPLOYS_STATE="${5:-}" with_timeout "$hto" "$h" </dev/null >&2 || rc=$?
-    if [ "$rc" != 0 ]; then
-      case "$rc" in 124|142) echo "hooks.d: $(basename "$h") ran longer than ${hto}s (DEPLOYS_HOOK_TIMEOUT) and was stopped" >&2 ;; *) echo "hooks.d: $(basename "$h") exited $rc" >&2 ;; esac
-      [ "$1" != pre-deploy ] || return 1
-    fi
-  done
-  return 0
-}
+# hook_run (the hooks.d scripts) and the risk rules are in lib/risk.sh.
 deploy_one() {  # deploy_one <platform> <name> [<sha>] [<id>]: the start as JSON
   # By its id when known (Render: srv-…): a name may hold characters an API path cannot (safe_arg refuses them).
   local id="${4:--}" out; [ "$id" != "-" ] || id="$2"
@@ -1349,6 +1344,7 @@ load_savings() {
 with_ci_preview() {  # with_ci_preview <changed list JSON>
   local list="$1" cid i=0 k repo sha cis
   cid="$(mktemp -d)"
+  trap_fn exit_rmrf "$cid"
   while IFS=$'\t' read -r k repo sha; do
     [ -n "$k" ] || continue
     if [ -z "$repo" ] || [ -z "$sha" ]; then echo '{"state":"unknown","reason":"the commit or repo is unknown, so its checks are too","noRepo":true}' > "$cid/$k"; continue; fi
@@ -1356,7 +1352,13 @@ with_ci_preview() {  # with_ci_preview <changed list JSON>
     i=$((i + 1)); [ $((i % 4)) != 0 ] || wait
   done <<< "$(echo "$list" | jq -r 'to_entries[] | "\(.key)\t\(.value.repo // "")\t\(.value.headSha // "")"')"
   wait
-  cis="$(for k in $(echo "$list" | jq -r 'keys[]'); do jq -c . "$cid/$k" 2>/dev/null || echo '{"state":"unknown","reason":"no answer"}'; done | jq -sc .)"
+  # One jq for all the answers (it was one per project). When the count is off (a file missing or not JSON), the
+  # slow way below decides project by project, so that one broken answer is "unknown" and the others are kept.
+  local ckeys; ckeys="$(echo "$list" | jq -r 'keys[]')"
+  cis="$(cd "$cid" && echo "$ckeys" | xargs -r jq -c . 2>/dev/null | jq -sc . 2>/dev/null)" || cis=""
+  if [ "$(echo "${cis:-null}" | jq 'length' 2>/dev/null)" != "$(echo "$ckeys" | grep -c .)" ]; then
+    cis="$(for k in $ckeys; do jq -c . "$cid/$k" 2>/dev/null || echo '{"state":"unknown","reason":"no answer"}'; done | jq -sc .)"
+  fi
   rm -rf "$cid"
   echo "$list" | jq -c --argjson c "$cis" 'to_entries | map(.value + {ci:$c[.key],
     wouldDo:(if ($c[.key].state == "green" or $c[.key].state == "none") then "would-deploy"
@@ -1428,7 +1430,7 @@ cost_day() {
           | map({name:(.[0].Tags.ProjectName // "?"), build:(map(.BilledCost)|add)}))}' \
     > "$out/$from.json" 2>/dev/null || true
 }
-export -f cost_day days_ago
+par_fn cost_day days_ago
 
 # ---------- Other things that start builds ----------
 
@@ -1446,7 +1448,7 @@ workflow_hits() {
       && jq -nc --arg w "$repo" --arg d "$f" '{kind:"workflow", where:$w, detail:$d}'
   done > "$out/$(cache_name "$repo").jsonl" || true
 }
-export -f workflow_hits b64d
+par_fn workflow_hits b64d
 
 # ---------- Commands ----------
 
@@ -1562,11 +1564,19 @@ af_prs() {  # af_prs <owner/repo> <project> <open|closed>
 
 # One fire. The token goes to curl on stdin, never as an argument. Prints "<code>\t<body>".
 af_fire() {  # af_fire <trigger id> <text file>
+  # Under `bash -x` the trace would print the token: off in here, on again when done.
+  local xt="" rc=0; case $- in *x*) xt=1; set +x ;; esac
+  af_fire_inner "$@" || rc=$?
+  [ -z "$xt" ] || set -x  # secrets-ok: restores a trace the caller had on
+  return "$rc"
+}
+af_fire_inner() {
   local tok body out code; tok="$(af_token)"; [ -n "$tok" ] || { printf '000\tno routine token'; return; }
   # The token goes into a curl config line: a quote or a line break in it could add directives.
   case "$tok" in *[!A-Za-z0-9._-]*) printf '000\tthe routine token holds characters a token never has'; return;; esac
   body="$(mktemp)"; jq -Rs '{text:.}' < "$2" > "$body"
   local errf; errf="$(mktemp)"
+  trap_fn exit_rm "$body" "$errf"
   # curl's own stderr (a warning before the answer) is kept apart: the answer stays JSON.
   out="$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl -sS -K - --connect-timeout 10 --max-time 60 -X POST \
     -H "anthropic-version: 2023-06-01" -H "anthropic-beta: ${DEPLOYS_ROUTINE_BETA:-experimental-cc-routine-2026-04-01}" \
@@ -1935,6 +1945,7 @@ autofix_run() {  # autofix_run [dry] [<platform> <project> [again]]  (the two: -
     if [ -n "$dry" ]; then echo "autofix (dry run): would hand $plat $p (deploy $did, ${sha:0:7}) to the routine"; break; fi
     [ -n "$trig" ] || { echo "autofix: no routine set. Run: deploys autofix routine <trig_id>" >&2; rc=1; [ -z "$oname" ] || out="$AF_NO_ROUTINE"; break; }
     text="$(mktemp)"
+    trap_fn exit_rm "$text"
     af_payload "$c" > "$text"
     # FEA-017: what kind of failure it looks like, from the masked log (a hint for the app, not a gate).
     local cls; cls="$(sed -n '/^```$/,/^```$/p' "$text" | af_classify)"
@@ -2376,6 +2387,7 @@ guard_run() {
   for plat in $(ad_platforms); do
     [ "$sp" = all ] || [ "$sp" = "$plat" ] || continue
     err="$(mktemp)"
+    trap_fn exit_rm "$err"
     # One platform that cannot be read is an error, never "nothing is on"; the other still runs.
     if ! list="$(ad_list "$plat" 2>"$err")" || ! echo "$list" | jq -e 'type == "array"' >/dev/null 2>&1; then
       out="$(grep -v '^[[:space:]]*$' "$err" | tail -n 1 | sed 's/^Error: //' | cut -c1-300)"; rm -f "$err"
@@ -2581,6 +2593,7 @@ ai_ask() {  # ai_ask <system file> <user file>
   # A refusal on Opus or Sonnet is answered by a fallback model on the server; Haiku has none.
   case "$model" in claude-opus-*|claude-sonnet-*) beta="server-side-fallback-2026-07-01";; esac
   body="$(mktemp)"
+  trap_fn exit_rm "$body"
   af_mask < "$2" | jq -Rs --rawfile sys "$1" --arg m "$model" --arg fb "$beta" \
     '{model:$m, max_tokens:4000, output_config:{effort:"low"}, system:$sys,
       messages:[{role:"user", content:.}]} + (if $fb != "" then {fallbacks:"default"} else {} end)' > "$body"
@@ -2805,8 +2818,8 @@ fi
 # An option where the project belongs (`watch --timeout 30m`) counts as missing too.
 ARGV=("$@")
 usage_if_short() {
-  [ "$1" -ge "$2" ] || die "Usage: deploys $3"
-  case "${ARGV[$(($2 - 1))]:-}" in -*) die "Usage: deploys $3" ;; esac
+  [ "$1" -ge "$2" ] || die_usage "Usage: deploys $3"
+  case "${ARGV[$(($2 - 1))]:-}" in -*) die_usage "Usage: deploys $3" ;; esac
 }
 case "${1:-} ${2:-}" in
   "watch "*)       usage_if_short $# 2 "watch <project>" ;;
@@ -2845,6 +2858,7 @@ case "${1:-} ${2:-}" in
   "verify "*) args_has "--no-rollback" "${@:3}" || require_write "verify (it may roll back; add --no-rollback to only check)" ;;
   # autofix hands failed builds to a routine that opens pull requests, and guard turns auto-deploy
   # off: both change something unless --dry-run (also after --only). Their settings and status only read.
+  "config import"*) args_has "--yes" "${@:3}" && require_write "config import --yes" || true ;;
   "scan start"|"scan run") require_write "scan" ;;
   "check start"|"check run") require_write "check" ;;
   "autofix "|"autofix --"*|"guard "|"guard --"*)
@@ -2902,6 +2916,7 @@ if is_provider "${1:-}"; then
 fi
 
 # The team merge of this process (lib/team.sh keeps it once per process) goes with it.
+tmp_sweep
 if team_on && [ -z "${DEPLOYS_LIB:-}" ] && declare -F team_eff_forget >/dev/null; then trap_fn team_eff_forget; fi
 
 # `deploys <p> <verb> [args]`: <p>_cli_<verb> where a provider keeps a command's old output for
@@ -2935,11 +2950,7 @@ provider_cmd() {
 }
 
 # watch: only the shared phase decides that a deploy is over; and how long it took, for people.
-watch_final() { case "$1" in ready|failed|canceled) return 0;; esac; return 1; }
-watch_took() {
-  if [ "$1" -ge 3600 ]; then printf '%dh%02dm\n' $(($1 / 3600)) $(($1 % 3600 / 60))
-  elif [ "$1" -ge 60 ]; then echo "$(($1 / 60))m$(($1 % 60))s"; else echo "${1}s"; fi
-}
+# watch_final, watch_took, watch_jitter, watch_json and watch_stop_all are in lib/verify.sh.
 
 # `deploy <group> --json`: the starts so far as one array (GROUP_STARTS), for a group only.
 group_json_out() { [ "$json" != 1 ] || [ "$1" -le 1 ] || echo "$GROUP_STARTS"; }
@@ -3074,9 +3085,15 @@ case "${1:-} ${2:-}" in
       shift
     done
     rc=0; all="$(all_json)" || rc=$?
-    mtext="$(echo "$all" | jq -r --argjson now "$(date +%s)" '
+    mtext="$(echo "$all" | jq -r --argjson now "$(date +%s)" --argjson up "$([ "$rc" = 0 ] && echo 1 || echo 0)" '
       def esc: tostring | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"") | gsub("\n"; " ");
       def lbl: "{platform=\"\(.platform | esc)\",project=\"\(.name | esc)\"}";
+      "# HELP deploycenter_up 1 when every platform answered this time, 0 when one did not (the numbers below may be short).",
+      "# TYPE deploycenter_up gauge",
+      "deploycenter_up \($up)",
+      "# HELP deploycenter_scrape_timestamp_seconds When these numbers were read (Unix time).",
+      "# TYPE deploycenter_scrape_timestamp_seconds gauge",
+      "deploycenter_scrape_timestamp_seconds \($now)",
       "# HELP deploycenter_projects Projects read, per platform.",
       "# TYPE deploycenter_projects gauge",
       (group_by(.platform)[] | "deploycenter_projects{platform=\"\(.[0].platform | esc)\"} \(length)"),
@@ -3094,7 +3111,7 @@ case "${1:-} ${2:-}" in
       (.[] | "deploycenter_building\(lbl) \(if ((.phase // "") | IN("building", "queued")) then 1 else 0 end)"),
       "# HELP deploycenter_failed 1 when the newest deploy failed.",
       "# TYPE deploycenter_failed gauge",
-      (.[] | "deploycenter_failed\(lbl) \(if (.phase // "") == "failed" then 1 else 0 end)")' | grep -v '^$')" || exit 1
+      (.[] | "deploycenter_failed\(lbl) \(if (.phase // "") == "failed" then 1 else 0 end)")' | sed '/^$/d')" || exit 1
     if [ -n "$mout" ]; then
       mt="$(mktemp "$mout.XXXXXX")" || die "Cannot write next to $mout"
       chmod 644 "$mt" 2>/dev/null   # mktemp makes 0600; a metrics file is read by another account (node_exporter)
@@ -3171,6 +3188,45 @@ case "${1:-} ${2:-}" in
     plat="${r%%$'\t'*}"; pid="${r#*$'\t'}"
     need_cap "$plat" "$verb" "$verb $name"
     exec "$SELF" "$plat" "$verb" "$pid" "${@:3}" ;;
+
+  "config export"*|"config import"*)
+    # config export [<file>]: this Mac's settings (prices, rules, budget, window, providers, overrides, vercel repos) as one
+    # JSON file, to set up another Mac or keep a copy. No keys (they live in the keychain), no journal, no hook URLs, not
+    # the observer switch. config import <file> [--yes]: checks the file (every part must be JSON, and nothing that
+    # looks like a key or token), says what it would write, and writes it only with --yes.
+    cfg_parts="providers.json prices.json rules.json budget.json window.json overrides.json vercel-repos.json"
+    if [ "$2" = export ]; then
+      cx="{}"
+      for cf in $cfg_parts; do
+        [ -s "$CONFIG_DIR/$cf" ] || continue
+        cx="$(jq -c --arg k "$cf" --slurpfile v "$CONFIG_DIR/$cf" '.[$k] = $v[0]' <<<"$cx")" || die "$cf is not valid JSON; fix it first (deploys doctor)"
+      done
+      cx="$(jq -c '{kind:"deploys-config", version:1, files:.}' <<<"$cx")"
+      if [ -n "${3:-}" ]; then
+        ( umask 077; printf '%s\n' "$cx" | jq . > "$3" ) || die "Cannot write $3"
+        echo "Wrote $(jq '.files | length' <<<"$cx") settings files to $3 (no keys, no journal)."
+      else printf '%s\n' "$cx" | jq .; fi
+      exit 0
+    fi
+    cfile="${3:-}"; [ -n "$cfile" ] && [ -r "$cfile" ] || die_usage "Usage: deploys config import <file> [--yes]"
+    cdo=""; case "${4:-}" in --yes) cdo=1 ;; "") ;; *) die_usage "Usage: deploys config import <file> [--yes]" ;; esac
+    jq -e '.kind == "deploys-config" and .version == 1 and (.files | type == "object")' "$cfile" >/dev/null 2>&1 || die "$cfile is not a file made by deploys config export"
+    # A key or token that found its way in is refused: the masker of the logs is the judge.
+    if [ "$(af_mask < "$cfile" | cmp -s - "$cfile" && echo same)" != same ]; then die "$cfile holds something that looks like a key or token; remove it, keys belong in the keychain"; fi
+    for cf in $(jq -r '.files | keys[]' "$cfile"); do
+      case " $cfg_parts " in *" $cf "*) ;; *) die "$cfile names a file this command does not import: $cf" ;; esac
+    done
+    for cf in $(jq -r '.files | keys[]' "$cfile"); do
+      if [ -s "$CONFIG_DIR/$cf" ] && [ "$(jq -S . "$CONFIG_DIR/$cf" 2>/dev/null)" = "$(jq -S ".files[\"$cf\"]" "$cfile")" ]; then echo "  $cf: the same already"
+      elif [ -s "$CONFIG_DIR/$cf" ]; then echo "  $cf: would replace the one here (kept as $cf.bak)"
+      else echo "  $cf: new"; fi
+    done
+    if [ -z "$cdo" ]; then echo "Nothing written. Add --yes to write it."; exit 0; fi
+    for cf in $(jq -r '.files | keys[]' "$cfile"); do
+      [ ! -s "$CONFIG_DIR/$cf" ] || cp "$CONFIG_DIR/$cf" "$CONFIG_DIR/$cf.bak"
+      ( umask 077; jq ".files[\"$cf\"]" "$cfile" > "$CONFIG_DIR/$cf.tmp.$$" && mv -f "$CONFIG_DIR/$cf.tmp.$$" "$CONFIG_DIR/$cf" ) || die "Cannot write $CONFIG_DIR/$cf"
+    done
+    echo "Imported $(jq '.files | length' "$cfile") settings files." ;;
 
   "config "*)
     # config [--json] [--refresh]: every value in effect here, and where it came from.
@@ -3253,14 +3309,25 @@ case "${1:-} ${2:-}" in
   "hooks "*)
     # The pre-push check of integrations/hooks/ in a git repo (default: this folder), next to its own hook.
     declare -F hooks_install >/dev/null || die "lib/hooks.sh is not next to deploys."
-    r="${3:-.}"; [ -d "$r" ] || die "No folder $r."
-    case "${2:-}" in
-      install) hooks_install "$r" ;;
-      uninstall) hooks_uninstall "$r" ;;
+    # hooks install|uninstall|status [<repo folder>] [--hook pre-push|pre-commit] [--yes]
+    r="."; hk="pre-push"; export HOOKS_YES=""; hsub="${2:-}"
+    if [ $# -ge 2 ]; then shift 2; else shift $#; fi
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --hook) hk="${2:-}"; [ $# -ge 2 ] || die_usage "--hook takes pre-push or pre-commit"; shift ;;
+        --yes) export HOOKS_YES=1 ;;
+        -*) die_usage "Unknown option $1. Usage: deploys hooks install|uninstall|status [<repo folder>] [--hook pre-push|pre-commit] [--yes] [--json]" ;;
+        *) r="$1" ;;
+      esac; shift
+    done
+    [ -d "$r" ] || die "No folder $r."
+    case "$hsub" in
+      install) hooks_install "$r" "$hk" ;;
+      uninstall) hooks_uninstall "$r" "$hk" ;;
       status) st="$(hooks_status_json "$r")"
               if [ "$json" = 1 ]; then echo "$st"
-              else echo "$st" | jq -r '"\(if .installed then "installed" else "not installed" end)\(if .chained then ", after the pre-push that was there (pre-push.local)" else "" end)\(if .husky then ", Husky manages the hooks here" else "" end): \(.hooksDir)"'; fi ;;
-      *) die "Usage: deploys hooks install|uninstall|status [<repo folder>] [--json]" ;;
+              else echo "$st" | jq -r '"\(if .installed then "installed" else "not installed" end)\(if .chained then ", after the pre-push that was there (pre-push.local)" else "" end)\(if .husky then ", Husky manages the hooks here" else "" end)\(if .localExecutable == false then ", WARNING: pre-push.local is not executable and is not run" else "" end): \(.hooksDir)"'; fi ;;
+      *) die "Usage: deploys hooks install|uninstall|status [<repo folder>] [--hook pre-push|pre-commit] [--yes] [--json]" ;;
     esac ;;
 
   "readonly "*)
@@ -3394,85 +3461,8 @@ case "${1:-} ${2:-}" in
     exit "$rc" ;;
 
   "watch "*)
-    # watch <project> [<deploy id>] [--preview]
-    # Follow one deploy until it is live or failed: the given one, or the newest (production, or
-    # any target with --preview). If the newest is already finished, say so instead of "done".
-    # Exit 0 live, 1 failed, 3 the platform could not be asked (or its answer not read) five times
-    # in a row, 4 --timeout passed before it finished (it may still go live; default: no limit).
-    p="${2:?Usage: deploys watch <project> [<deploy id>] [--preview] [--timeout 30m]}"; did=""; pv=""; maxw=""
-    # watch a --and b --and c: each followed at the same time, every line starting with its project; the exit code is
-    # 1 if any failed, else 4 if any timed out, else 3 if any could not be asked, else 0.
-    case " $* " in
-      *" --and "*)
-        wnames=("$p"); wshared=(); set -- "${@:3}"
-        while [ $# -gt 0 ]; do
-          case "$1" in
-            --and) [ -n "${2:-}" ] || die "--and takes a project name"; case "$2" in -*) die "--and takes a project name";; esac; wnames+=("$2"); shift ;;
-            *) wshared+=("$1") ;;
-          esac; shift
-        done
-        # A deploy id belongs to one project: handing it to every project would watch the wrong (or no) deploy.
-        wprev=""
-        for wa in ${wshared[@]+"${wshared[@]}"}; do
-          case "$wa" in -*) ;; *) [ "$wprev" = --timeout ] || die "A deploy id belongs to one project; with --and, watch the newest deploy of each (drop \"$wa\")." ;; esac
-          wprev="$wa"
-        done
-        wd="$(mktemp -d)"; wi=0
-        for wn in "${wnames[@]}"; do
-          wi=$((wi + 1))
-          ( "$SELF" watch "$wn" ${wshared[@]+"${wshared[@]}"} 2>&1; echo $? > "$wd/$wi" ) | WNAME="$wn" perl -pe 'BEGIN { $| = 1 } s/^/[$ENV{WNAME}] /' &
-        done
-        wait
-        wrc=0
-        for ((wi = 1; wi <= ${#wnames[@]}; wi++)); do
-          c="$(cat "$wd/$wi" 2>/dev/null || echo 3)"
-          case "$c" in 0) ;; 1) wrc=1 ;; 4) [ "$wrc" = 1 ] || wrc=4 ;; *) [ "$wrc" = 1 ] || [ "$wrc" = 4 ] || wrc=3 ;; esac
-        done
-        rm -rf "$wd"; exit "$wrc" ;;
-    esac
-    set -- "${@:3}"
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --preview) pv=1 ;;
-        --timeout) maxw="$(duration_s "${2:-}")" || die "--timeout takes a time: 90s, 30m or 2h"; shift ;;
-        -*) die "Unknown option $1. Usage: deploys watch <project> [<deploy id>] [--preview] [--timeout 30m]" ;;
-        *) did="$1" ;;
-      esac; shift
-    done
-    resolve "$p"; plat="$PLAT"
-    first=1; misses=0; waited=0; t0=$SECONDS; poll=6
-    while :; do
-      if [ -n "$maxw" ] && [ "$waited" -ge "$maxw" ]; then
-        echo "${ERED}Error:${EPLAIN} $p has not finished after $(watch_took "$waited") (--timeout); it may still go live: deploys watch $p${did:+ $did}" >&2
-        exit 4
-      fi
-      if [ -n "$did" ]; then raw="$("${plat}_status" "$PID" "$did" 2>/dev/null)" || raw=""
-      else raw="$("${plat}_latest" "$PID" ${pv:+--preview} 2>/dev/null)" || raw=""; fi
-      s="$(watch_line "$raw")"
-      if [ -z "$s" ]; then
-        # A network blip is not a failed deploy: try again, and give up only after five in a row.
-        # An answer whose phase cannot be read counts the same: it must never mean "wait for ever".
-        misses=$((misses + 1))
-        if [ -n "$raw" ]; then printf '%s  (could not read the answer of %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2
-        else printf '%s  (could not ask %s, try %s of 5)\n' "$(date +%H:%M:%S)" "$plat" "$misses" >&2; fi
-        [ "$misses" -lt 5 ] || { echo "Error: ${ERED}could not reach $plat; the deploy itself may be fine${EPLAIN}" >&2; exit 3; }
-        sleep "$poll"; waited=$((waited + poll)); [ $((SECONDS - t0)) -le "$waited" ] || waited=$((SECONDS - t0)); [ "$waited" -lt 120 ] || poll=15; continue
-      fi
-      misses=0; IFS=$'\t' read -r id ph st <<<"$s"
-      [ "$id" != "none" ] || die "No deploy of $p found"
-      if [ "$first" = 1 ] && [ -z "$did" ] && watch_final "$ph"; then
-        echo "Nothing is building for $p. The newest deploy ($id) is $st."
-        case "$ph" in ready) exit 0;; *) exit 1;; esac
-      fi
-      first=0
-      # The time since watch began, once there is some.
-      printf '%s  %s%s\n' "$(date +%H:%M:%S)" "$st" "$([ "$waited" = 0 ] || echo "  ($(watch_took "$waited"))")"
-      case "$ph" in
-        ready) u="$( ("${plat}_url" "$PID") 2>/dev/null || true)"; case "$u" in http*) echo "Live: $u" ;; esac; exit 0 ;;
-        failed|canceled) exit 1 ;;
-      esac
-      sleep "$poll"; waited=$((waited + poll)); [ $((SECONDS - t0)) -le "$waited" ] || waited=$((SECONDS - t0)); [ "$waited" -lt 120 ] || poll=15
-    done ;;
+    declare -F watch_main >/dev/null || die "lib/verify.sh is not next to deploys."
+    watch_main "$@" ;;
 
   "logs "*)
     # The last lines of the newest build log of one project, or with --id of that one deploy
@@ -3515,6 +3505,7 @@ case "${1:-} ${2:-}" in
     fi
     # The exit code of the read, not of the mask: a log that could not be read stays an error.
     lt="$(mktemp)"; lrc=0; ( "${PLAT}_logs" "$PID" "$n" "$did" ) > "$lt" || lrc=$?
+    trap_fn exit_rm "$lt"
     log_clean "$lt"; af_mask < "$lt"; rm -f "$lt"; exit "$lrc" ;;
 
   "open "*)
@@ -3607,104 +3598,8 @@ case "${1:-} ${2:-}" in
     fi ;;
 
   "completion "*)
-    # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
-    # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    # The commands are read from the case labels of this script (the same source as the typo hint), so a new
-    # command is completed the day it exists; the providers and the flags are added.
-    cmds="$( { sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' "$SELF"; printf '%s\n' "${PROVIDERS[@]}" completion --help --version; } | sort -u | paste -sd' ' -)"
-    # The words that follow a command (second place), one line per command: "<command>:<words>".
-    subs_table="autodeploy:allow allowed revoke
-guard:status schedule
-schedule:daily off status
-hooks:install uninstall status
-team:add remove list refresh journal init
-scan:start status list log
-check:start show
-autofix:set-token routine list forget-token prompt status sync schedule
-rules:check
-price:set unset
-budget:set off
-journal:verify export report
-idle:--days --json
-creds:--max-age --json
-certs:--days --json
-secrets:--stdin --json
-plan:--when-green --since --json
-list:--platform --auto --manual --format --json
-ignore:--list --undo --json
-readonly:on off
-config:--refresh
-doctor:--text --fix --json
-freeze:status add remove clear --json
-digest:--days --json --no-savings
-timeline:--days --project --limit --json
-recovery:--days --project --json
-when:--days --by --json
-streak:--days --project --json
-rollback:
-cancel:"
-    verbs_of() {
-      local v="list deploy rollback status cancel autodeploy-off json" x
-      for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done
-      grep -q '"keychain":"' <<<"$("${1}_meta")" && v="$v set-key"
-      echo "$v"
-    }
-    zv=""; bv=""
-    for p in "${PROVIDERS[@]}"; do
-      zv="$zv  elif [[ \$words[2] == $p && CURRENT == 3 ]]; then compadd $(verbs_of "$p")"$'\n'
-      bv="$bv  elif [ \$COMP_CWORD -eq 2 ] && [ \"\${COMP_WORDS[1]}\" = $p ]; then COMPREPLY=(\$(compgen -W \"$(verbs_of "$p")\" -- \"\$cur\"))"$'\n'
-    done
-    while IFS=: read -r _c _w; do
-      [ -n "$_w" ] || continue
-      zv="$zv  elif [[ \$words[2] == $_c && CURRENT == 3 ]]; then compadd $_w"$'\n'
-      bv="$bv  elif [ \$COMP_CWORD -eq 2 ] && [ \"\${COMP_WORDS[1]}\" = $_c ]; then COMPREPLY=(\$(compgen -W \"$_w\" -- \"\$cur\"))"$'\n'
-    done <<< "$subs_table"
-    case "${2:-zsh}" in
-      zsh) cat <<ZSH
-_deploys() {
-  local -a names; names=(\${(f)"\$(cat "$CONFIG_DIR/names" 2>/dev/null)"})
-  if (( CURRENT == 2 )); then compadd $cmds
-${zv}  elif [[ \$words[2] == ai && CURRENT == 3 ]]; then compadd explain notes ship ask slow risk set-key forget-key verify model cap status
-  elif [[ \$words[2] == providers && CURRENT == 3 ]]; then compadd enable disable
-  elif [[ \$words[2] == gitlab && CURRENT == 3 ]]; then compadd set-token forget-token
-  elif [[ \$words[2] == completion ]]; then compadd zsh bash fish
-  else compadd -a names; fi
-}
-# compdef exists only after compinit; load it if ~/.zshrc has not.
-(( \$+functions[compdef] )) || { autoload -Uz compinit && compinit; }
-compdef _deploys deploys
-ZSH
-      ;;
-      bash) cat <<BASH
-_deploys() {
-  local cur=\${COMP_WORDS[COMP_CWORD]}
-  if [ \$COMP_CWORD -eq 1 ]; then COMPREPLY=(\$(compgen -W "$cmds" -- "\$cur"))
-${bv}  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = ai ]; then COMPREPLY=(\$(compgen -W "explain notes ship ask slow risk set-key forget-key verify model cap status" -- "\$cur"))
-  elif [ \$COMP_CWORD -eq 2 ] && [ "\${COMP_WORDS[1]}" = gitlab ]; then COMPREPLY=(\$(compgen -W "set-token forget-token" -- "\$cur"))
-  else
-    # Matched by hand, not with compgen -W: that expands each word, and a name is data.
-    local n; COMPREPLY=()
-    while IFS= read -r n; do [[ \$n == "\$cur"* ]] && COMPREPLY+=("\$n"); done 2>/dev/null < "$CONFIG_DIR/names"
-  fi
-}
-complete -F _deploys deploys
-BASH
-      ;;
-      fish)
-        # deploys completion fish | source  (or save it as ~/.config/fish/completions/deploys.fish).
-        # Names are read line by line by fish itself: nothing in them is run.
-        echo "complete -c deploys -f"
-        echo "complete -c deploys -n __fish_use_subcommand -a '$cmds'"
-        for p in "${PROVIDERS[@]}"; do echo "complete -c deploys -n '__fish_seen_subcommand_from $p' -a '$(verbs_of "$p")'"; done
-        while IFS=: read -r _c _w; do
-          [ -n "$_w" ] && echo "complete -c deploys -n '__fish_seen_subcommand_from $_c' -a '$_w'"
-        done <<< "$subs_table"
-        echo "complete -c deploys -n '__fish_seen_subcommand_from ai' -a 'explain notes ship ask slow risk set-key forget-key verify model cap status'"
-        echo "complete -c deploys -n '__fish_seen_subcommand_from providers' -a 'enable disable'"
-        echo "complete -c deploys -n '__fish_seen_subcommand_from completion' -a 'zsh bash fish'"
-        printf "complete -c deploys -n 'not __fish_use_subcommand' -a '(cat %s 2>/dev/null)'\n" "$(printf '%q' "$CONFIG_DIR/names")" ;;
-      *) die "zsh, bash or fish" ;;
-    esac ;;
+    declare -F completion_main >/dev/null || die "lib/completion.sh is not next to deploys."
+    completion_main "$@" ;;
 
   "details "*)
     # Everything about one repo the window shows on demand: the commits between what is live and
@@ -3722,6 +3617,7 @@ BASH
     # The comparison goes through a file, not an argument: with its patches it can be megabytes,
     # more than one argument may hold ("Argument list too long"). The patches are not needed.
     dt="$(mktemp -d)"; echo null > "$dt/cmp"
+    trap_fn exit_rmrf "$dt"
     if [ -n "$base" ] && [ "$base" != "null" ]; then
       # Before the patches go: what looks like a secret in an added line (file, line, kind; never
       # the value), and how much each lockfile changed.
@@ -3779,9 +3675,10 @@ BASH
     # Charges are read from Vercel's billing API only: other platforms have none here.
     is_enabled vercel || die "costs reads Vercel's charges, and Vercel is off here (deploys providers enable vercel). Other platforms have no costs view."
     team="$(vercel_team)"; tmp="$(mktemp -d)"
+    trap_fn exit_rmrf "$tmp"
     for i in $(seq "$days" -1 1); do
       echo "$(days_ago "$i") $(days_ago "$((i-1))")"
-    done | xargs -r -P 4 -n 2 bash -c 'cost_day "$2" "$3" "$0" "$1"' "$team" "$tmp"
+    done | xargs_par -r -P 4 -n 2 bash -c 'cost_day "$2" "$3" "$0" "$1"' "$team" "$tmp"
     # Builds per project over the last 7 days, to put a price on one build.
     since=$(( ($(date +%s) - 7*86400) * 1000 ))
     names="" next=""
@@ -3810,6 +3707,7 @@ BASH
   "triggers "*)
     # Builds in the last 24 h that nobody started from here, and workflows that deploy by themselves.
     since=$(( ($(date +%s) - 86400) * 1000 )); tmp="$(mktemp -d)"
+    trap_fn exit_rmrf "$tmp"
     # FEA-007: each build with its minutes and, where a price per minute is set (deploys price), its
     # dollars: an estimate (minutes x rate), null when either is unknown.
     vrate=""; rrate=""
@@ -3848,7 +3746,7 @@ BASH
             ( "${p}_json" ) 2>/dev/null | jq -r '.[]? | .repo // empty' 2>/dev/null \
               | while IFS= read -r r; do [ "$(githost_of "$r")" = github ] && echo "$r"; done
           done
-        } | sort -u | tr '\n' '\000' | xargs -0 -r -P 8 -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
+        } | sort -u | tr '\n' '\000' | xargs_par -0 -r -P "$(parallel_limit 8)" -n 1 bash -c 'workflow_hits "$1" "$0"' "$tmp"
         cat_all "$tmp"/*.jsonl
       fi
     } | jq -s '.'
@@ -3918,6 +3816,11 @@ BASH
     declare -F freeze_main >/dev/null || die "lib/freeze.sh is not next to deploys."
     freeze_main "${@:2}" ;;
 
+  "exit-codes"*)
+    # The block "Exit codes" of the help, as it stands in the header of this script: one source.
+    sed -n '/^# Exit codes/,/^#$/p' "$SELF" | sed 's/^# \{0,1\}//'
+    echo "Every command: the table is in docs/CLI.md (Exit codes)." ;;
+
   "timeline "*)
     declare -F timeline_main >/dev/null || die "lib/insights.sh is not next to deploys."
     timeline_main "${@:2}" ;;
@@ -3943,128 +3846,8 @@ BASH
     digest_main "${@:2}" ;;
 
   "verify "*)
-    # verify <project> [--path /health] [--rollback-after 10] [--no-rollback] [--url <address>]
-    # Once the newest deploy is ready: ask the site three times, 5 s apart. When every answer is
-    # 5xx or none (a timeout), the check failed (as in the app: a fresh service may answer 502 for a
-    # moment); then a countdown, and production goes back unless --no-rollback or Ctrl-C.
-    # Exit 0 healthy, 1 failed and rolled back, 2 failed and not rolled back, 3 nothing was checked
-    # (unknown project, not live, no address, a wrong option): a script must never read an error
-    # as "rolled back". Redirects are followed (up to 5); with --path a 4xx fails as well.
-    # --expect 200 (or 2xx): only that answer is healthy, so a 401 from deployment protection fails
-    # too; an expected 3xx is asked without following. --follow is the default now (kept for scripts).
-    die() { echo "${ERED}Error:${EPLAIN} $*" >&2; exit 3; }
-    p="$2"; path=""; after=10; norb=""; url=""; expect=""; follow=(-L --max-redirs 5); tries=3; every=5; need=1; mtime=20; wto=30m; shift 2
-    while [ $# -gt 0 ]; do
-      case "$1" in
-        --path) path="${2:?Usage: deploys verify <project> --path /health}"; shift ;;
-        --rollback-after) [ $# -ge 2 ] || die "--rollback-after takes seconds. Usage: deploys verify <project> --rollback-after 10"; after="$2"; shift ;;
-        --no-rollback) norb=1 ;;
-        --url) url="${2:?Usage: deploys verify <project> --url https://…}"; shift ;;
-        --expect) [ $# -ge 2 ] || die "--expect takes a status like 200 or 2xx"; expect="$2"; shift
-          case "$expect" in [1-5][0-9][0-9]|[1-5]xx) ;; *) die "--expect takes a status like 200 or 2xx" ;; esac ;;
-        --follow) follow=(-L --max-redirs 3) ;;
-        # How hard it asks: --tries answers (default 3), --every seconds apart (5), at least --need of them good (1;
-        # a slow cold start wants fewer tries, a strict check wants all), each answer within --max-time seconds (20).
-        --tries) tries="${2:-}"; shift; case "$tries" in ''|*[!0-9]*|0) die "--tries takes a number of answers, 1 or more" ;; esac; tries="$((10#$tries))"; [ "$tries" -le 20 ] || die "--tries is at most 20" ;;
-        --every) every="${2:-}"; shift; case "$every" in ''|*[!0-9]*) die "--every takes seconds, a number" ;; esac; every="$((10#$every))" ;;
-        --need) need="${2:-}"; shift; case "$need" in ''|*[!0-9]*|0) die "--need takes how many good answers are enough, 1 or more" ;; esac; need="$((10#$need))" ;;
-        --max-time) mtime="${2:-}"; shift; case "$mtime" in ''|*[!0-9]*|0) die "--max-time takes seconds, 1 or more" ;; esac; mtime="$((10#$mtime))" ;;
-        # How long to wait for the build to finish before checking (default 30m): a stuck build must not hold this for ever.
-        --watch-timeout) wto="${2:-}"; shift; duration_s "$wto" >/dev/null 2>&1 || die "--watch-timeout takes a time: 90s, 30m or 2h" ;;
-        *) die "Unknown option $1. Usage: deploys verify <project> [--path /health] [--expect 200|2xx] [--follow] [--tries 3] [--every 5] [--need 1] [--max-time 20] [--watch-timeout 30m] [--rollback-after 10] [--no-rollback] [--url <address>] [--json]" ;;
-      esac
-      shift
-    done
-    [ "$need" -le "$tries" ] || die "--need $need is more than --tries $tries: no check could pass"
-    # The check failed when this many answers are bad (with the defaults: all three).
-    badlimit=$((tries - need + 1))
-    case "$after" in ''|*[!0-9]*) die "--rollback-after takes seconds, a number";; esac
-    after="$((10#$after))"   # 08 is eight: bash would read it as a bad octal number mid-countdown
-    # "<p>:<name>" works too: the platform from it, the bare name for its API.
-    # The platform's own id for its calls, the bare name for people and the journal.
-    safe_arg "$p"; resolve "$p"; plat="$PLAT"; vid="$PID"; p="$PNAME"
-    # A check while the build still runs would test what was live before.
-    wrc=0; "$SELF" watch "$plat:$p" --timeout "$wto" >&2 || wrc=$?
-    [ "$wrc" != 4 ] || die "The newest deploy of $p did not finish within $wto (--watch-timeout); nothing was checked"
-    [ "$wrc" = 0 ] || die "The newest deploy of $p is not live; nothing to check"
-    # A failed lookup is "no address known", with the hint below, not a silent stop.
-    [ -n "$url" ] || url="$(site_url_of "$vid" "$plat")" || url=""
-    [ -n "$url" ] || die "No address known for $p (give one with --url)"
-    # FEA-033: without --path, the project's `checks` in deploy-center.json (["/health",
-    # {"path":"/api","expect":"2xx"}]) are each asked; one failing fails the check. HTTP only:
-    # a shared file never names a command to run here.
-    clist=""
-    if [ -z "$path" ] && team_on; then
-      clist="$(team_effective 2>/dev/null | jq -r --arg p "$p" --arg e "$expect" '(.projects[$p].checks.value // [])
-        | if type == "array" then .[] else empty end
-        | if type == "string" then {path:.} elif type == "object" and (.path | type) == "string" then . else empty end
-        | select(.path | test("^/?[A-Za-z0-9._~!$&()*+,;=:@%/?-]*$"))
-        | "\(.path)\u001f\(.expect // $e | tostring)"' 2>/dev/null)" || clist=""
-    fi
-    # Without --path or checks: the health path of the shared config (deploy-center.json "health").
-    if [ -z "$clist" ] && [ -z "$path" ] && team_on; then
-      path="$(team_eff_once | jq -r --arg n "$p" '.projects[$n].health.value // empty | strings' 2>/dev/null)" || path=""
-      [ -z "$path" ] || echo "Checking $path (health in the shared config)" >&2
-    fi
-    # Fields split by \037 (unit separator): a tab is whitespace to read and would drop an empty path.
-    [ -n "$clist" ] || clist="$path"$'\037'"$expect"
-    codes=""; target=""; cjson="[]"; failed=0
-    while IFS=$'\037' read -r cpath cexp <&3; do
-      case "$cexp" in ''|[1-5][0-9][0-9]|[1-5]xx) ;; *) echo "verify: \"$cexp\" is not a status like 200 or 2xx; the check of $cpath counts 5xx" >&2; cexp="" ;; esac
-      case "$cpath" in ''|/*) ;; *) cpath="/$cpath";; esac
-      ctarget="${url%/}$cpath"; [ -n "$cpath" ] || ctarget="$url"
-      ccodes=""; cbad=0; cfollow=(${follow[@]+"${follow[@]}"})
-      case "$cexp" in 3*) cfollow=() ;; esac
-      for ((i = 1; i <= tries; i++)); do
-        c="$(curl -sS -o /dev/null -w '%{http_code}' --proto =http,https --proto-redir =https ${cfollow[@]+"${cfollow[@]}"} --connect-timeout 10 --max-time "$mtime" -A "DeployCenter (verify)" "$ctarget" 2>/dev/null)" || true
-        [ -n "$c" ] || c=000
-        ccodes="$ccodes${ccodes:+ }$c"
-        if [ -n "$cexp" ]; then
-          case "$cexp" in *xx) [ "${c:0:1}" = "${cexp:0:1}" ] || cbad=$((cbad + 1)) ;; *) [ "$c" = "$cexp" ] || cbad=$((cbad + 1)) ;; esac
-        else case "$c" in 000|5*) cbad=$((cbad + 1));; 4*) [ -z "$cpath" ] || cbad=$((cbad + 1));; esac; fi
-        echo "$(date +%H:%M:%S)  $c  $ctarget" >&2
-        [ "$i" = "$tries" ] || sleep "$every"
-      done
-      cjson="$(echo "$cjson" | jq -c --arg u "$ctarget" --arg c "$ccodes" --argjson h "$([ "$cbad" -lt "$badlimit" ] && echo true || echo false)" \
-        '. + [{url:$u, codes:($c | split(" ") | map(tonumber)), healthy:$h}]')"
-      # The first failing check (else the first) is the one named, as one check was before.
-      if [ -z "$target" ] || { [ "$cbad" -ge "$badlimit" ] && [ "$failed" = 0 ]; }; then target="$ctarget"; codes="$ccodes"; fi
-      [ "$cbad" -lt "$badlimit" ] || failed=$((failed + 1))
-    done 3<<< "$clist"
-    report() {  # report <healthy> <rolledBack> <cancelled> <exit code>
-      if [ "$json" = 1 ]; then
-        jq -n --arg p "$p" --arg u "$target" --arg c "$codes" --argjson h "$1" --argjson r "$2" --argjson x "$3" --argjson cs "$cjson" \
-          '{project:$p, url:$u, codes:($c | split(" ") | map(tonumber)), healthy:$h, rolledBack:$r, cancelled:$x, checks:$cs}'
-      fi
-      exit "$4"
-    }
-    if [ "$failed" = 0 ]; then
-      [ "$json" = 1 ] || echo "${GREEN}ok${PLAIN}: $p answers ($codes)."
-      report true false false 0
-    fi
-    [ "$json" = 1 ] || echo "${RED}$p fails its check${PLAIN} ($codes from $target)."
-    if [ -n "$norb" ]; then [ "$json" = 1 ] || echo "Not rolled back (--no-rollback)."; report false false false 2; fi
-    stop=""; trap 'stop=1' INT TERM
-    for ((s = after; s > 0; s--)); do
-      printf '\rRolling back %s in %2d s – Ctrl-C to stop ' "$p" "$s" >&2
-      sleep 1
-      [ -z "$stop" ] || break
-    done
-    trap - INT TERM
-    [ "$after" = 0 ] || echo >&2
-    if [ -n "$stop" ]; then
-      [ "$json" = 1 ] || echo "Rollback stopped; $p stays on the deploy that failed its check."
-      journal_add "$plat" "$p" skipped "Check failed ($codes), rollback stopped by hand"
-      report false false true 2
-    fi
-    if out="$(DEPLOYS_NO_JOURNAL=1 "$SELF" "$plat" rollback "$vid" 2>&1)"; then
-      journal_add "$plat" "$p" other "Rolled back: $target answered $codes"
-      [ "$json" = 1 ] || echo "Rolled back $p to the deploy before."
-      report false true false 1
-    fi
-    echo "$out" >&2
-    journal_add "$plat" "$p" failed "Check failed ($codes) and the rollback failed too"
-    report false false false 2 ;;
+    declare -F verify_main >/dev/null || die "lib/verify.sh is not next to deploys."
+    verify_main "$@" ;;
 
   "secrets "*)
     # secrets <project> | secrets --stdin [--json]: added lines (what is waiting to go live, or a diff on stdin) that look
@@ -4250,6 +4033,7 @@ BASH
     # The budget brake (budget.json): over it, this run needs --force "why" as a closed window does.
     if [ -f "$CONFIG_DIR/budget.json" ]; then load_savings; budget_check "$(echo "$list" | jq -c 'map(. + {action:"would-deploy"})')"; fi
     res="$(mktemp)"; ok=0; bad=0; skip=0
+    trap_fn exit_rm "$res"
     # say <platform> <name> <action> <reason> [<start JSON>]: one line for a person, one record for --json.
     say() {
       local plat="$1" name="$2" act="$3" why="$4" st="${5:-}" P

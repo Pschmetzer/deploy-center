@@ -201,8 +201,8 @@ done
 # --- helpers in lib/ that had no test of their own ---
 printf 'HTTP/2 429\r\nRetry-After: 7\r\n\r\n' > "$tmp/h1"
 expect "http_retry_after: seconds" "$(http_retry_after "$tmp/h1")" "7"
-printf 'retry-after: 500\r\n' > "$tmp/h2"; expect "http_retry_after: capped at 60" "$(http_retry_after "$tmp/h2")" "60"
-printf 'Retry-After: Wed, 21 Oct 2026 07:28:00 GMT\r\n' > "$tmp/h3"; expect "http_retry_after: a date is no wait" "$(http_retry_after "$tmp/h3")" ""
+printf 'retry-after: 500\r\n' > "$tmp/h2"; expect "http_retry_after: more than a minute is given as it is (http_call gives up on it)" "$(http_retry_after "$tmp/h2")" "500"
+printf 'Retry-After: Wed, 21 Oct 2026 07:28:00 GMT\r\n' > "$tmp/h3"; expect "http_retry_after: a date in the past is 0 seconds" "$(http_retry_after "$tmp/h3")" "0"
 printf 'Retry-After: 3\r\nRetry-After: 9\r\n' > "$tmp/h4"; expect "http_retry_after: the last one counts" "$(http_retry_after "$tmp/h4")" "9"
 expect "http_retry_after: no file" "$(http_retry_after "$tmp/none")" ""
 expect "gitlab_enc: a group path" "$(gitlab_enc 'group/sub group/app')" "group%2Fsub%20group%2Fapp"

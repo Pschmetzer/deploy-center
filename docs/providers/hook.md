@@ -19,7 +19,7 @@ It is opt-in. Nothing shows up until you add a hook.
 ```bash
 deploys providers enable hook
 deploys hook add <name> <url|-> [--repo owner/name] [--ref main] [--site https://…] \
-                 [--method POST] [--header 'Name: value'] [--body '{…}']
+                 [--status-url https://…] [--method POST] [--header 'Name: value'] [--body '{…}']
 deploys hook remove <name>
 deploys hook list
 deploys hook deploy <name>
@@ -32,6 +32,20 @@ The hook provider is off by default. Turn it on once with `deploys providers ena
 `add` for a name that exists updates that hook: what you give changes, the rest (method, headers,
 body, repo, ref, site) stays, and the answer names what was kept. Given headers are added to the
 ones there; to drop one, `remove` the hook and add it again.
+
+**Where the address may point.** No `user@` in front of the host (`https://evil.com@127.0.0.1/x` goes to 127.0.0.1). A
+name is looked up when you add it and again when the hook fires; if it points at a private or local address (also through
+`nip.io` or a DNS answer that changes later) it is refused, and curl is told to use the address that was checked
+(`--allow-private` if that is meant). Only `localhost` may use plain `http`.
+
+**A status address.** A hook has no status API, so a good answer only means "triggered". If the host has a page that
+reports the last build as JSON (`{"status": "building"}`, `phase` or `state` work too), name it with `--status-url`:
+`deploys hook status <name>` and `deploys watch` then show building, ready or failed from it. The words that count:
+`ready` `success` `succeeded` `live` `deployed` (ready), `building` `in_progress` `running` `queued` `pending` (building),
+`failed` `error` `canceled` (failed); anything else falls back to the trigger's own answer. The same address rules apply.
+
+A trigger the host refused (a 4xx answer) or that never left (no connection, no such host) does not hold the next try for
+a minute; after a 5xx or a timeout it does, because a build may have started.
 
 Pass `-` as the URL to read it from stdin. The URL then stays out of your shell history:
 

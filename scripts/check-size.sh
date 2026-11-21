@@ -3,7 +3,7 @@
 # Raise a ceiling on purpose (in the same PR, with a reason) or, better, move code out into lib/ or a new file.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-max_script=4800   # deploys (4700 until round 12: doctor --strict, risk rules, hooks.d and log-follow fixes; next: move hook_run and the risk rules to lib/)
+max_script=4600   # deploys (4800 until round 12 part B; watch, verify, completion, the risk rules and hook_run moved to lib/). Raise it only with a reason, or move more to lib/
 max_lib=800       # each lib/*.sh and providers/*.sh
 max_swift=2400    # each app/*.swift
 bad=0

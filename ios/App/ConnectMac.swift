@@ -21,6 +21,10 @@ struct ConnectMacView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // The toast lies under this sheet: an error is shown here too (IDEEN-12 C11).
+                if let m = store.message, store.messageIsError {
+                    Section { Label(m, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
+                }
                 if store.linked != nil {
                     Section {
                         Label(L("Connected to the Mac", "Mit dem Mac verbunden"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
@@ -38,8 +42,9 @@ struct ConnectMacView: View {
                     Section {
                         Text(Self.describe(k))
                         Button(L("Connect", "Verbinden")) {
-                            UsedCodes.mark(k.once)
                             let adopted = store.adopt(k)
+                            // Marked as used only once the keys are saved: a failed save lets the same code be tried again (IDEEN-12 C3).
+                            if adopted { UsedCodes.mark(k.once) }
                             if foundByPaste { UIPasteboard.general.items = []; foundByPaste = false }
                             if adopted { dismiss() }
                             found = nil
@@ -250,8 +255,13 @@ struct QRScanner: UIViewControllerRepresentable {
                     if self.camera?.hasTorch == true {
                         let torch = self.button(L("Light", "Licht"), toggle)
                         torch.accessibilityLabel = L("Flashlight", "Taschenlampe")
+                        // State for VoiceOver, and a target of at least 44 pt (IDEEN-12 C47).
+                        torch.accessibilityValue = L("off", "aus")
+                        self.torchButton = torch
                         self.view.addSubview(torch)
-                        c += [torch.leadingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
+                        c += [torch.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+                              torch.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
+                              torch.leadingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.leadingAnchor, constant: 20),
                               torch.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor, constant: 12)]
                     }
                     self.view.addSubview(self.hint)
@@ -316,10 +326,13 @@ struct QRScanner: UIViewControllerRepresentable {
             if c.isVideoRotationAngleSupported(angle) { c.videoRotationAngle = angle }
         }
 
+        private weak var torchButton: UIButton?
+
         private func toggleTorch() {
             guard let cam = camera, cam.hasTorch, (try? cam.lockForConfiguration()) != nil else { return }
             cam.torchMode = cam.torchMode == .on ? .off : .on
             cam.unlockForConfiguration()
+            torchButton?.accessibilityValue = cam.torchMode == .on ? L("on", "an") : L("off", "aus")
         }
 
         func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput objects: [AVMetadataObject], from connection: AVCaptureConnection) {
