@@ -795,7 +795,7 @@ def site_entries():
     search on the guides, blog and 404 pages (site/js/site.js) finds them too: title, description and
     the h2 headings as text."""
     entries = []
-    for sub in ("guides", "blog"):
+    for sub in ("guides", "blog", "compare", "de/anleitungen", "de/blog", "de/vergleich"):
         base = os.path.join(SITE, sub)
         if not os.path.isdir(base):
             continue

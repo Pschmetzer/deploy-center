@@ -54,8 +54,14 @@ lib() {  # lib <p> <shell code>: the code with deploys sourced (DEPLOYS_LIB=1)
       /bin/bash -c '. ./deploys; set +e; '"$1" 2>"$tmp/err" </dev/null )
 }
 
+# One provider at a time would take minutes: each runs in its own subshell with its own scratch folder
+# (calls log, err, fo, watch ...), and the output is printed in order once all are done.
+pcw="$tmp/par"; mkdir -p "$pcw"; ppids=()
 for f in providers/*.sh; do
+  (
   p="$(basename "$f" .sh)"
+  tmp="$tmp/w-$p"; mkdir -p "$tmp"; ln -s "$pcw/../bin" "$tmp/bin"
+  STUBPATH="$tmp/bin:/usr/bin:/bin"; CALLS="$tmp/calls.log"; export CALLS
   rm -rf "$tmp/config-$p"; mkdir -p "$tmp/config-$p"
   CONTRACT_ID="" CONTRACT_NAME="" CONTRACT_DEPLOY="" CONTRACT_DONE=""
 
@@ -74,7 +80,7 @@ for f in providers/*.sh; do
   # The checks below need contract fixtures (tests/fixtures/<p>/env, expect.json, one file per
   # call; for the aws CLI, AWS_<service>_<command>… files read by tests/lib/fake-aws.sh). A provider
   # without them fails here: a skipped contract is how five providers once broke watch unnoticed.
-  if [ ! -f "tests/fixtures/$p/env" ]; then fail "$p: contract fixtures" "tests/fixtures/$p/env is missing"; continue; fi
+  if [ ! -f "tests/fixtures/$p/env" ]; then fail "$p: contract fixtures" "tests/fixtures/$p/env is missing"; exit 0; fi
   [ -d "tests/fixtures/$p/config" ] && cp -R "tests/fixtures/$p/config"/. "$tmp/config-$p/"
   # shellcheck source=/dev/null
   . "tests/fixtures/$p/env"
@@ -168,6 +174,13 @@ for f in providers/*.sh; do
     expect "$p: without $cap, \"$label cannot …\" and nothing sent" \
       "$rc:$(grep -c "$label cannot" "$tmp/err"):$(grep -cE ' (POST|PATCH|DELETE) ' "$CALLS")" "1:1:0"
   done
+  ) > "$pcw/$(basename "$f" .sh).out" 2>&1 &
+  ppids+=($!)
+done
+wait "${ppids[@]}"
+for f in providers/*.sh; do
+  cat "$pcw/$(basename "$f" .sh).out"
+  fails=$((fails + $(grep -c "^FAIL " "$pcw/$(basename "$f" .sh).out")))
 done
 
 # --- switching providers on and off ---
