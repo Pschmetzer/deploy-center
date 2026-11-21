@@ -101,7 +101,7 @@ jobs:
 
   smoke:
     # The live site, after the deploy: the pages and the update feed answer, the feed is XML and the one in
-    # the repository. A broken custom domain, a CNAME or an empty artifact would otherwise show up
+    # the repository, and so do the sitemap, robots.txt, llms.txt and the IndexNow key file. A broken custom domain, a CNAME or an empty artifact would otherwise show up
     # at the next update check of a user. A failure here does not undo the deploy: it is the alarm.
     needs: deploy
     runs-on: ubuntu-latest
@@ -113,7 +113,10 @@ jobs:
           persist-credentials: false
       - name: The site answers
         run: |
-          for path in / /appcast.xml /install.sh /docs/; do
+          # the IndexNow key file is the one in site/ whose name is its own content (it proves we own the domain)
+          key="$(for f in site/*.txt; do b="${f##*/}"; b="${b%.txt}"; [ "$(tr -d '[:space:]' < "$f")" = "$b" ] && echo "$b"; done | head -n 1)"
+          [ -n "$key" ] || { echo "::error::no IndexNow key file in site/"; exit 1; }
+          for path in / /appcast.xml /install.sh /docs/ /sitemap.xml /robots.txt /llms.txt "/$key.txt"; do
             code="$(curl -s -o /dev/null -w '%{http_code}' --retry 6 --retry-delay 10 --retry-all-errors --max-time 30 "https://deploycenter.app$path" || true)"
             echo "$path -> HTTP $code"
             [ "$code" = 200 ] || { echo "::error::https://deploycenter.app$path answered HTTP $code"; exit 1; }
