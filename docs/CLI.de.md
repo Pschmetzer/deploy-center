@@ -30,9 +30,11 @@ deploys plan [--when-green] [--since 1d]  # dieselbe Liste mit Schätzung je Bui
 deploys status                          # was gerade baut und was zuletzt fehlschlug
 deploys watch mein-projekt [--timeout 30m]  # dem neuesten Deploy folgen, bis es live oder fehlgeschlagen ist
 deploys logs mein-projekt               # das Ende des neuesten Build-Logs, Schlüssel und Tokens immer maskiert
-deploys open mein-projekt [--dashboard] # die Seite oder ihre Seite bei der Plattform
+deploys logs mein-projekt 200 --id <deploy>   # das Log dieses Deploys statt des neuesten, 200 Zeilen
+deploys open mein-projekt [--dashboard] [--print]   # die Seite oder ihre Seite bei der Plattform; --print schreibt nur die Adresse
 deploys ignore mein-projekt             # aus changed / deploy-changed herauslassen
 deploys list                            # jedes Projekt jeder eingeschalteten Plattform
+deploys list --platform render --manual   # eingrenzen: eine Plattform; --auto (ein Push baut von selbst) oder --manual
 ```
 
 `freeze` schreibt nur die `deny`-Liste von `window.json` (`tz` und andere Schlüssel bleiben) und startet nichts; im Beobachter-Modus ist es erlaubt, weil es nur Zeiten sperrt. Eine `window.json`, die nicht lesbar ist, wird nie überschrieben.
