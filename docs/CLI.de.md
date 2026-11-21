@@ -56,7 +56,7 @@ deploys deploy mein-projekt --force "hotfix"   # im geschlossenen Fenster; der G
 
 ## Plattformen
 
-Vercel und Render sind standardmäßig an; Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify und Deploy-Hooks sind aus, bis `deploys providers enable <p>` sie einschaltet ([PROVIDERS.md](PROVIDERS.md), und je eine Seite in [providers/](providers/), englisch).
+Vercel und Render sind standardmäßig an; Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages und Deploy-Hooks sind aus, bis `deploys providers enable <p>` sie einschaltet ([PROVIDERS.md](PROVIDERS.md), und je eine Seite in [providers/](providers/), englisch).
 
 ```bash
 deploys providers [--json]              # jede Plattform: an oder aus, eingerichtet oder nicht
