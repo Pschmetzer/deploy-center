@@ -65,8 +65,8 @@ No key is ever printed.
   deploys digest [\-\-days 7] [\-\-json] [\-\-no\-savings]   the last week from the journal: deploys, failures, savings
   deploys timeline [\-\-days 3] [\-\-project <p>] [\-\-limit 50]   what happened, newest day first (from the journal)
   deploys recovery [\-\-days 30] [\-\-project <p>]   how long a failure lasted until the next deploy
-  deploys streak [\-\-days 90] [\-\-project <p>]   deploys in a row without a failure
-  deploys note <project> "text"             one line in the journal (a text that looks like a secret is refused)
+  deploys streak [\-\-days 90] [\-\-project <p>]   deploys in a row without a failure, per project
+  deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
   deploys when [\-\-days 90] [\-\-by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
   deploys doctor \-\-fix [\-\-json]             what to do about each problem (shown only, nothing is run)
   \-\-force "why"                             deploy inside a closed window; the reason goes to the journal
