@@ -59,6 +59,8 @@
 #   deploys digest [--days 7] [--json] [--no-savings]   the last week from the journal: deploys, failures, savings
 #   deploys timeline [--days 3] [--project <p>] [--limit 50]   what happened, newest day first (from the journal)
 #   deploys recovery [--days 30] [--project <p>]   how long a failure lasted until the next deploy
+#   deploys streak [--days 90] [--project <p>]   deploys in a row without a failure, per project
+#   deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
 #   deploys when [--days 90] [--by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
 #   deploys doctor --fix [--json]             what to do about each problem (shown only, nothing is run)
 #   --force "why"                             deploy inside a closed window; the reason goes to the journal
@@ -439,6 +441,9 @@ if [ -f "$LIB_DIR/fixes.sh" ]; then . "$LIB_DIR/fixes.sh"; fi
 # timeline, recovery and when (lib/insights.sh): read-only views of the journal.
 # shellcheck source=lib/insights.sh
 if [ -f "$LIB_DIR/insights.sh" ]; then . "$LIB_DIR/insights.sh"; fi
+# streak and note (lib/notes.sh; it uses INSIGHTS_JQ of lib/insights.sh).
+# shellcheck source=lib/notes.sh
+if [ -f "$LIB_DIR/notes.sh" ]; then . "$LIB_DIR/notes.sh"; fi
 # Signs on this Mac that a team file counts here: read without lib/team.sh, from local files only.
 team_traces() {
   [ -s "$CONFIG_DIR/team-repos" ] && grep -q '/' "$CONFIG_DIR/team-repos" 2>/dev/null && return 0
@@ -3827,6 +3832,14 @@ case "${1:-} ${2:-}" in
   "when "*)
     declare -F when_main >/dev/null || die "lib/insights.sh is not next to deploys."
     when_main "${@:2}" ;;
+
+  "streak "*)
+    declare -F streak_main >/dev/null || die "lib/notes.sh is not next to deploys."
+    streak_main "${@:2}" ;;
+
+  "note "*)
+    declare -F note_main >/dev/null || die "lib/notes.sh is not next to deploys."
+    note_main "${@:2}" ;;
 
   "digest "*)
     declare -F digest_main >/dev/null || die "lib/digest.sh is not next to deploys."
