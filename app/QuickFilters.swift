@@ -153,7 +153,7 @@ struct QuickFilterBar: View {
     private func chip(title: String, symbol: String, count: Int?, on: Bool, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Image(systemName: symbol)
+                Image(systemName: symbol).accessibilityHidden(true)
                 Text(title)
                 if let count, count > 0 { Text("\(count)").monospacedDigit().foregroundStyle(.secondary) }
             }

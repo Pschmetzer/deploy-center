@@ -72,7 +72,7 @@ struct Row: View {
             // "3 minutes ago" is kept fresh by one timer around the whole list, not one per row.
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary) }
+                    if pinned { Image(systemName: "pin.fill").font(.caption2).foregroundStyle(.secondary).accessibilityHidden(true) }  // "pinned" is in `spoken`
                     if let c = colorTag { Circle().fill(Self.tagColor(c)).frame(width: 8, height: 8).accessibilityHidden(true) }
                     Text(Demo.on ? AttributedString(Demo.mask(item.name)) : highlighted(item.name)).font(.body.weight(.medium))
                     // Only red is shown in the row; yellow and the reasons are in the details.
@@ -364,7 +364,7 @@ struct Row: View {
             HStack(spacing: 4) {
                 // Cancelled is neither red nor orange: someone stopped it on purpose.
                 if noColour {
-                    Image(systemName: ok ? "checkmark.circle" : failed ? "xmark.circle" : look == .cancelled ? "minus.circle" : "clock").font(.caption2)
+                    Image(systemName: ok ? "checkmark.circle" : failed ? "xmark.circle" : look == .cancelled ? "minus.circle" : "clock").font(.caption2).accessibilityHidden(true)
                 } else {
                     Circle().fill(ok ? Color.good : failed ? Color.red : look == .cancelled ? Color.secondary : Color.orange).frame(width: 7, height: 7)
                 }
@@ -395,7 +395,7 @@ struct Row: View {
             EmptyView()
         case .queued:
             HStack(spacing: 6) {
-                Image(systemName: "hourglass").foregroundStyle(.secondary)
+                Image(systemName: "hourglass").foregroundStyle(.secondary).accessibilityHidden(true)
                 Text(queueText ?? L("queued", "in der Schlange")).font(.caption)
                 cancelButton
             }
@@ -590,7 +590,7 @@ struct AllowanceBanner: View {
         let on = store.activeAllowances
         if let last = on.map(\.expiresAt).max() {
             HStack(spacing: 10) {
-                Image(systemName: "bolt.badge.clock.fill").foregroundStyle(.orange)
+                Image(systemName: "bolt.badge.clock.fill").foregroundStyle(.orange).accessibilityHidden(true)
                 Text(Self.text(on, until: last)).font(.caption)
                 Spacer()
             }
