@@ -581,6 +581,7 @@ struct ProjectDetail: View {
                 HStack(spacing: 6) {
                     Image(systemName: checks.failed > 0 ? "xmark.octagon.fill" : (checks.running > 0 ? "clock.fill" : "checkmark.seal.fill"))
                         .foregroundStyle(checks.failed > 0 ? .red : (checks.running > 0 ? .orange : Color.good))
+                        .accessibilityHidden(true)
                     Text(checks.failed > 0
                          ? L("CI on the branch: \(checks.failed) of \(checks.total) checks failed", "CI auf dem Branch: \(checks.failed) von \(checks.total) Checks rot")
                          : checks.running > 0
@@ -666,7 +667,7 @@ struct ProjectDetail: View {
                     .font(.caption).foregroundStyle(.secondary)
                 if !d.risky.isEmpty {
                     HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
                         Text(L("Worth a look before it goes live: ", "Vor dem Live-Gang ansehen: ") + d.risky.prefix(8).joined(separator: ", ")
                              + (d.risky.count > 8 ? " …" : ""))
                             .font(.caption).textSelection(.enabled)
