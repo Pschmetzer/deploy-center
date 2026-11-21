@@ -145,7 +145,7 @@ struct BuildLog: View {
                 if let reloadFailed {
                     // The log on screen is older than it looks: say so, with a way to try again.
                     HStack(spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityHidden(true)
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.warningText).accessibilityHidden(true)
                         Text(L("As of \(uiTime(reloadFailed)) – reloading failed",
                                "Stand von \(uiTime(reloadFailed)) – Neuladen fehlgeschlagen"))
                         Button(L("Try again", "Nochmal")) { attempt += 1 }.buttonStyle(.link)
@@ -155,19 +155,20 @@ struct BuildLog: View {
                 }
                 LogText(lines: shownLines, onlyErrors: onlyErrors, firstError: firstError, jump: jump, nextError: nextError, prevError: prevError, fontSize: fontSize,
                         label: L("Build log of \(Demo.mask(live.name))", "Build-Log von \(Demo.mask(live.name))"))
-                    .overlay(alignment: .bottomTrailing) {
-                        if firstError != nil {
-                            HStack(spacing: 6) {
-                                Button { prevError += 1 } label: { Image(systemName: "chevron.up") }
-                                    .help(L("Previous error", "Voriger Fehler")).accessibilityLabel(L("Previous error", "Voriger Fehler"))
-                                Button { nextError += 1 } label: { Image(systemName: "chevron.down") }
-                                    .help(L("Next error", "Nächster Fehler")).accessibilityLabel(L("Next error", "Nächster Fehler"))
-                                Button(L("Jump to the first error", "Zum ersten Fehler")) { jump += 1 }
-                                    .buttonStyle(.borderedProminent)
-                            }
-                            .padding(12)
-                        }
+                // The error buttons sit in a bar under the log, so they never cover its last lines.
+                if firstError != nil {
+                    Divider()
+                    HStack(spacing: 6) {
+                        Spacer()
+                        Button { prevError += 1 } label: { Image(systemName: "chevron.up") }
+                            .help(L("Previous error", "Voriger Fehler")).accessibilityLabel(L("Previous error", "Voriger Fehler"))
+                        Button { nextError += 1 } label: { Image(systemName: "chevron.down") }
+                            .help(L("Next error", "Nächster Fehler")).accessibilityLabel(L("Next error", "Nächster Fehler"))
+                        Button(L("Jump to the first error", "Zum ersten Fehler")) { jump += 1 }
+                            .buttonStyle(.borderedProminent)
                     }
+                    .padding(8)
+                }
             } else { ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity) }
         }
         // Not wider than the main window may be (680), so the sheet never sticks out of it.
