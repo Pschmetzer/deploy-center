@@ -42,7 +42,8 @@ verify_main() {
   # --expect 200 (or 2xx): only that answer is healthy, so a 401 from deployment protection fails
   # too; an expected 3xx is asked without following. --follow is the default now (kept for scripts).
   die() { echo "${ERED}Error:${EPLAIN} $*" >&2; exit 3; }
-  p="${1:?Usage: deploys verify <project> [--path /health] [--expect 200|2xx]}"; path=""; after=10; norb=""; url=""; expect=""; follow=(-L --max-redirs 5); tries=3; every=5; need=1; mtime=20; wto=30m; warm=0; ebody=""; shift
+  p="${1:?Usage: deploys verify <project> [--path /health] [--expect 200|2xx]}"; path=""; after=10; norb=""; url=""; expect=""; vfollow=(-L --max-redirs 5); tries=3; every=5; need=1; mtime=20; wto=30m; warm=0; ebody=""; shift
+  json="${json:-0}"   # the global --json flag (set by deploys)
   while [ $# -gt 0 ]; do
     case "$1" in
       --path) path="${2:?Usage: deploys verify <project> --path /health}"; shift ;;
@@ -51,7 +52,7 @@ verify_main() {
       --url) url="${2:?Usage: deploys verify <project> --url https://…}"; shift ;;
       --expect) [ $# -ge 2 ] || die "--expect takes a status like 200 or 2xx"; expect="$2"; shift
         case "$expect" in [1-5][0-9][0-9]|[1-5]xx) ;; *) die "--expect takes a status like 200 or 2xx" ;; esac ;;
-      --follow) follow=(-L --max-redirs 3) ;;
+      --follow) vfollow=(-L --max-redirs 3) ;;
       # --expect-body: the answer must contain this text (first MB; the text is never printed). --warmup 30s: a fresh
       # service that refuses connections or does not resolve yet is asked again every --every seconds for up to that
       # long before the tries start; --retry-connrefused is --warmup 30s.
@@ -110,7 +111,7 @@ verify_main() {
     case "$cexp" in ''|[1-5][0-9][0-9]|[1-5]xx) ;; *) echo "verify: \"$cexp\" is not a status like 200 or 2xx; the check of $cpath counts 5xx" >&2; cexp="" ;; esac
     case "$cpath" in ''|/*) ;; *) cpath="/$cpath";; esac
     ctarget="${url%/}$cpath"; [ -n "$cpath" ] || ctarget="$url"
-    ccodes=""; cbad=0; creason=""; cfollow=(${follow[@]+"${follow[@]}"})
+    ccodes=""; cbad=0; creason=""; cfollow=(${vfollow[@]+"${vfollow[@]}"})
     case "$cexp" in 3*) cfollow=() ;; esac
     for ((i = 1; i <= tries; i++)); do
       cx=0; pre=$cbad
