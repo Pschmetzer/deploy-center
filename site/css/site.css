@@ -28,7 +28,8 @@ nav.top .links{align-items:center}
 nav.top .links a.dl{background:var(--btn-a);color:#fff;font-weight:600;padding:5px 11px;border-radius:8px}
 nav.top .links a.dl:hover{color:#fff;filter:brightness(1.08)}
 @media (max-width:560px){nav.top .links{gap:12px;font-size:14px}nav.top .links a.opt{display:none}}
-@media (max-width:380px){nav.top .brand span{display:none}}
+@media (max-width:340px){nav.top .links a[href*="calculator"],nav.top .links a[href*="rechner"]{display:none}}
+@media (max-width:420px){nav.top .brand span{display:none}nav.top .wrap{gap:10px}nav.top .links{gap:10px}}
 
 /* article */
 .crumbs{font-size:14px;color:var(--muted);margin:32px 0 0}
