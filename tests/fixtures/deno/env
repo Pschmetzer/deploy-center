@@ -1,0 +1,5 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export DENO_DEPLOY_TOKEN=ddo_fixture DENO_DEPLOY_ORG=org-fixture
+CONTRACT_ID=alpha CONTRACT_NAME=alpha CONTRACT_DEPLOY=dpl-alpha-3
+# A pending deployment turns into a finished one for the `deploys watch` check.
+CONTRACT_DONE='s/"status": *"pending"/"status": "success"/g'

@@ -305,6 +305,15 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run package
+      - name: The .vsix holds only what ships (an allowlist, so no sources, tests, source maps or node_modules)
+        env:
+          LC_ALL: C
+        run: |
+          unzip -Z1 deploy-center-*.vsix | sed '/\/$/d' | sort > "$RUNNER_TEMP/vsix.txt"
+          printf '%s\n' '[Content_Types].xml' extension.vsixmanifest extension/LICENSE.txt extension/changelog.md \
+            extension/dist/extension.js extension/l10n/bundle.l10n.de.json extension/media/icon.png extension/package.json \
+            extension/package.nls.de.json extension/package.nls.json extension/readme.md | sort | diff - "$RUNNER_TEMP/vsix.txt" \
+            || { echo "::error::the .vsix content changed: update this list on purpose (and .vscodeignore)"; exit 1; }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: deploys-vscode

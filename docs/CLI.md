@@ -274,6 +274,8 @@ refused (`--retry-connrefused`); with several checks they run at the same time, 
 | `DEPLOYS_CI_GRACE` | seconds a young commit without any check counts as "CI not started yet" for `--when-green` (default 90; [SAFE-DEPLOY.md](SAFE-DEPLOY.md)) |
 | `DEPLOYS_CI_IGNORE` | a regex for check names that do not count for `--when-green` (an optional check that is always red) |
 | `DEPLOYS_NO_JOURNAL` | `1`: a start from the terminal writes no journal line (tests, containers) |
+| `DEPLOYS_CALLER` | `app`: set by the Mac app when it runs `deploys`; the terminal journal line is skipped because the app writes its own (do not set it in scripts: you would lose the journal entry) |
+| `DEPLOYS_LIB` | `1`: `source deploys` only loads the functions and runs nothing (what `providers/hook.sh` and the tests do) |
 | `DEPLOYS_HOOK_TIMEOUT` | seconds one `hooks.d` script may run (default 300; `0` no limit; see "Hooks" below) |
 | `DEPLOYS_LOG_ROTATE` | `1`: rotate the job log of this run (the jobs from `schedule`, `guard schedule` and `autofix schedule` set it; `DEPLOYS_LOG_MAX_BYTES` is the size) |
 | `DEPLOYS_FOLLOW_EVERY` | seconds between two reads of `logs --follow` (default 5) |

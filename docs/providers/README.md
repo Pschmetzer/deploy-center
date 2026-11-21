@@ -17,9 +17,10 @@ Vercel and Render are on by default; the others are opt-in (`deploys providers e
 | [Heroku](heroku.md) | no | no | no | yes | yes | no |
 | [Firebase Hosting](firebase.md) | no | no | no | yes | no | no |
 | [GitHub Pages](ghpages.md) | no | no | yes | no | no | no |
+| [Deno Deploy](deno.md) | no | no | no | no | no | no |
 | [Deploy hook](hook.md) | no | no | no | no | no | no |
 
-Fly.io, Heroku and Firebase Hosting have no build service behind their API: "deploy" restarts the machines or dynos (Fly.io, Heroku) or makes an existing version live (Firebase Hosting), and never builds or uploads code. Railway redeploys the newest deployment, and GitHub Pages dispatches the site's workflow. Their pages say exactly what each does.
+Fly.io, Heroku and Firebase Hosting have no build service behind their API: "deploy" restarts the machines or dynos (Fly.io, Heroku) or makes an existing version live (Firebase Hosting), and never builds or uploads code. Deno Deploy and Railway redeploy the newest deployment, and GitHub Pages dispatches the site's workflow. Their pages say exactly what each does.
 
 A "no" is what the host's API allows today or what Deploy Center has not checked against a live
 account; the page of each host says which. A deploy hook only starts a build: a 2xx answer counts as ready.
