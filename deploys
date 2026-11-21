@@ -187,13 +187,14 @@ xargs_par() {
 
 EXIT_CMDS=()
 # Each entry knows in which subshell it was added ($BASH_SUBSHELL): a $(...) that adds its own and exits must not run
-# those of the shell that started it (they would remove files the parent still needs).
+# those of the shell that started it (they would remove files the parent still needs). The depth goes into the trap
+# text itself: bash 3.2 reads $BASH_SUBSHELL as 0 inside the EXIT trap of a $(...), so it cannot be read there.
 EXIT_DEPTH=()
-_exit_traps() {
-  local rc=$? i
+_exit_traps() {  # _exit_traps <depth the trap was set at>
+  local rc=$? i d="${1:-0}"
   local e
   for ((i = ${#EXIT_CMDS[@]} - 1; i >= 0; i--)); do
-    [ "${EXIT_DEPTH[$i]:-0}" = "${BASH_SUBSHELL:-0}" ] || continue
+    [ "${EXIT_DEPTH[$i]:-0}" = "$d" ] || continue
     e="${EXIT_CMDS[$i]}"
     if [ "${e:0:1}" = $'\x1e' ]; then   # trap_fn: a function and its words, called without eval
       local w=() sep=$'\x1f'; e="${e:1}"
@@ -204,13 +205,16 @@ _exit_traps() {
   done
   return "$rc"
 }
-trap_add() { EXIT_DEPTH[${#EXIT_CMDS[@]}]="${BASH_SUBSHELL:-0}"; EXIT_CMDS[${#EXIT_CMDS[@]}]="$1"; trap '_exit_traps' EXIT; }
+# The depth is expanded now, on purpose, so the trap carries the subshell it was set in.
+# shellcheck disable=SC2064
+_exit_trap_set() { trap "_exit_traps ${BASH_SUBSHELL:-0}" EXIT; }
+trap_add() { EXIT_DEPTH[${#EXIT_CMDS[@]}]="${BASH_SUBSHELL:-0}"; EXIT_CMDS[${#EXIT_CMDS[@]}]="$1"; _exit_trap_set; }
 # trap_fn <function> [word...]: the same at exit, but a function with its words (no text that is run as code, so no
 # quoting to get wrong). The words are fixed when it is added. Not for empty words. $EXIT_RC is the exit status.
 trap_fn() {
   local IFS=$'\x1f'
   EXIT_DEPTH[${#EXIT_CMDS[@]}]="${BASH_SUBSHELL:-0}"
-  EXIT_CMDS[${#EXIT_CMDS[@]}]=$'\x1e'"$*"; trap '_exit_traps' EXIT
+  EXIT_CMDS[${#EXIT_CMDS[@]}]=$'\x1e'"$*"; _exit_trap_set
 }
 exit_rm() { rm -f "$@"; }
 exit_rmdir() { rmdir "$@" 2>/dev/null || true; }
