@@ -324,7 +324,7 @@
     "@types/vscode": "1.146.0",
     "@vscode/vsce": "4.1.1",
     "esbuild": "0.28.2",
-    "ovsx": "1.2.0",
+    "ovsx": "1.4.0",
     "typescript": "7.0.2"
   },
   "l10n": "./l10n"
