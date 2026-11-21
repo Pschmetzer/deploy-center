@@ -37,6 +37,9 @@ config:--refresh
 doctor:--text --fix --json
 freeze:status add remove clear --json
 digest:--days --json --no-savings
+timeline:--days --project --limit --json
+recovery:--days --project --json
+when:--days --by --json
 rollback:
 cancel:
 TABLE
