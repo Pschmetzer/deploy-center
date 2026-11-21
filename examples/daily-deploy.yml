@@ -46,7 +46,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GH_READ_TOKEN }}
       DEPLOYS_VERCEL_TEAM: ${{ vars.DEPLOYS_VERCEL_TEAM }}
       DEPLOYS_CONFIG: ${{ github.workspace }}/deploys-config
-      DEPLOYS_VERSION: "0.11.0"        # pin a release; update it by hand
+      DEPLOYS_VERSION: "0.12.0"        # pin a release; update it by hand
       VERCEL_CLI_VERSION: "65.12.1"   # pin the vercel CLI too
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

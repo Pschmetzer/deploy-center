@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.12.0 - 2026-11-21
+
+### Highlights
+
+- Five new hosts: Fly.io, Railway, Heroku, Firebase Hosting and GitHub Pages (opt-in)
+- CLI: `watch --json`, `digest`, `streak`, `timeline`, `config export` and `import`
+- Mac app: filter chips above the list, a 401/403 check after a deploy, clearer palette commands
+- iPhone app: offline use, Live Activity and Shortcuts
+- Website: 11 new guides, security.txt and better search
+
+### All changes
+
 - Tests: more cases for the team repo field (trailing slash, ssh address, letters beyond ASCII, empty) and for the quiet-hours digest at the end hour.
 - Mac app (accessibility): decorative symbols (pin, queue hourglass, CI and risk marks, empty-state icons, quick-filter chips, command-palette rows, connection status) are hidden from VoiceOver, so it no longer reads symbol names next to the text that already says the same.
 - Mac app: in a build log, the "previous / next / first error" buttons sit in a bar under the log instead of covering its last lines.
