@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Mac app: a command-palette command that cannot run (observer mode, a project that is already running or cannot be deployed) says why in a toast instead of closing in silence.
+- Mac app: the failed-builds log search puts the cursor in the search field, has Reload and says when the logs were read and how many could not be read, notes the 20-lines-per-project limit and can copy a group's error line.
 - CLI: three read-only views of the journal. `deploys timeline` lists what happened (deploys, failures, rollbacks, forced starts) newest day first, `deploys recovery` shows how long each failure lasted until the next deploy of the project (typical and longest time, outages still open), and `deploys when` shows on which weekday or hour of the day your deploys failed more often (a hint from your own history; slots with fewer than five tries are marked). All take `--days` and `--json`, count like `deploys digest`, and start or change nothing. Tab completion knows them.
 - Mac app: the Render key setup offers "Paste key" when the clipboard holds a Render key, has a flexible field width and announces the save to VoiceOver; the team settings show a warning symbol (not a text character) for a repo that could not be read.
 - Website: the search on the guides, blog and docs pages now also finds the German guides, blog posts and comparison pages and the English comparison pages (19 German and 4 comparison entries were missing).
