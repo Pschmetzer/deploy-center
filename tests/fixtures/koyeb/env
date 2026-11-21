@@ -1,0 +1,5 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export KOYEB_TOKEN=kyb_fixture
+CONTRACT_ID=svc-alpha CONTRACT_NAME=alpha CONTRACT_DEPLOY=dep-alpha-3
+# A starting deployment turns into a healthy one for the `deploys watch` check.
+CONTRACT_DONE='s/"status": *"STARTING"/"status": "HEALTHY"/g'
