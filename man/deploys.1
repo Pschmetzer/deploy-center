@@ -299,8 +299,8 @@ another folder for the launchd job files (default ~/Library/LaunchAgents; for te
 .B NO_COLOR
 no color
 .TP
-.B \-\-color=always, \-\-color=never, \-\-no\-color
-on the command line, anywhere; the last one wins and beats NO_COLOR and CLICOLOR_FORCE
+.B \-\-color=always, \-\-color=never, \-\-color=auto, \-\-no\-color
+on the command line, anywhere; the last one wins and beats NO_COLOR and CLICOLOR_FORCE (auto clears both: a terminal gets color, a pipe does not)
 .SH BUGS
 Report problems at https://github.com/Pschmetzer/deploy-center/issues; security problems as described in SECURITY.md in the repository.
 .SH AUTHORS

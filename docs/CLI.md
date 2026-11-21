@@ -126,7 +126,7 @@ deploys triggers                        # builds nobody started from here, deplo
 deploys where                           # config folder, version, key source, logins
 deploys autofix [--dry-run]             # see AUTOFIX.md
 deploys autofix --only vercel my-project  # this one failure now
-deploys autofix --only vercel my-project --again   # hand it over again when a session ended without a fix PR (90 minutes after the first)
+deploys autofix --only vercel my-project --again   # hand it over again when a session ended without a fix PR, at least 90 minutes after the latest hand-over
 deploys autodeploy allow vercel my-project 4   # auto-deploy on for 4 hours (see GUARD.md)
 deploys autodeploy allowed | revoke vercel my-project
 deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
@@ -284,7 +284,7 @@ refused (`--retry-connrefused`); with several checks they run at the same time, 
 | `DEPLOYS_TEAM_REFRESH` | `1`: read the shared files from GitHub again whatever the cache's age (as `team refresh`; the age is `DEPLOYS_TEAM_TTL`) |
 | `DEPLOYS_LAUNCH_DIR` | another folder for the launchd job files (default `~/Library/LaunchAgents`; for tests and sandboxed accounts) |
 | `NO_COLOR` | no color |
-| `--color=always`, `--color=never`, `--no-color` | on the command line, anywhere; the last one wins and beats `NO_COLOR` and `CLICOLOR_FORCE` |
+| `--color=always`, `--color=never`, `--color=auto`, `--no-color` | on the command line, anywhere; the last one wins and beats `NO_COLOR` and `CLICOLOR_FORCE` (`auto` clears both: a terminal gets color, a pipe does not) |
 
 **Budget brake.** `budget.json` (`deploys budget set 50`) holds dollars a month of Vercel build
 charges. Before `deploy-changed --yes` starts anything it adds this month's charges up to yesterday
