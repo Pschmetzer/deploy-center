@@ -91,4 +91,42 @@ expect "cli: an empty journal is said, not an error" "$(cli when 2>&1 | sed -n 2
 expect "cli: observer mode may look" "$(DEPLOYS_READONLY=1 cli recovery 2>&1 | sed -n 2p)" "  No failures in the journal for this time."
 expect "completion knows the commands" "$(cli completion bash | grep -c 'recovery')" "2"
 
+# --- streak_from ---
+sj="$(cat <<J
+{"at":"$(h 90)","platform":"Vercel","name":"web","result":"live","detail":"ok"}
+{"at":"$(h 80)","platform":"Vercel","name":"web","result":"live","detail":"ok"}
+{"at":"$(h 70)","platform":"Vercel","name":"web","result":"live","detail":"ok"}
+{"at":"$(h 60)","platform":"Vercel","name":"web","result":"failed","detail":"x"}
+{"at":"$(h 50)","platform":"Vercel","name":"web","result":"other","detail":"Started from the terminal (dpl_1)"}
+{"at":"$(h 40)","platform":"Vercel","name":"web","result":"live","detail":"ok"}
+{"at":"$(h 30)","platform":"Vercel","name":"web","result":"rollback","detail":"not a deploy"}
+{"at":"$(h 20)","platform":"Render","name":"api","result":"failed","detail":"x"}
+J
+)"
+st="$(streak_from "$now" 30 "" <<<"$sj")"
+expect "streak: now counts since the last failure, a rollback is not a deploy" "$(jq -c '.projects[] | select(.name == "web") | {current, longest, deploys, failures}' <<<"$st")" '{"current":2,"longest":3,"deploys":5,"failures":1}'
+expect "streak: a project that only failed has no streak" "$(jq -c '.projects[] | select(.name == "api") | {current, longest}' <<<"$st")" '{"current":0,"longest":0}'
+expect "streak: the longest running streak first" "$(jq -r '.projects[0].name' <<<"$st")" "web"
+expect "streak: one project" "$(streak_from "$now" 30 api <<<"$sj" | jq -c '[.projects[].name]')" '["api"]'
+expect "streak: an empty journal" "$(streak_from "$now" 30 "" </dev/null | jq -c '.projects')" "[]"
+expect "streak: the text line" "$(streak_print <<<"$(streak_from "$now" 30 api <<<"$sj")" | tail -n 1)" "  api (Render): 0 now, longest 0 (0 deploys, 1 failed, last failure $(iso $((now - 20 * 3600)) | cut -c1-10))"
+
+# --- note ---
+expect "note_text: control characters and runs of blanks" "$(note_text $'fix\t the   login\001 bug ')" "fix the login bug"
+note_text "" >/dev/null 2>&1; expect "note_text: empty is refused" "$?" "1"
+note_text "$(printf 'x%.0s' $(seq 1 201))" >/dev/null 2>&1; expect "note_text: over 200 characters is refused" "$?" "1"
+if command -v perl >/dev/null 2>&1; then
+  note_text "token ghp_abcdefghijklmnop12" >/dev/null 2>&1; expect "note_text: a token is refused, not masked" "$?" "1"
+  note_text "DB_PASSWORD=hunter2hunter2" >/dev/null 2>&1; expect "note_text: a password setting is refused" "$?" "1"
+fi
+: > "$tmp/journal.jsonl"
+expect "cli note: says what it wrote" "$(cli note web "hotfix for login")" "Noted for web: hotfix for login"
+expect "cli note: one journal line with the result note" "$(jq -c '{platform, name, result, detail}' "$tmp/journal.jsonl")" '{"platform":"cli","name":"web","result":"note","detail":"hotfix for login"}'
+expect "cli note: it is in the timeline" "$(cli timeline --days 1 | grep -c 'note .*web (cli): hotfix for login')" "1"
+expect "cli note: observer mode may use it (only the local journal)" "$(DEPLOYS_READONLY=1 cli note web "seen" | head -n 1)" "Noted for web: seen"
+expect "cli note: a bad project name is refused" "$(cli note 'a b' x 2>&1 | head -n 1 | cut -c1-31)" "Error: A project name has lette"
+expect "cli note: text is needed" "$(cli note web 2>&1 | head -n 1)" 'Error: Usage: deploys note <project> "text"'
+expect "cli streak --json" "$(cli streak --json | jq -c '[.projects[].name]')" "[]"
+expect "cli streak: an empty window says so" "$(cli streak | tail -n 1)" "  No deploys in the journal for this time."
+
 echo; [ "$fails" = 0 ] && echo "All insights tests passed." || { echo "$fails failed."; exit 1; }
