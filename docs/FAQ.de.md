@@ -3,7 +3,7 @@
 Die deutsche Fassung von [FAQ.md](FAQ.md). Verlinkte Seiten ohne eigene deutsche Fassung sind englisch.
 
 ## Was kostet es?
-Nichts. Deploy Center ist kostenlos und Open Source (MIT). Du zahlst deinen Hosts (Vercel, Render und die zuschaltbaren: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify) für die Builds, die du startest, und es werden weniger.
+Nichts. Deploy Center ist kostenlos und Open Source (MIT). Du zahlst deinen Hosts (Vercel, Render und die zuschaltbaren: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages) für die Builds, die du startest, und es werden weniger.
 `deploys simulate` schätzt, was Auto-Deploy dich im Monat kostet, `deploys ledger`, was das Abschalten gespart hat: [ERSPARNIS.md](ERSPARNIS.md).
 
 ## Deployt es von allein etwas?

@@ -212,11 +212,11 @@ Ein Render-**Blueprint** mit Auto-Sync kann `render.yaml` bei einem Push erneut 
 
 ### "Netlify is off. Turn it on: deploys providers enable netlify"
 
-Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify und Deploy-Hooks sind aus, bis du sie einschaltest, damit kein Befehl aus Versehen mit ihnen spricht. Führe den Befehl aus der Meldung aus (der Name unterscheidet sich je Host) und setze dann seinen Schlüssel. `deploys providers` listet, welche an sind.
+Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages und Deploy-Hooks sind aus, bis du sie einschaltest, damit kein Befehl aus Versehen mit ihnen spricht. Führe den Befehl aus der Meldung aus (der Name unterscheidet sich je Host) und setze dann seinen Schlüssel. `deploys providers` listet, welche an sind.
 
 ### "No Cloudflare API token. …" / "No Coolify token. …"
 
-Der Host ist an, aber es ist kein Schlüssel für ihn gespeichert. Die Meldung sagt, wo du einen erstellst. Dann `pbpaste | deploys <host> set-key` (AWS Amplify nimmt stattdessen einen Profilnamen: `echo my-profile | deploys amplify set-key`). Die Seite jedes Hosts hat die Details: [Netlify](providers/netlify.md), [Cloudflare Pages](providers/cloudflare.md), [AWS Amplify](providers/amplify.md), [DigitalOcean](providers/digitalocean.md), [Coolify](providers/coolify.md), [Deploy-Hooks](providers/hook.md).
+Der Host ist an, aber es ist kein Schlüssel für ihn gespeichert. Die Meldung sagt, wo du einen erstellst. Dann `pbpaste | deploys <host> set-key` (AWS Amplify nimmt stattdessen einen Profilnamen: `echo my-profile | deploys amplify set-key`). Die Seite jedes Hosts hat die Details: [Netlify](providers/netlify.md), [Cloudflare Pages](providers/cloudflare.md), [AWS Amplify](providers/amplify.md), [DigitalOcean](providers/digitalocean.md), [Coolify](providers/coolify.md), [Fly.io](providers/fly.md), [Railway](providers/railway.md), [Heroku](providers/heroku.md), [Firebase Hosting](providers/firebase.md), [GitHub Pages](providers/ghpages.md), [Deploy-Hooks](providers/hook.md).
 
 ### "… has no build hook yet. Run: deploys netlify autodeploy-off …"
 

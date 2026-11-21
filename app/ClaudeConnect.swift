@@ -559,7 +559,7 @@ struct ClaudeSettings: View {
             }
         }()
         return HStack(spacing: 4) {
-            Image(systemName: s == .connected ? "checkmark.circle.fill" : (s == .notFound ? "circle.dashed" : "circle"))
+            Image(systemName: s == .connected ? "checkmark.circle.fill" : (s == .notFound ? "circle.dashed" : "circle")).accessibilityHidden(true)
             Text(text)
         }
         .font(.caption).foregroundStyle(color)

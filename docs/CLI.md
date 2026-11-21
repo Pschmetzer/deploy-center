@@ -25,6 +25,7 @@ deploys streak [--days 90] [--project <name>] [--json]   # deploys in a row with
 deploys note <project> "text"           # one line in the journal (result `note`, 200 characters); it shows in `timeline`. A text that looks like a secret is refused. Touches no platform.
 deploys when [--days 90] [--by weekday|hour] [--json]   # on which weekday or hour of the day your deploys failed more often (UTC); a slot needs 5 tries to count
 deploys list --format tsv               # platform, project, auto or manual, last state: tabs, no header, for scripts without jq
+deploys list --platform render --manual   # narrow it: one platform; --auto (a push builds by itself) or --manual
 deploys idle [--days 90] [--json]       # projects with no deploy for N days: candidates to pause (read only)
 deploys changed                         # what is merged on GitHub and not live: commits and PRs per project
 deploys deploy-changed                  # the daily deploy: shows the list; add --yes to start it
@@ -37,7 +38,8 @@ deploys status                          # what is building now, and what failed 
 deploys watch my-project [--timeout 30m] [--interval 6s] [--quiet] [--json]  # follow the newest deploy until live or failed
 deploys watch a --and b --and c            # several at once (six at a time); Ctrl-C stops them all
 deploys logs my-project                 # the end of the newest build log, keys and tokens always masked
-deploys open my-project [--dashboard]   # the site, or its page at the platform
+deploys logs my-project 200 --id <deploy>   # the log of that deploy instead of the newest, 200 lines
+deploys open my-project [--dashboard] [--print]   # the site, or its page at the platform; --print only writes the address
 deploys ignore my-project               # leave it out of changed / deploy-changed
 deploys list                            # every project on every provider that is on
 ```
@@ -49,6 +51,7 @@ deploys list                            # every project on every provider that i
 
 ```bash
 deploys verify my-project [--path /health] [--no-rollback]   # ask the site; roll back on 5xx
+deploys verify my-project --rollback-after 10 --watch-timeout 30m   # count down 10 seconds before the rollback (Ctrl-C stops it); wait at most 30 minutes for the newest deploy to finish before checking
 deploys verify my-project --match "ok" --header "Cache-Control: no-store" --cert-days 14 --warmup 30s   # body, header, certificate, a fresh service
 deploys risk my-project                 # green/yellow/red for what waits
 deploys secrets my-project              # added lines that look like a key or token; exit 1 if any (a gate)
@@ -65,7 +68,7 @@ deploys deploy my-project --force "hotfix"   # inside a closed window; the reaso
 ## Platforms
 
 Vercel and Render are on by default; Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App
-Platform, Coolify and deploy hooks are off until `deploys providers enable <p>`
+Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages and deploy hooks are off until `deploys providers enable <p>`
 ([PROVIDERS.md](PROVIDERS.md), and one page each in [providers/](providers/)).
 
 ```bash
@@ -123,6 +126,7 @@ deploys triggers                        # builds nobody started from here, deplo
 deploys where                           # config folder, version, key source, logins
 deploys autofix [--dry-run]             # see AUTOFIX.md
 deploys autofix --only vercel my-project  # this one failure now
+deploys autofix --only vercel my-project --again   # hand it over again when a session ended without a fix PR, at least 90 minutes after the latest hand-over
 deploys autodeploy allow vercel my-project 4   # auto-deploy on for 4 hours (see GUARD.md)
 deploys autodeploy allowed | revoke vercel my-project
 deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
@@ -137,6 +141,7 @@ deploys ai slow my-project              # why its builds take long (ai risk = ai
 deploys autofix --preview --only vercel my-project --json   # what a hand-over would send; sends nothing
 deploys team init me/my-repo > deploy-center.json   # a shared config from this Mac's settings (writes nothing itself)
 deploys schedule daily 09:00 [--when-green] [--by-rules]   # deploy-changed --yes once a day (launchd, or the cron line)
+deploys schedule daily 09:00 --weekdays   # Monday to Friday only
 deploys schedule off | status [--json]
 deploys hooks install [<repo>] [--hook pre-commit] [--yes]   # before each push: which builds it would start (integrations/hooks); --hook pre-commit stops a commit that adds a key
 deploys hooks uninstall | status [<repo>]
@@ -279,6 +284,7 @@ refused (`--retry-connrefused`); with several checks they run at the same time, 
 | `DEPLOYS_TEAM_REFRESH` | `1`: read the shared files from GitHub again whatever the cache's age (as `team refresh`; the age is `DEPLOYS_TEAM_TTL`) |
 | `DEPLOYS_LAUNCH_DIR` | another folder for the launchd job files (default `~/Library/LaunchAgents`; for tests and sandboxed accounts) |
 | `NO_COLOR` | no color |
+| `--color=always`, `--color=never`, `--color=auto`, `--no-color` | on the command line, anywhere; the last one wins and beats `NO_COLOR` and `CLICOLOR_FORCE` (`auto` clears both: a terminal gets color, a pipe does not) |
 
 **Budget brake.** `budget.json` (`deploys budget set 50`) holds dollars a month of Vercel build
 charges. Before `deploy-changed --yes` starts anything it adds this month's charges up to yesterday
