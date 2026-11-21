@@ -134,6 +134,7 @@ deploys ai explain|notes|ship my-project   # ask Claude with your own key, see C
 deploys scan start owner/repo           # Claude Code looks for bugs and opens one fix PR (SCAN.md)
 deploys scan status | list | log <id>   # installed and logged in, the newest scans, one report
 deploys check start owner/repo [branch] # OSV-Scanner, gitleaks and Semgrep on a fresh copy, on this Mac (SCAN.md)
+deploys nightly schedule on [HH:MM]     # the check on every repo each night, only new findings count; `nightly fix on`: Claude opens fix PRs (SCAN.md)
 deploys check show <id>                 # the findings, secrets redacted
 deploys config [--json] [--refresh]     # every setting in effect (shared files, this Mac) and where each came from
 deploys ai ask my-project --question "will this run a migration?"   # your own question; its commits and log go along

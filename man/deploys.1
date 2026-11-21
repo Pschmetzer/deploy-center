@@ -111,6 +111,8 @@ No key is ever printed.
   deploys scan status [\-\-json] | list | log <id>   the newest scans, their PRs and reports
   deploys check start <owner/repo> [branch] OSV\-Scanner, gitleaks and Semgrep (free, local, read\-only)
   deploys check show <id>                   the findings of one check (secrets redacted)
+  deploys nightly schedule on [HH:MM]|off   every night: the check on every repo, only new findings count (off by default)
+  deploys nightly fix on|off | skip|unskip <owner/repo> | list | status [\-\-json]   new findings to a Claude bug scan (off by default)
   deploys ai explain|notes|ship <p>         ask Claude (your own Anthropic key): why a build failed,
                                             plain release notes (\-\-lang en|de|fr|...), is it safe to ship
   deploys ai ask <p> \-\-question "…"         your own question about a project (its commits and log go along)

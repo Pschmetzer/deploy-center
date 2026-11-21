@@ -105,6 +105,8 @@
 #   deploys scan status [--json] | list | log <id>   the newest scans, their PRs and reports
 #   deploys check start <owner/repo> [branch] OSV-Scanner, gitleaks and Semgrep (free, local, read-only)
 #   deploys check show <id>                   the findings of one check (secrets redacted)
+#   deploys nightly schedule on [HH:MM]|off   every night: the check on every repo, only new findings count (off by default)
+#   deploys nightly fix on|off | skip|unskip <owner/repo> | list | status [--json]   new findings to a Claude bug scan (off by default)
 #   deploys ai explain|notes|ship <p>         ask Claude (your own Anthropic key): why a build failed,
 #                                             plain release notes (--lang en|de|fr|...), is it safe to ship
 #   deploys ai ask <p> --question "…"         your own question about a project (its commits and log go along)
@@ -424,7 +426,7 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion; do
+for _l in risk verify completion nightly; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done
@@ -1759,9 +1761,10 @@ job_path() {
   if [ -x /usr/libexec/PlistBuddy ]; then /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:PATH' "$1" 2>/dev/null || true
   else sed -n 's:.*<key>PATH</key><string>\([^<]*\)</string>.*:\1:p' "$1" | head -1 | sed 's/&lt;/</g; s/&gt;/>/g; s/&quot;/"/g; s/&amp;/\&/g'; fi
 }
-job_missing() {  # job_missing <label>: space-separated tool names
+job_missing() {  # job_missing <label> [<more tools>]: space-separated tool names
   local jp t out=""; jp="$(job_path "$(job_plist "$1")")"; [ -n "$jp" ] || return 0
-  for t in jq gh glab perl curl vercel; do
+  # shellcheck disable=SC2086  # the extra tools are a word list
+  for t in jq gh glab perl curl vercel ${2:-}; do
     # type -P: the program; gh, glab and vercel are also functions here (cli_limit).
     type -P "$t" >/dev/null 2>&1 || continue
     ( PATH="$jp"; type -P "$t" >/dev/null 2>&1 ) || out="$out $t"
@@ -1770,8 +1773,8 @@ job_missing() {  # job_missing <label>: space-separated tool names
 }
 job_missing_json() {  # ["autofix:gh", "guard:vercel"], without jq (doctor)
   local l t out=""
-  for l in "autofix:$AUTOFIX_LABEL" "guard:$GUARD_LABEL"; do
-    for t in $(job_missing "${l#*:}"); do out="$out,\"${l%%:*}:$t\""; done
+  for l in "autofix:$AUTOFIX_LABEL" "guard:$GUARD_LABEL" "nightly:${NIGHTLY_LABEL:-app.deploycenter.nightly}"; do
+    for t in $(job_missing "${l#*:}" "$([ "${l%%:*}" = nightly ] && echo "${NIGHTLY_TOOLS:-}")"); do out="$out,\"${l%%:*}:$t\""; done
   done
   echo "[${out#,}]"
 }
@@ -2865,6 +2868,8 @@ case "${1:-} ${2:-}" in
   "config import"*) args_has "--yes" "${@:3}" && require_write "config import --yes" || true ;;
   "scan start"|"scan run") require_write "scan" ;;
   "check start"|"check run") require_write "check" ;;
+  # The nightly run checks repos and may open fix PRs; its settings and status only read.
+  "nightly run"|"nightly start"|"nightly ") require_write "nightly" ;;
   "autofix "|"autofix --"*|"guard "|"guard --"*)
     args_has "--dry-run --preview" "${@:2}" || require_write "$1" ;;
 esac
@@ -4288,6 +4293,10 @@ case "${1:-} ${2:-}" in
     check_start "${3:-}" "${4:-main}" ;;
   "check run")
     check_run "$3" "$4" "$5" ;;
+  "nightly "*)
+    # The nightly check: lib/nightly.sh, docs/SCAN.md.
+    declare -F nightly_main >/dev/null || die "lib/nightly.sh is not next to deploys."
+    nightly_main "${@:2}" ;;
   "check show")
     [ -n "${3:-}" ] || die "Usage: deploys check show <id>"
     case "$3" in *[!A-Za-z0-9._-]*) die "bad id";; esac
