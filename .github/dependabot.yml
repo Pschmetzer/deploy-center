@@ -25,6 +25,11 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
+    # @raycast/eslint-config and typescript-eslint accept typescript <6.1 only: a TypeScript major breaks npm ci.
+    # Lift this when they support the next major.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directory: /integrations/docker
     schedule:
