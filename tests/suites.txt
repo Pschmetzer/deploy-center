@@ -7,6 +7,7 @@ tests/script-tests.sh
 tests/team-tests.sh
 tests/install-tests.sh
 tests/release-tests.sh
+tests/checks-tests.sh
 tests/ios-rule-tests.sh
 tests/round8-tests.sh
 tests/round9-tests.sh
@@ -14,6 +15,7 @@ tests/round12-tests.sh
 tests/welle10-tests.sh
 tests/cli-fixes-tests.sh
 tests/cli-r12b-tests.sh
+tests/insights-tests.sh
 tests/app-tests.sh mac full
 ios/Tests/run.sh mac full
 ios/test.sh mac full

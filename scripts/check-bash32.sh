@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.." || exit 1
 files="deploys release.sh build.sh $(ls lib/*.sh providers/*.sh scripts/*.sh 2>/dev/null | tr '\n' ' ')"
 bad=0
 # Only code: a line that is a comment is skipped. A word in quotes can still trip it; say so in a comment and use another word.
-pat='(declare|local|typeset)[[:space:]]+-[a-zA-Z]*[AnN]([[:space:]]|$)|(^|[^A-Za-z_])(mapfile|readarray|coproc)[[:space:]]|\$\{[A-Za-z_][A-Za-z0-9_]*(,,|\^\^|@[QEPAa])\}|\|&|&>>|\[\[[[:space:]]+-v[[:space:]]|wait[[:space:]]+-n|\$BASHPID|\$EPOCHSECONDS|;;&|;&[[:space:]]*$'
+pat='(declare|local|typeset)[[:space:]]+-[a-zA-Z]*[AnN]([[:space:]]|$)|(^|[^A-Za-z_])(mapfile|readarray|coproc)[[:space:]]|\$\{[A-Za-z_][A-Za-z0-9_]*(,,|\^\^|@[QEPAa])\}|\|&|&>>|\[\[[[:space:]]+-v[[:space:]]|wait[[:space:]]+-n|\$BASHPID|\$EPOCHSECONDS|;;&|;&[[:space:]]*$'  # bash32-ok (the patterns this checker looks for)
 for f in $files; do
   [ -f "$f" ] || continue
   [ "$f" != scripts/check-bash32.sh ] || continue

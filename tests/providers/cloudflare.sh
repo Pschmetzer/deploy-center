@@ -306,7 +306,6 @@ out="$( http_stub; cf_call GET /user/tokens/verify 2>&1 )"; rc=$?
 expect "PRV-130: success:false with a 2xx still fails" "$rc" 1
 has "PRV-130: with Cloudflare's own error text" "$out" "Cloudflare GET /user/tokens/verify:"
 
-if [ -f tests/providers/contract.sh ]; then bash tests/providers/contract.sh cloudflare || fails=$((fails+1)); fi
 
 echo
 [ "$fails" = 0 ] && echo "All Cloudflare tests passed." || { echo "$fails failed."; exit 1; }

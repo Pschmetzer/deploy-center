@@ -34,7 +34,10 @@ enum SafeLink {
         default: return false
         }
     }
-    @MainActor static func open(_ u: URL) { if ok(u) { NSWorkspace.shared.open(u) } }
+    @MainActor static func open(_ u: URL) {
+        if ok(u) { NSWorkspace.shared.open(u) }
+        else { NSSound.beep(); AccessibilityNotification.Announcement(L("This link was not opened: it is not a web page.", "Dieser Link wurde nicht geöffnet: keine Webseite.")).post() }
+    }
 }
 
 /// Opens Settings when the store asks (Store.openSettings), for code that is not a view; also from
@@ -61,6 +64,7 @@ struct CopyButton: View {
     var systemImage: String? = nil
     let text: () -> String
     @State private var copied = false
+    @State private var reset: Task<Void, Never>?
 
     var body: some View {
         Button {
@@ -68,7 +72,8 @@ struct CopyButton: View {
             copied = true
             // VoiceOver hears it too, not only the changed label.
             AccessibilityNotification.Announcement(L("Copied", "Kopiert")).post()
-            Task { try? await Task.sleep(nanoseconds: 1_500_000_000); copied = false }
+            reset?.cancel()   // a second click starts the 1.5 s again, the first timer must not cut it short
+            reset = Task { try? await Task.sleep(nanoseconds: 1_500_000_000); if !Task.isCancelled { copied = false } }
         } label: {
             if let systemImage {
                 Image(systemName: copied ? "checkmark" : systemImage)
@@ -92,6 +97,8 @@ struct ErrorText: View {
     var body: some View {
         Label(text, systemImage: "xmark.octagon.fill")
             .font(.caption).foregroundStyle(.red).textSelection(.enabled)
+            .accessibilityLabel(L("Error: \(text)", "Fehler: \(text)"))
+            .onAppear { AccessibilityNotification.Announcement(L("Error: \(text)", "Fehler: \(text)")).post() }
     }
 }
 

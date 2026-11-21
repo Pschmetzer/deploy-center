@@ -81,7 +81,9 @@ struct TeamSettings: View {
                     }
                 }
                 ForEach(c.sources.filter { $0.error != nil }) { s in
-                    Text("⚠︎ " + Demo.mask(s.repo) + ": " + Demo.scrub(s.error ?? "", items: allItems)).font(.caption).foregroundStyle(Color.warningText)
+                    Label(Demo.mask(s.repo) + ": " + Demo.scrub(s.error ?? "", items: allItems), systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption).foregroundStyle(Color.warningText)
+                        .accessibilityLabel(L("Warning: ", "Warnung: ") + Demo.mask(s.repo) + ": " + Demo.scrub(s.error ?? "", items: allItems))
                 }
                 if !c.guarded.isEmpty {
                     LabeledContent(L("Two-person rule", "Vier-Augen-Prinzip")) {

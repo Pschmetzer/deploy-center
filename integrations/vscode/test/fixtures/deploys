@@ -1,7 +1,8 @@
 #!/bin/bash
 # A stand-in deploys CLI for the unit tests. Answers from the JSON next to it; DEPLOYS_FAKE_* steer it.
 here="$(cd "$(dirname "$0")" && pwd)"
-[ -n "${DEPLOYS_FAKE_ARGS_LOG:-}" ] && printf '%s\n' "$#" "$@" >> "$DEPLOYS_FAKE_ARGS_LOG"
+# One write per call: two calls at once (costs and changed) must not interleave their lines.
+if [ -n "${DEPLOYS_FAKE_ARGS_LOG:-}" ]; then _l="$#"$'\n'; for _a in "$@"; do _l="$_l$_a"$'\n'; done; printf '%s' "$_l" >> "$DEPLOYS_FAKE_ARGS_LOG"; fi
 # A child that would outlive a killed bash: its pid goes to DEPLOYS_FAKE_PIDFILE, so a test can check it is gone.
 if [ -n "${DEPLOYS_FAKE_SLEEP:-}" ]; then sleep "$DEPLOYS_FAKE_SLEEP" & echo $! > "${DEPLOYS_FAKE_PIDFILE:-/dev/null}"; wait; fi
 [ -n "${DEPLOYS_FAKE_OBSERVER:-}" ] && case "$2" in deploy-json) echo "Error: Observer mode (DEPLOYS_READONLY): \"deploys $1 $2\" changes something and is refused." >&2; exit 1 ;; esac

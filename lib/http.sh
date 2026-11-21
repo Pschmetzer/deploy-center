@@ -167,6 +167,6 @@ http_call() {
     out="$(printf '%s' "$out" | tr '\r\n\t' '   ' | cut -c1-300)"
     die "$label $method $path -> HTTP $code$hint: $out"
   fi
-  [ -z "$xt" ] || set -x
+  [ -z "$xt" ] || set -x  # secrets-ok: restores a trace the caller had on
   printf '%s' "$out"
 }

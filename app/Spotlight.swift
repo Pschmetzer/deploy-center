@@ -34,7 +34,10 @@ enum Spotlight {
             let p = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
             let a = CSSearchableItemAttributeSet(contentType: .content)
             a.title = p[1]; a.contentDescription = p[2] + " · Deploy Center"
-            return CSSearchableItem(uniqueIdentifier: p[0], domainIdentifier: domain, attributeSet: a)
+            a.keywords = [p[2], "deploy", "Deploy Center"]
+            let item = CSSearchableItem(uniqueIdentifier: p[0], domainIdentifier: domain, attributeSet: a)
+            item.expirationDate = .distantFuture   // the default is a month: a project stays findable
+            return item
         }
         index.deleteSearchableItems(withDomainIdentifiers: [domain]) { _ in index.indexSearchableItems(found) { _ in } }
     }

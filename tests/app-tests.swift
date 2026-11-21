@@ -781,6 +781,10 @@ expect("done fire, PR open, a day later: gone", RowAutofix.of(green, doneOpen, n
 
 // LOG-001/021: the check after going live.
 expect("site: 200 fine", Store.siteVerdict(code: 200, networkUp: true), Store.SiteVerdict.fine)
+expect("site: 200 then 403 is a lost access", Store.accessLost(before: 200, now: 403), true)
+expect("site: 403 then 403 is no change", Store.accessLost(before: 403, now: 403), false)
+expect("site: first answer 403 is no change", Store.accessLost(before: nil, now: 401), false)
+expect("site: 200 then 500 is not an access change", Store.accessLost(before: 200, now: 500), false)
 expect("site: 429 is bot protection, fine", Store.siteVerdict(code: 429, networkUp: true), Store.SiteVerdict.fine)
 expect("site: 503 broken", Store.siteVerdict(code: 503, networkUp: true), Store.SiteVerdict.broken)
 expect("site: 404 odd, no rollback", Store.siteVerdict(code: 404, networkUp: true), Store.SiteVerdict.odd)
@@ -2009,6 +2013,9 @@ expect("date: seconds", Int(date(1_700_000_000)?.timeIntervalSince1970 ?? 0), 1_
 expect("date: milliseconds are divided", Int(date(1_700_000_000_000)?.timeIntervalSince1970 ?? 0), 1_700_000_000)
 expect("date: zero is none", date(0) == nil, true)
 expect("quiet hours over midnight", Notify.quiet(hour: 23, from: 22, to: 7), true)
+expect("quiet hours: midnight itself", Notify.quiet(hour: 0, from: 22, to: 7), true)
+expect("quiet hours: same hour is off", Notify.quiet(hour: 5, from: 5, to: 5), false)
+expect("digest waits at least a minute", QuietDigest.seconds(until: 7) >= 60, true)
 expect("quiet hours: outside", Notify.quiet(hour: 12, from: 22, to: 7), false)
 
 print("")
@@ -2021,6 +2028,9 @@ do {
     let c = try! JSONDecoder().decode(Costs.self, from: Data(#"{"days":[{"day":"2026-11-01","total":2,"build":1},{"day":"2026-11-02","total":3,"build":2}],"projects":[{"name":"a","build":10,"builds":10},{"name":"b","build":4,"builds":2}],"offDay":null,"buildsComplete":true}"#.utf8))
     expect("once a day saving", CostInsights.onceADaySaving(c), 3.0)
     expect("series", CostInsights.series(c.days), [1.0, 2.0])
+    expect("report escapes a pipe in a name", CostInsights.mdCell("a|b\nc"), "a\\|b c")
+    expect("plural one", plural(1, "project", "projects"), "1 project")
+    expect("plural many", plural(3, "project", "projects"), "3 projects")
     expect("report masks names", CostInsights.report(c, budget: 0, today: "2026-11-02", names: false).contains("| a |"), false)
 }
 

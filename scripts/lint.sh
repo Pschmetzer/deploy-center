@@ -34,6 +34,8 @@ if [ -z "$only" ]; then
   step "bash 3.2 and shellcheck disables"
   run scripts/check-bash32.sh
   run scripts/check-disables.sh
+  run python3 -I scripts/check-bash32.py
+  run python3 -I scripts/check-secrets.py
   step plutil
   if have plutil; then run plutil -lint scripts/*.plist.example; fi
 fi
