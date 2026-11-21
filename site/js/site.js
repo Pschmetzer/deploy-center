@@ -100,5 +100,29 @@
   }
   q.addEventListener('focus', load);
   q.addEventListener('input', function () { load().then(render); });
-  q.addEventListener('keydown', function (e) { if (e.key === 'Escape') { q.value = ''; render(); } });
+  // a plain list of links, as in the docs search: the arrow keys move through them, Enter opens the first,
+  // Esc closes the list (a second Esc clears the field)
+  function close() { list.hidden = true; st.textContent = ''; }
+  function move(d) {
+    var items = Array.prototype.slice.call(list.querySelectorAll('a'));
+    if (!items.length) return;
+    var at = items.indexOf(document.activeElement);
+    if (at < 0) { items[d > 0 ? 0 : items.length - 1].focus(); return; }
+    var next = at + d;
+    if (next < 0) q.focus(); else if (next < items.length) items[next].focus();
+  }
+  q.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+    else if (e.key === 'Enter') {
+      var a = list.hidden ? null : list.querySelector('a');
+      if (a) { e.preventDefault(); location.href = a.getAttribute('href'); }
+    } else if (e.key === 'Escape') {
+      if (!list.hidden) close(); else q.value = '';
+    }
+  });
+  list.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowDown') { e.preventDefault(); move(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); move(-1); }
+    else if (e.key === 'Escape') { close(); q.focus(); }
+  });
 })();
