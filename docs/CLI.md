@@ -19,6 +19,9 @@ deploys creds [--max-age 90] [--json]   # per platform: where its key comes from
 deploys doctor --text                   # one line each (ok or the problem), with the fix
 deploys doctor --fix [--json]           # what to do about each problem, as commands for you to type; shows only, runs and changes nothing
 deploys digest [--days 7] [--json] [--no-savings]   # the last week from the journal: deploys, failures, rollbacks, busiest day, projects, and the saving of `ledger` (an estimate; --no-savings skips it, it needs the network)
+deploys timeline [--days 3] [--project <name>] [--limit 50] [--json]   # what happened, newest day first: deploys, failures, rollbacks, forced starts (from the journal, UTC; reads only)
+deploys recovery [--days 30] [--project <name>] [--json]   # how long a failure lasted until the next deploy of that project; an outage without a later deploy is "open"
+deploys when [--days 90] [--by weekday|hour] [--json]   # on which weekday or hour of the day your deploys failed more often (UTC); a slot needs 5 tries to count
 deploys list --format tsv               # platform, project, auto or manual, last state: tabs, no header, for scripts without jq
 deploys idle [--days 90] [--json]       # projects with no deploy for N days: candidates to pause (read only)
 deploys changed                         # what is merged on GitHub and not live: commits and PRs per project
@@ -37,7 +40,7 @@ deploys list                            # every project on every provider that i
 ```
 
 `freeze` writes only the `deny` list of `window.json` (its `tz` and other keys stay) and starts nothing; it is allowed in observer mode, since it only closes times. A `window.json` that cannot be read is never overwritten.
-`--json` is on every command that lists something: `list`, `idle`, `certs`, `creds`, `plan`, `history`, `providers`, `window`, `freeze`, `digest`, `doctor --fix`, `ignore --list`, `team list`, `scan list` and `autofix list`.
+`--json` is on every command that lists something: `list`, `idle`, `certs`, `creds`, `plan`, `history`, `providers`, `window`, `freeze`, `digest`, `timeline`, `recovery`, `when`, `doctor --fix`, `ignore --list`, `team list`, `scan list` and `autofix list`.
 
 ## Safe deploys ([SAFE-DEPLOY.md](SAFE-DEPLOY.md))
 
