@@ -14,9 +14,9 @@ und braucht kein Netz. Neue Dateien statt Umbauten, damit parallele Arbeit nicht
 4. ⬜ **Zwei Deploys vergleichen** `deploys compare <projekt> <a> <b>` – Commits, Dateien (Migrationen, Lockfiles) und Zeitabstand zwischen zwei Deploys; nur lesen.
 5. ⬜ **Status teilen** `deploys share [--project p]` – ein maskierter Textblock (Markdown) „was ist live, was wartet, was ist rot“ für Chat oder Ticket; Tokens maskiert, Namen auf Wunsch (`--demo`) ersetzt.
 6. ⬜ **Ruhige Zeiten** `deploys quiet` – aus `when` und der Zeitleiste die Stunden ohne Deploys vorschlagen und als `freeze add`-Befehl ausgeben (nur anzeigen, nie setzen).
-7. ⬜ **Serie ohne Fehlschlag** `deploys streak` – Deploys in Folge ohne Fehlschlag je Projekt, längste Serie; als Zahl für Badges.
+7. ✅ **Serie ohne Fehlschlag** `deploys streak` – Deploys in Folge ohne Fehlschlag je Projekt, längste Serie; als Zahl für Badges.
 8. ⬜ **Kostenwarnung pro Projekt** `deploys budget --project` – Warnschwelle je Projekt statt nur gesamt, Ausgabe wie `budget`, Exit 1 bei Überschreitung.
-9. ⬜ **Notiz am Deploy** `deploys note <projekt> "Text"` – eine Zeile ins Journal (Ergebnis `note`), erscheint in `timeline`; Geheimnisse werden abgelehnt.
+9. ✅ **Notiz am Deploy** `deploys note <projekt> "Text"` – eine Zeile ins Journal (Ergebnis `note`), erscheint in `timeline`; Geheimnisse werden abgelehnt.
 
 ## C. Mac-App und iPhone (offen)
 

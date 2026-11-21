@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- CLI: `deploys streak` shows, per project, how many deploys in a row went without a failure (now and the longest in the window; reads the journal only). `deploys note <project> "text"` writes one line into the journal that shows in `deploys timeline` (a text that looks like a secret is refused, nothing on a platform is touched).
 - CLI: three read-only views of the journal. `deploys timeline` lists what happened (deploys, failures, rollbacks, forced starts) newest day first, `deploys recovery` shows how long each failure lasted until the next deploy of the project (typical and longest time, outages still open), and `deploys when` shows on which weekday or hour of the day your deploys failed more often (a hint from your own history; slots with fewer than five tries are marked). All take `--days` and `--json`, count like `deploys digest`, and start or change nothing. Tab completion knows them.
 - Mac app: the Render key setup offers "Paste key" when the clipboard holds a Render key, has a flexible field width and announces the save to VoiceOver; the team settings show a warning symbol (not a text character) for a repo that could not be read.
 - Website: `/.well-known/security.txt` (RFC 9116) points to the private advisory form; the search on the guides, blog and 404 pages works with the arrow keys (Down into the results, Up and Down between them, Enter opens the first), and Esc closes the list before it clears the field.
