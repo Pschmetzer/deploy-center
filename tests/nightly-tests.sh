@@ -49,9 +49,10 @@ check_run() {  # check_run <id> <repo> <branch>
 SCANS="$tmp/scans"; : > "$SCANS"
 scan_start() {  # records what Claude would get; SCAN_REFUSE makes it refuse like an open PR does
   [ -z "${SCAN_REFUSE:-}" ] || die "acme/docs has an open bug-scan PR (#4); merge or close it first"
-  echo "$1 $(jq -c '[.osv.items[].package, .semgrep.items[].rule]' "$SCAN_DIR/checks/$3.json")" >> "$SCANS"
+  if jq -e .review "$SCAN_DIR/checks/$3.json" >/dev/null; then echo "$1 review $3" >> "$SCANS"
+  else echo "$1 $(jq -c '[.osv.items[]?.package, .semgrep.items[]?.rule]' "$SCAN_DIR/checks/$3.json")" >> "$SCANS"; fi
   local id; id="$(sc_slug "$1")-$RANDOM"
-  sc_edit '.runs = ([{id:$i, repo:$r, status:"pr", prUrl:"https://example.invalid/pr/1"}] + .runs)' --arg i "$id" --arg r "$1"
+  sc_edit '.runs = ([{id:$i, repo:$r, status:$s, prUrl:"https://example.invalid/pr/1"}] + .runs)' --arg i "$id" --arg r "$1" --arg s "${SCAN_STATUS:-pr}"
   echo "$id"
 }
 NOTES="$tmp/notes"; : > "$NOTES"
@@ -125,5 +126,64 @@ expect "schedule: it runs deploys nightly run" "$(tr -d '\n ' < "$pl" | grep -c 
 expect "schedule: a bad time is refused" "$( (nightly_main schedule on 25:00) 2>&1 | grep -c Usage)" "1"
 ( nightly_main skip acme/a ) >/dev/null; expect "skip: kept in the settings" "$(ng_settings | jq -c .skip)" '["acme/a"]'
 ( nightly_main unskip acme/a ) >/dev/null; expect "unskip: removed again" "$(ng_settings | jq -c .skip)" '[]'
+
+# --- the weekly review: last week's changes of a repo, from its clone ---
+export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@example.invalid GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@example.invalid
+clone="$SCAN_DIR/repos/acme-rev"; mkdir -p "$clone"; git -C "$clone" init -q
+commit() {  # commit <file> <days ago> <message>
+  echo "$RANDOM" > "$clone/$1"; git -C "$clone" add -A
+  GIT_AUTHOR_DATE="$(( $(date +%s) - $2 * 86400 )) +0000" GIT_COMMITTER_DATE="$(( $(date +%s) - $2 * 86400 )) +0000" git -C "$clone" commit -qm "$3"
+  git -C "$clone" update-ref refs/remotes/origin/main HEAD
+}
+commit a.js 10 "old"; OLD="$(git -C "$clone" rev-parse HEAD)"
+commit b.js 2 "SECRET-COMMIT-TEXT"; commit README.md 1 "docs"; HEAD1="$(git -C "$clone" rev-parse HEAD)"
+check_run() {
+  mkdir -p "$SCAN_DIR/checks"; echo "$FINDINGS" | jq --arg s "$(git -C "$clone" rev-parse origin/main)" '. + {sha:$s}' > "$SCAN_DIR/checks/$1.json"
+  sc_edit '.checks = ((.checks // []) | map(if .id == $i then . + {status:"done"} else . end))' --arg i "$1"
+}
+ng_projects() { echo '[{"name":"rev","platform":"vercel","repo":"acme/rev","ref":"main"}]'; }
+ng_set '.fix = false | .review = true | .reviewDay = 7'
+DAY=3; ng_weekday() { echo "$DAY"; }
+rv() { jq -r --arg k "$1" '.repos["acme/rev"][$k] | if . == null then "" else tostring end' "$(ng_state_file)"; }
+: > "$SCANS"; nightly_run >/dev/null 2>&1
+expect "review: not on another weekday" "$(grep -c review "$SCANS")" "0"
+DAY=7; nightly_run >/dev/null 2>&1
+expect "review: on the review day, one scan" "$(grep -c 'acme/rev review' "$SCANS")" "1"
+rf="$(grep 'acme/rev review' "$SCANS" | tail -1 | cut -d' ' -f3)"; pr="$(ck_findings_prompt "$rf")"
+expect "review: the base is the last commit older than a week" "$(echo "$pr" | grep -c "git diff $OLD..HEAD")" "1"
+expect "review: changed code is listed, docs are not" "$(echo "$pr" | grep -c '^- b.js$'):$(echo "$pr" | grep -c README)" "1:0"
+expect "review: no commit message in the prompt" "$(echo "$pr" | grep -c SECRET-COMMIT-TEXT)" "0"
+expect "review: the reviewed commit moves on" "$(rv reviewedSha)" "$HEAD1"
+nightly_run >/dev/null 2>&1
+expect "review: not twice within five days" "$(grep -c 'acme/rev review' "$SCANS")" "1"
+
+# A week later, new code, but the scan is refused: it waits, and the reviewed commit stays.
+old_review() { jq '.repos["acme/rev"].reviewAt -= 604800' "$(ng_state_file)" | ng_save; }
+commit c.js 0 "new"; HEAD2="$(git -C "$clone" rev-parse HEAD)"; old_review
+SCAN_REFUSE=1 nightly_run >/dev/null 2>&1
+expect "review: a refused scan waits" "$(rv reviewPending):$(rv reviewCode):$(rv reviewedSha)" "true:refused:$HEAD1"
+DAY=1; nightly_run >/dev/null 2>&1
+rf="$(grep 'acme/rev review' "$SCANS" | tail -1 | cut -d' ' -f3)"
+expect "review: a waiting one runs the next night, from the last reviewed commit" "$(ck_findings_prompt "$rf" | grep -c "git diff $HEAD1..HEAD")" "1"
+expect "review: then it is done" "$(rv reviewPending):$(rv reviewedSha)" "false:$HEAD2"
+
+# Nothing changed: no scan.
+DAY=7; old_review; n="$(wc -l < "$SCANS")"; nightly_run >/dev/null 2>&1
+expect "review: nothing changed, no scan" "$(wc -l < "$SCANS"):$(rv reviewCode)" "$n:reviewNothing"
+
+# Fixes first, the review shares the nightly limit.
+ng_set '.fix = true'; commit d.js 0 "more"; old_review
+FINDINGS="$(echo "$FINDINGS" | jq -c '.semgrep.items += [{"rule":"js.path","file":"g.js","line":1,"severity":"ERROR","message":"path"}]')"
+NIGHTLY_MAX_SCANS=1 nightly_run >/dev/null 2>&1
+expect "review: the fix used the one scan, the review waits" "$(tail -1 "$SCANS" | grep -c 'js.path'):$(rv reviewCode)" "1:reviewWaiting"
+ng_set '.fix = false'
+
+# A scan that fails is tried twice, then left.
+DAY=7; old_review; SCAN_STATUS=failed nightly_run >/dev/null 2>&1
+expect "review: a failed scan is tried again" "$(rv reviewPending):$(rv reviewFails)" "true:1"
+DAY=2; SCAN_STATUS=failed nightly_run >/dev/null 2>&1
+expect "review: after two failures it is left until the next week" "$(rv reviewPending):$(rv reviewCode)" "false:reviewGaveUp"
+expect "review: settings in the status" "$(nightly_status | jq -c '[.review, .reviewDay]')" "[true,7]"
+expect "review: a bad weekday is refused" "$( (nightly_main review on 8) 2>&1 | grep -c Usage)" "1"
 
 [ "$fails" = 0 ] && echo "nightly: all passed" || { echo "nightly: $fails failed"; exit 1; }

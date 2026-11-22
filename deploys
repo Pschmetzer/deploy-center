@@ -106,7 +106,7 @@
 #   deploys check start <owner/repo> [branch] OSV-Scanner, gitleaks and Semgrep (free, local, read-only)
 #   deploys check show <id>                   the findings of one check (secrets redacted)
 #   deploys nightly schedule on [HH:MM]|off   every night: the check on every repo, only new findings count (off by default)
-#   deploys nightly fix on|off | skip|unskip <owner/repo> | list | status [--json]   new findings to a Claude bug scan (off by default)
+#   deploys nightly fix on|off | review on [1-7]|off | skip|unskip <owner/repo> | list | start | status [--json]   new findings to a Claude bug scan (off by default)
 #   deploys ai explain|notes|ship <p>         ask Claude (your own Anthropic key): why a build failed,
 #                                             plain release notes (--lang en|de|fr|...), is it safe to ship
 #   deploys ai ask <p> --question "…"         your own question about a project (its commits and log go along)
@@ -2288,6 +2288,7 @@ ck_reap() {
 # no Semgrep secret rule either: a PR saying "AWS key in a.py:4" on a public repo points at the leak.
 ck_findings_prompt() {
   local f="$SCAN_DIR/checks/$1.json"; [ -s "$f" ] || return 0
+  if jq -e '.review' "$f" >/dev/null 2>&1; then declare -F ng_review_prompt >/dev/null && ng_review_prompt "$f"; return 0; fi
   jq -r '
     ([.osv.items[]? | "- \(.file): \(.ecosystem) package \(.package) \(.version) has known vulnerabilities (\(.ids | join(", ")))"]) as $o
     | ([.semgrep.items[]? | select(.rule | test($re; "i") | not) | "- \(.file):\(.line): \(.rule) (\(.severity)): \(.message | gsub("[\n\r]"; " "))"]) as $s

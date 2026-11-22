@@ -10,6 +10,8 @@ struct NightlyReport: Decodable {
     let at: String
     let fix: Bool
     let skip: [String]
+    let review: Bool?
+    let reviewDay: Int?
     let maxScans: Int
     let pathMissing: [String]
     let lastRun: Double?
@@ -27,6 +29,11 @@ struct NightlyReport: Decodable {
         let code: String?
         let note: String?
         let known: Int?
+        let reviewedSha: String?
+        let reviewPending: Bool?
+        let reviewCode: String?
+        let reviewNote: String?
+        let reviewStatus: String?
         var id: String { repo }
     }
 }
@@ -75,6 +82,25 @@ struct NightlySettings: View {
             Text(L("New vulnerable packages and serious Semgrep findings go to a bug scan with Claude Code on this Mac, at most \(status?.maxScans ?? 2) a night. It opens a pull request; you review and merge. Leaked keys are only reported: rotate them.",
                    "Neue verwundbare Pakete und ernste Semgrep-Funde gehen an einen Bug-Scan mit Claude Code auf diesem Mac, höchstens \(status?.maxScans ?? 2) pro Nacht. Er öffnet einen Pull Request; du prüfst und mergst. Geleakte Schlüssel werden nur gemeldet: Tausche sie aus."))
                 .font(.caption).foregroundStyle(.secondary)
+
+            // The weekly review runs inside the nightly run: only offered while that is scheduled.
+            if status?.scheduled == true {
+                Toggle(L("Claude reviews the week's changes", "Claude prüft die Änderungen der Woche"), isOn: Binding(
+                    get: { status?.review ?? false },
+                    set: { on in Task { await run(["nightly", "review", on ? "on" : "off"]) } }))
+                    .disabled(busy)
+                if status?.review == true {
+                    Picker(L("On", "Am"), selection: Binding(
+                        get: { status?.reviewDay ?? 7 },
+                        set: { d in Task { await run(["nightly", "review", "on", String(d)]) } })) {
+                        ForEach(1...7, id: \.self) { d in Text(Self.weekday(d)).tag(d) }
+                    }
+                    .disabled(busy)
+                }
+                Text(L("Once a week Claude reads each repo's changes since the last review and looks for bugs they brought in, then opens a pull request. It shares the nightly limit of \(status?.maxScans ?? 2) scans with the fixes, so a week of reviews can take several nights.",
+                       "Einmal pro Woche liest Claude die Änderungen jedes Repos seit der letzten Prüfung, sucht nach Bugs, die sie mitgebracht haben, und öffnet einen Pull Request. Das teilt sich die Grenze von \(status?.maxScans ?? 2) Scans pro Nacht mit den Fixes; eine Review-Woche kann sich daher über mehrere Nächte ziehen."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
 
             HStack {
                 Button(L("Run now", "Jetzt ausführen")) { confirmRun = true }.disabled(busy)
@@ -142,7 +168,23 @@ struct NightlySettings: View {
         case "refused"?: parts.append(L("scan not started: ", "Scan nicht gestartet: ") + (r.note ?? ""))
         default: break
         }
+        switch r.reviewCode {
+        case "reviewWaiting"?: parts.append(L("review waits (scan limit)", "Review wartet (Scan-Grenze)"))
+        case "reviewFailed"?: parts.append(L("review failed, tried again", "Review fehlgeschlagen, neuer Versuch"))
+        case "reviewGaveUp"?: parts.append(L("review failed twice, next week again", "Review zweimal fehlgeschlagen, nächste Woche wieder"))
+        case "refused"?: parts.append(L("review not started: ", "Review nicht gestartet: ") + (r.reviewNote ?? ""))
+        default:
+            if r.reviewStatus == "pr" { parts.append(L("review PR open", "Review-PR offen")) }
+            else if let sha = r.reviewedSha { parts.append(L("reviewed up to \(sha.prefix(7))", "geprüft bis \(sha.prefix(7))")) }
+        }
         return parts.isEmpty ? L("nothing new", "nichts Neues") : parts.joined(separator: " · ")
+    }
+
+    /// 1 Monday … 7 Sunday, in the person's language.
+    static func weekday(_ d: Int) -> String {
+        let names = [L("Monday", "Montag"), L("Tuesday", "Dienstag"), L("Wednesday", "Mittwoch"), L("Thursday", "Donnerstag"),
+                     L("Friday", "Freitag"), L("Saturday", "Samstag"), L("Sunday", "Sonntag")]
+        return names[max(1, min(7, d)) - 1]
     }
 
     /// The last run in one line, from the counts (the script's own summary is English only).

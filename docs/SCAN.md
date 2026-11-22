@@ -91,9 +91,18 @@ Settings > Claude > "Nightly check", or `deploys nightly schedule on`, runs the 
 - Paused and ignored projects are left out, and so is a repo you skip (`deploys nightly skip <owner/repo>`, or "Skip" in the app). GitHub repos only.
 - Build, type and test errors (tsc, ESLint, the test suite) are not part of the nightly check: they need `npm install`, which runs code of the repo unattended. The bug scan runs them when it fixes something.
 
+### Weekly review of the week's changes
+
+`deploys nightly review on [1-7]` (or "Claude reviews the week's changes" in the app, off by default) adds a review to the nightly run once a week (default Sunday; 1 is Monday). For each repo whose branch moved since its last review, Claude gets a bug scan told to read `git diff <last reviewed commit>..HEAD` and look only for bugs those changes brought in. The first time, the base is the last commit older than a week.
+
+- Changed files are taken from the clone the nightly check fetched; lockfiles, docs and images do not count, and a week with nothing else changed starts no scan. No commit messages go into the prompt.
+- It **shares the nightly limit** (`DEPLOYS_NIGHTLY_MAX_SCANS`, 2) with the fixes, fixes first. Reviews that do not fit wait for the next nights, so with many repos a review week takes several nights.
+- The reviewed commit moves on only when the scan ran (a PR or "nothing to fix"). A refused scan waits; a failing one is tried twice, then waits for the next week. No repo is reviewed twice within five days.
+
 ```
 deploys nightly schedule on [HH:MM] | off     the launchd job (log: ~/Library/Logs/DeployCenter-nightly.log)
 deploys nightly fix on | off                  new findings to a Claude bug scan
+deploys nightly review on [1-7] | off         the weekly review of the week's changes
 deploys nightly skip | unskip <owner/repo>
 deploys nightly list                          the repos a run checks
 deploys nightly run | start                   one run now (start: in the background)
