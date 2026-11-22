@@ -1281,7 +1281,16 @@ otherpid=$!
 echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$otherpid"'}]}' > "$SCAN_STATE"; sc_reap
 expect "scan: a reused pid is no running scan" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "failed"
 expect "scan: and that other process was not touched" "$(kill -0 "$otherpid" 2>/dev/null && echo alive)" "alive"
-kill "$otherpid" "$livepid" 2>/dev/null; wait "$otherpid" "$livepid" 2>/dev/null || true
+# A scan the nightly check runs in its own process ("deploys nightly run"): running, and over the time
+# limit it is not killed whole (the scan's own watchdog ends Claude).
+bash -c 'perl -e "sleep 60"; :' nightly run &
+nightpid=$!
+for _ in $(seq 50); do case "$(ps -o command= -p "$nightpid" 2>/dev/null)" in *"nightly run"*) break ;; esac; perl -e 'select(undef,undef,undef,0.1)'; done
+echo '{"runs":[{"id":"a","repo":"me/web","at":'"$(date +%s)"',"status":"running","pid":'"$nightpid"'}]}' > "$SCAN_STATE"; sc_reap
+expect "scan: a scan inside the nightly run is left alone" "$(jq -r '.runs[0].status' "$SCAN_STATE")" "running"
+echo '{"runs":[{"id":"a","repo":"me/web","at":1,"status":"running","pid":'"$nightpid"'}]}' > "$SCAN_STATE"; sc_reap
+expect "scan: over the limit, the nightly run is not killed" "$(kill -0 "$nightpid" 2>/dev/null && echo alive)" "alive"
+kill "$otherpid" "$livepid" "$nightpid" 2>/dev/null; wait "$otherpid" "$livepid" "$nightpid" 2>/dev/null || true
 expect "scan: a bad branch name is refused" "$( ( scan_start me/web 'a..b' ) 2>&1 | grep -c 'not a branch name')" "1"
 expect "scan: a bad repo is refused" "$( ( scan_start 'me/web;rm' ) 2>&1 | grep -c 'not a GitHub repo')" "1"
 sc_reset; for i in 1 2 3 4; do jq -n --argjson t "$(date +%s)" --arg i "$i" '{id:$i, repo:"me/x", at:$t, status:"clean"}'; done | jq -s '{runs:.}' > "$SCAN_STATE"
