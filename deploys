@@ -2121,7 +2121,7 @@ scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Call
   if [ -z "$report" ]; then
     sc_update "$id" "$(jq -nc --arg e "Claude gave no answer (logged in? run: claude login). $(tail -c 300 "$SCAN_DIR/logs/$id.err" 2>/dev/null)" '{status:"failed", error:$e}')"
   elif [ -z "$(git -C "$work" status --porcelain --untracked-files=no)" ] && ! git -C "$work" ls-files -z --others --exclude-standard | grep -zqE '(^|/)(tests?|__tests__|spec)/|[._-](test|spec)\.[A-Za-z]+$|_test\.(go|py)$|^test_.*\.py$'; then
-    sc_update "$id" '{"status":"clean","step":"done"}'
+    sc_update "$id" '{"status":"clean","step":"done","error":null}'
     af_notify "Bug scan: $repo looks clean, nothing changed."
   else
     sc_update "$id" '{"step":"pr"}'
@@ -2138,7 +2138,7 @@ scan_run() {  # scan_run <id> <owner/repo> <branch>: one scan, start to PR. Call
     if ! git -C "$work" diff --cached --quiet && git -C "$work" -c core.hooksPath=/dev/null -c user.name="Deploy Center" -c user.email="deploy-center@users.noreply.github.com" commit -q --no-verify -m "Bug scan: $n fix(es) by Claude" \
        && git -C "$work" -c core.hooksPath=/dev/null push -q --no-verify origin "$fb" && url="$(sc_pr "$repo" "$fb" "$br" "Bug scan: $n fix(es) by Claude" "$body")"; then
       url="$(echo "$url" | grep -Eo 'https://[^ ]+' | tail -1)"
-      sc_update "$id" "$(jq -nc --arg u "$url" --argjson n "${n:-0}" '{status:"pr", step:"done", prUrl:$u, fixes:$n}')"
+      sc_update "$id" "$(jq -nc --arg u "$url" --argjson n "${n:-0}" '{status:"pr", step:"done", prUrl:$u, fixes:$n, error:null}')"
       af_notify "Bug scan: $repo has a fix PR with $n fix(es). $url"
     else
       sc_update "$id" '{"status":"failed","error":"commit, push or PR failed (see the log)"}'
@@ -2178,8 +2178,9 @@ scan_start() {  # scan_start <owner/repo> [branch] [<check id>]: checks, then th
 # A scan whose process is gone (Mac restarted, killed) is not "running" forever, and one over the
 # time limit is ended. Writes only when something changes.
 # Whether this pid is a scan of ours: after a restart the number can belong to any other process, which is not
-# "running" and must never be killed. Its command line says "scan run" (nohup "$SELF" scan run <id> ...).
-sc_pid_is_scan() { local c; c="$(ps -o command= -p "$1" 2>/dev/null || true)"; case "$c" in *"scan run"*) return 0 ;; esac; return 1; }
+# "running" and must never be killed. Its command line says "scan run" (nohup "$SELF" scan run <id> ...), or
+# "nightly run" for a scan the nightly check runs in its own process.
+sc_pid_is_scan() { local c; c="$(ps -o command= -p "$1" 2>/dev/null || true)"; case "$c" in *"scan run"*|*"nightly run"*) return 0 ;; esac; return 1; }
 sc_reap() {
   local now r id pid dead=""; now="$(date +%s)"
   while IFS=$'\t' read -r id pid r; do
@@ -2187,7 +2188,8 @@ sc_reap() {
     if [ -n "$pid" ] && [ "$pid" != null ] && { ! kill -0 "$pid" 2>/dev/null || ! sc_pid_is_scan "$pid"; }; then dead="$dead $id"
     elif [ "$r" -lt $((now - SCAN_TIMEOUT - 600)) ]; then
       # Over the time limit: the scan and what it started (claude, node) stop, if the pid is still a scan.
-      if [ -n "$pid" ] && [ "$pid" != null ] && sc_pid_is_scan "$pid"; then pkill -P "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; fi
+      # Only a scan's own process: a nightly run is ended by its scan's own time limit, not killed whole.
+      if [ -n "$pid" ] && [ "$pid" != null ] && sc_pid_is_scan "$pid" && ! ps -o command= -p "$pid" 2>/dev/null | grep -q "nightly run"; then pkill -P "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; fi
       dead="$dead $id"; fi
   done < <(sc_state | jq -r '.runs[] | select(.status == "running") | [.id, (.pid // "null"), .at] | @tsv')
   [ -n "$dead" ] || return 0
