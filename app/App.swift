@@ -106,6 +106,7 @@ struct SettingsView: View {
                 ClaudeAISettings(items: allItems).id("claudeAI")
                 PromptTemplateSettings()
                 AutofixSettings(store: store).id("autofix")
+                NightlySettings(store: store).id("nightly")
             }
             page(.iphone) { _ in PhoneLinkSettings() }
             page(.team) { _ in TeamSettings(store: store) }
