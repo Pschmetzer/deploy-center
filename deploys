@@ -1763,7 +1763,6 @@ job_path() {
 }
 job_missing() {  # job_missing <label> [<more tools>]: space-separated tool names
   local jp t out=""; jp="$(job_path "$(job_plist "$1")")"; [ -n "$jp" ] || return 0
-  # shellcheck disable=SC2086  # the extra tools are a word list
   for t in jq gh glab perl curl vercel ${2:-}; do
     # type -P: the program; gh, glab and vercel are also functions here (cli_limit).
     type -P "$t" >/dev/null 2>&1 || continue
