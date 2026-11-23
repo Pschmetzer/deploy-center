@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Guard: the notification says why auto-deploy was turned off ("its allowance ended", or "auto-deploy was on and no allowance covers it") and what went wrong when a switch failed (the first error, short, tokens masked); `guard status --json` has a `reason` per action.
+- Fix: `deploy-changed --yes` that could not read anything names a closed deploy window first again (it said "Could not tell" before the window was checked).
 - `changed`, `deploy-changed` and `plan`: when no platform could be read at all, they now stop with the error (exit 1) instead of printing a stray table header, "Would deploy these .", `command not found` lines or a jq error (exit 2).
 - Budget: when Vercel billing gives no answer at all (no key, not logged in), `deploys budget` and `deploy-changed --yes` now say the spending could not be read (a warning, or a stop with `--strict`) instead of ending with a jq error.
 - Widgets: while a build runs the widgets look again every 5 minutes (instead of 30), and once the picture is out of date (the app has not run for three hours) every hour, which spares the daily reload budget.

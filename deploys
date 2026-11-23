@@ -2391,13 +2391,23 @@ ad_platforms() {
 # Sets GUARD_ACTIONS (JSON). Returns 1 when a platform could not be read or a switch failed.
 GUARD_ACTIONS='[]'
 # One line of GUARD_ACTIONS, at the time guard_run started (GUARD_NOW).
-guard_act() {  # guard_act <platform> <project> <action> [<error>]
-  GUARD_ACTIONS="$(echo "$GUARD_ACTIONS" | jq -c --argjson t "${GUARD_NOW:-0}" --arg pl "$1" --arg p "$2" --arg a "$3" --arg e "${4:-}" \
-    '. + [{at:$t, platform:$pl, project:(if $p == "" then null else $p end), action:$a, error:(if $e == "" then null else $e end)}]')"
+guard_act() {  # guard_act <platform> <project> <action> [<error>] [<reason>]
+  GUARD_ACTIONS="$(echo "$GUARD_ACTIONS" | jq -c --argjson t "${GUARD_NOW:-0}" --arg pl "$1" --arg p "$2" --arg a "$3" --arg e "${4:-}" --arg r "${5:-}" \
+    '. + [{at:$t, platform:$pl, project:(if $p == "" then null else $p end), action:$a, error:(if $e == "" then null else $e end), reason:(if $r == "" then null else $r end)}]')"
+}
+# guard_why <platform> <name>: why auto-deploy is being switched off. An allowance that ended since the last run
+# (GUARD_EXPIRED: its keys) is told apart from auto-deploy that someone turned on again.
+GUARD_EXPIRED=""
+guard_why() {
+  case " $GUARD_EXPIRED " in
+    *" $1:$2 "*|*" $1:* "*|*" * "*) echo "its allowance ended" ;;
+    *) echo "auto-deploy was on and no allowance covers it" ;;
+  esac
 }
 guard_run() {
   local dry="$1" sp="${2:-all}" sn="${3:-*}" now rc=0 plat list name id err out
   now="$(date +%s)"; GUARD_ACTIONS='[]'; GUARD_NOW="$now"
+  GUARD_EXPIRED="$(allow_read | jq -r --argjson t "$now" '[to_entries[] | select(.value <= $t and .value > ($t - 86400)) | .key] | join(" ")')"
   # Expired allowances go first, under the lock.
   if [ -z "$dry" ] && ad_lock; then
     allow_read | jq --argjson t "$now" 'with_entries(select(.value > $t))' | allow_write; ad_unlock
@@ -2416,13 +2426,13 @@ guard_run() {
       [ -n "$name" ] || continue
       [ "$sn" = "*" ] || [ "$sn" = "$name" ] || continue
       allow_covers "$plat" "$name" "$now" && continue
-      if [ -n "$dry" ]; then echo "guard (dry run): would turn off auto-deploy of $plat $name"; guard_act "$plat" "$name" wouldOff; continue; fi
+      if [ -n "$dry" ]; then echo "guard (dry run): would turn off auto-deploy of $plat $name"; guard_act "$plat" "$name" wouldOff "" "$(guard_why "$plat" "$name")"; continue; fi
       ad_lock || { guard_act "$plat" "$name" failed "lock busy"; rc=1; continue; }
       # Read again under the lock: an allowance given a moment ago wins.
       if allow_covers "$plat" "$name"; then ad_unlock; continue; fi
       # In a subshell: the switches end in `die` (exit), which must not end the whole run.
       if out="$( (ad_off "$plat" "$name" "$id" </dev/null) 2>&1 )"; then
-        echo "guard: $out"; guard_act "$plat" "$name" off
+        echo "guard: $out"; guard_act "$plat" "$name" off "" "$(guard_why "$plat" "$name")"
       else
         out="$(echo "$out" | grep -v '^[[:space:]]*$' | tail -n 1 | sed 's/^Error: //' | cut -c1-300)"
         echo "guard: could not turn off $plat $name: $out" >&2; guard_act "$plat" "$name" failed "$out"; rc=1
@@ -2460,14 +2470,16 @@ guard_main() {
   local before; before="$(guard_state | jq -r '[(.lastActions // [])[] | select(.action == "failed" or .action == "error") | "\(.platform)\(if .project then " " + .project else "" end)"] | sort | join(", ")')"
   guard_state | jq --argjson t "$(date +%s)" --argjson a "$GUARD_ACTIONS" --argjson d "$([ -n "$dry" ] && echo true || echo false)" \
     '. + {lastRun:$t, lastDry:$d, lastActions:$a} | del(.firstRunPending)' | guard_save
-  names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "off" or .action == "wouldOff") | "\(.platform) \(.project)"] | join(", ")')"
+  names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "off" or .action == "wouldOff") | "\(.platform) \(.project)\(if .reason then " (" + .reason + ")" else "" end)"] | join(", ")')"
   if [ "$first" = true ]; then
     af_notify "Auto-deploy guard is on. First run, nothing changed. ${names:+From the next run it turns off: $names}"
   elif [ -n "$dry" ]; then [ -n "$names" ] || echo "guard (dry run): nothing to turn off."
   elif [ -n "$names" ]; then af_notify "Auto-deploy guard: turned auto-deploy off for $names."
   fi
   names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "failed" or .action == "error") | "\(.platform)\(if .project then " " + .project else "" end)"] | sort | join(", ")')"
-  [ -z "$names" ] || [ "$names" = "$before" ] || af_notify "Auto-deploy guard: could not check or switch $names. See: deploys guard status"
+  # The notification says why, too (the first error, short; a token-like word is masked). Only a change is notified.
+  local why; why="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "failed" or .action == "error") | .error // empty][0] // ""' | cut -c1-80 | sed -E 's/(sk|pk|rnd|tok|ghp|glpat)[_-][A-Za-z0-9_-]{8,}/***/g')"
+  [ -z "$names" ] || [ "$names" = "$before" ] || af_notify "Auto-deploy guard: could not check or switch $names${why:+ ($why)}. See: deploys guard status"
   return "$rc"
 }
 
@@ -4029,7 +4041,8 @@ case "${1:-} ${2:-}" in
       echo "$held" | jq -r '.[] | "  \(.platform)  \(.name)  held by the rule \"\(.rule.name)\""'
     fi
     if [ "$n" = "0" ]; then
-      [ "$rc" = 0 ] || die "Could not tell what has changes (see above). Nothing was started."
+      # A closed window is named first: it is the more useful refusal, and it needs no read.
+      [ "$rc" = 0 ] || { [ -z "$yes" ] || freeze_check; die "Could not tell what has changes (see above). Nothing was started."; }
       if [ "$json" = 1 ]; then echo "$held" | jq '.'; else echo "Nothing to deploy."; fi; exit 0
     fi
     if [ -z "$yes" ]; then
