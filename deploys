@@ -4009,6 +4009,8 @@ case "${1:-} ${2:-}" in
     done
     [ -z "$dryc" ] || [ -z "$yes" ] || die "--dry-run and --yes are opposites: --dry-run only shows what --yes would start."
     [ -z "$byrules" ] || rules_on || die "--by-rules needs rules.json with a rule that is on (see docs/CLI.md, Rules)."
+    # A closed deploy window refuses a start before any platform is asked (--wait-for-window waits for it below instead).
+    [ -z "$yes" ] || [ -n "$wfw" ] || freeze_check
     rc=0; list="$(changed_json)" || rc=$?
     [ -n "${list//[[:space:]]/}" ] || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
     apply_rules "$byrules"
