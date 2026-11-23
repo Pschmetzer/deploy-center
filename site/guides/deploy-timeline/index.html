@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A deploy timeline: what happened, day by day · Deploy Center</title>
+<meta name="description" content="Read what your deploys did in the last days: deploys, failures, rollbacks and forced starts per day, from the journal, with the deploys CLI.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/guides/deploy-timeline/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/deploy-timeline/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/deploy-zeitleiste/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/deploy-timeline/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="en_US">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-23">
+<meta property="article:published_time" content="2026-11-23">
+<meta property="og:title" content="A deploy timeline: what happened, day by day · Deploy Center">
+<meta property="og:description" content="Read what your deploys did in the last days: deploys, failures, rollbacks and forced starts per day, from the journal, with the deploys CLI.">
+<meta property="og:url" content="https://deploycenter.app/guides/deploy-timeline/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="A deploy timeline: what happened, day by day · Deploy Center">
+<meta name="twitter:description" content="Read what your deploys did in the last days: deploys, failures, rollbacks and forced starts per day, from the journal, with the deploys CLI.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "A deploy timeline: what happened, day by day",
+  "description": "Read what your deploys did in the last days: deploys, failures, rollbacks and forced starts per day, from the journal, with the deploys CLI.",
+  "url": "https://deploycenter.app/guides/deploy-timeline/",
+  "mainEntityOfPage": "https://deploycenter.app/guides/deploy-timeline/",
+  "datePublished": "2026-11-23",
+  "dateModified": "2026-11-23",
+  "inLanguage": "en",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Does deploys timeline start or change anything?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "No. It reads the journal and prints. Nothing starts a build, a deploy or a rollback without a click or a command with --yes."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Which time zone does it use?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "UTC, for the day headings and the times. Take the offset to your own zone into account when you read an incident."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Why is a deploy from my host's dashboard missing?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "The journal holds what Deploy Center started or recorded. A build that a Git push or another tool started is not written there. deploys triggers shows such builds."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Can I look at one project only?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Yes. --project web filters by name, --days sets how far back it looks and --limit caps the number of lines (default 50)."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Home",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Guides",
+    "item": "https://deploycenter.app/guides/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Deploy timeline",
+    "item": "https://deploycenter.app/guides/deploy-timeline/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "A deploy timeline: what happened, day by day",
+  "description": "Read what your deploys did in the last days: deploys, failures, rollbacks and forced starts per day, from the journal, with the deploys CLI.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Run it",
+    "url": "https://deploycenter.app/guides/deploy-timeline/#run"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Read the lines",
+    "url": "https://deploycenter.app/guides/deploy-timeline/#read"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Add your own line",
+    "url": "https://deploycenter.app/guides/deploy-timeline/#note"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 4,
+    "name": "Use it",
+    "url": "https://deploycenter.app/guides/deploy-timeline/#use"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<nav class="top" aria-label="Main"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/">Docs</a><a href="/guides/">Guides</a><a href="/vercel-build-cost-calculator/">Calculator</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
+<h1>A deploy timeline: what happened, day by day</h1>
+<p class="answer"><code>deploys timeline</code> prints what happened to your deploys, newest day first: deploys, failures, rollbacks and forced starts, each with time, project and platform. It reads the local journal only. It needs no network and starts nothing.</p>
+<p class="meta">Last updated <time datetime="2026-11-23">23 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="langnote"><a href="/de/anleitungen/deploy-zeitleiste/" hreflang="de" lang="de">Deutsche Fassung</a></p>
+
+<h2 id="run">1. Run it</h2>
+<p>Without options it shows the last 3 days:</p>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys timeline
+deploys timeline --days 7 --project web --limit 20
+deploys timeline --json</code></pre>
+<p>A made-up example (times are UTC):</p>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-text">Timeline of the last 3 days (UTC)
+  2026-11-23
+    05:04  forced   web (Vercel): Deployed in the window "Friday": hotfix
+    04:04  rollback web (Vercel): back
+  2026-11-22
+    04:04  deploy   web (Vercel): ok
+    02:04  FAILED   api (Render): Deploy failed</code></pre>
+<h2 id="read">2. Read the lines</h2>
+<ul>
+  <li><b>deploy</b>: a deploy that went live.</li>
+  <li><b>FAILED</b>: a build or deploy that failed, with the shortened error text. Keys and tokens are masked before they reach the journal.</li>
+  <li><b>rollback</b>: production was moved back to the deploy before.</li>
+  <li><b>forced</b>: a deploy started inside a closed window with <code>--force "reason"</code>. The reason is in the line, see <a href="/guides/deploy-freeze-friday/">the freeze guide</a>.</li>
+</ul>
+<p>Only what Deploy Center started or recorded is in the journal. A push that your host built by itself does not appear. That is the reason to turn auto-deploy off.</p>
+<h2 id="note">3. Add your own line</h2>
+<p>A note goes into the journal and shows up in the timeline, which helps when you look at it a month later:</p>
+<pre tabindex="0" role="region" aria-label="Code example"><code class="language-bash">deploys note web "switched the image CDN"</code></pre>
+<p>A note has at most 200 characters. A text that looks like a key or token is refused. The command touches no platform.</p>
+<h2 id="use">4. Use it</h2>
+<ul>
+  <li>After an incident: what was deployed in the hours before it, and was there a rollback?</li>
+  <li>On Monday: what changed on Friday while you were away?</li>
+  <li>In a script: <code>deploys timeline --json</code> for a chat message or a ticket.</li>
+</ul>
+<p>Every number comes from the journal on your Mac. No network, no platform call, nothing is started.</p>
+
+<h2 id="faq">Questions</h2>
+  <details><summary>Does deploys timeline start or change anything?</summary><p>No. It reads the journal and prints. Nothing starts a build, a deploy or a rollback without a click or a command with <code>--yes</code>.</p></details>
+  <details><summary>Which time zone does it use?</summary><p>UTC, for the day headings and the times. Take the offset to your own zone into account when you read an incident.</p></details>
+  <details><summary>Why is a deploy from my host's dashboard missing?</summary><p>The journal holds what Deploy Center started or recorded. A build that a Git push or another tool started is not written there. <code>deploys triggers</code> shows such builds.</p></details>
+  <details><summary>Can I look at one project only?</summary><p>Yes. <code>--project web</code> filters by name, <code>--days</code> sets how far back it looks and <code>--limit</code> caps the number of lines (default 50).</p></details>
+
+<div class="ctabox">
+  <h2>Use Vercel or Render too?</h2>
+  <p>Deploy Center turns off auto-deploy on Vercel and Render in one click, Netlify and other hosts opt-in, and deploys what changed when you decide. Free and open source for macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download Deploy Center for Mac</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">View source</a>
+  </div>
+</div>
+
+<p class="reference"><b>Reference:</b> <a href="/docs/cli/">CLI reference</a> · <a href="/docs/journal/">The deploy journal</a></p>
+
+<div class="related"><h2>Related</h2><ul>
+  <li><a href="/guides/weekly-deploy-digest/">A weekly digest of your deploys</a></li>
+  <li><a href="/guides/deploy-status-page/">Set up a status page for your deploys</a></li>
+  <li><a href="/guides/automatic-rollback-after-deploy/">Roll back automatically when a deploy breaks the site</a></li>
+  <li><a href="/guides/deploy-freeze-friday/">Set up a deploy freeze for Friday afternoon</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html">Impressum</a></li>
+      <li><a href="/datenschutz.html">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>

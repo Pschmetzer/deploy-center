@@ -129,4 +129,14 @@
   <url><loc>https://deploycenter.app/docs/integrations/docker/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/docs/integrations/alfred/</loc><lastmod>2026-11-20</lastmod></url>
   <!-- /docs -->
+  <url><loc>https://deploycenter.app/guides/deploy-timeline/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/deploy-zeitleiste/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/how-long-do-failed-deploys-last/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/wie-lange-dauern-fehlgeschlagene-deploys/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/which-day-do-deploys-fail/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/an-welchem-tag-scheitern-deploys/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/deploys-in-a-row-without-failure/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/weekly-deploy-digest/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/</loc><lastmod>2026-11-23</lastmod></url>
 </urlset>

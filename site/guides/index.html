@@ -248,6 +248,36 @@
      "position": 31,
      "url": "https://deploycenter.app/guides/check-before-you-deploy/",
      "name": "Check what a deploy would ship: risk, diff and secrets"
+    },
+    {
+     "@type": "ListItem",
+     "position": 32,
+     "url": "https://deploycenter.app/guides/deploy-timeline/",
+     "name": "A deploy timeline: what happened, day by day"
+    },
+    {
+     "@type": "ListItem",
+     "position": 33,
+     "url": "https://deploycenter.app/guides/how-long-do-failed-deploys-last/",
+     "name": "How long do failed deploys last? Recovery time"
+    },
+    {
+     "@type": "ListItem",
+     "position": 34,
+     "url": "https://deploycenter.app/guides/which-day-do-deploys-fail/",
+     "name": "When do your deploys fail most often?"
+    },
+    {
+     "@type": "ListItem",
+     "position": 35,
+     "url": "https://deploycenter.app/guides/deploys-in-a-row-without-failure/",
+     "name": "Deploys in a row without a failure: your streak"
+    },
+    {
+     "@type": "ListItem",
+     "position": 36,
+     "url": "https://deploycenter.app/guides/weekly-deploy-digest/",
+     "name": "A weekly digest of your deploys"
     }
    ]
   }
@@ -319,6 +349,11 @@
   <a href="/guides/deploy-only-when-ci-is-green/"><b>Deploy only when CI is green</b><span>Ship only commits whose checks passed: deploys deploy-changed --when-green waits for running checks, skips red ones and deploys exactly the checked commit.</span></a>
   <a href="/guides/scheduled-daily-deploy/"><b>Deploy once a day on a schedule</b><span>Let one scheduled job deploy what changed, once a day, only when CI is green: deploys schedule on a Mac, or a GitHub Actions workflow, and what to watch out for.</span></a>
   <a href="/guides/check-before-you-deploy/"><b>Check what a deploy would ship: risk, diff and secrets</b><span>Before you deploy, read the diff, the risk score and a secrets check of what is merged but not live: deploys risk, diff, notes and secrets, with the rules they use.</span></a>
+  <a href="/guides/deploy-timeline/"><b>A deploy timeline: what happened, day by day</b><span>Read what your deploys did in the last days: deploys, failures, rollbacks and forced starts per day, from the journal, with the deploys CLI.</span></a>
+  <a href="/guides/how-long-do-failed-deploys-last/"><b>How long do failed deploys last? Recovery time</b><span>Measure how long a failure lasted until the next deploy of that project, per project and as a typical value, and see open outages, with deploys recovery.</span></a>
+  <a href="/guides/which-day-do-deploys-fail/"><b>When do your deploys fail most often?</b><span>Find out whether your deploys fail more often on a weekday or at an hour of the day, from your own history, and what to do with it, with deploys when.</span></a>
+  <a href="/guides/deploys-in-a-row-without-failure/"><b>Deploys in a row without a failure: your streak</b><span>Count how many deploys in a row went live without a failure, per project, now and at best, and see when the last failure was, with deploys streak.</span></a>
+  <a href="/guides/weekly-deploy-digest/"><b>A weekly digest of your deploys</b><span>Get the last week of your deploys in one block: deploys, failures, rollbacks, the busiest day, the projects and the estimated saving, with deploys digest.</span></a>
 </div>
 <h2>Tools and reading</h2>
 <div class="cards">

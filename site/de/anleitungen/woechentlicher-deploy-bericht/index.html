@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wöchentlicher Bericht über deine Deploys · Deploy Center</title>
+<meta name="description" content="Die letzte Woche deiner Deploys in einem Block: Deploys, Fehlschläge, Rollbacks, aktivster Tag, Projekte und geschätzte Ersparnis, mit deploys digest.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/weekly-deploy-digest/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/weekly-deploy-digest/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-23">
+<meta property="article:published_time" content="2026-11-23">
+<meta property="og:title" content="Wöchentlicher Bericht über deine Deploys · Deploy Center">
+<meta property="og:description" content="Die letzte Woche deiner Deploys in einem Block: Deploys, Fehlschläge, Rollbacks, aktivster Tag, Projekte und geschätzte Ersparnis, mit deploys digest.">
+<meta property="og:url" content="https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Wöchentlicher Bericht über deine Deploys · Deploy Center">
+<meta name="twitter:description" content="Die letzte Woche deiner Deploys in einem Block: Deploys, Fehlschläge, Rollbacks, aktivster Tag, Projekte und geschätzte Ersparnis, mit deploys digest.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Wöchentlicher Bericht über deine Deploys",
+  "description": "Die letzte Woche deiner Deploys in einem Block: Deploys, Fehlschläge, Rollbacks, aktivster Tag, Projekte und geschätzte Ersparnis, mit deploys digest.",
+  "url": "https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/",
+  "mainEntityOfPage": "https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/",
+  "datePublished": "2026-11-23",
+  "dateModified": "2026-11-23",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Startet der Bericht einen Deploy?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nein. Er liest das Journal und gibt aus. Nichts startet einen Build, einen Deploy oder einen Rollback ohne Klick oder einen Befehl mit --yes."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Warum braucht er das Netz?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nur für die Ersparnis, die bei den Anbietern fragt, was sie gebaut hätten. Mit --no-savings berührt er das Netz nicht."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Gibt es ihn als JSON?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. deploys digest --json liefert dieselben Zahlen für ein Skript."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Was ist der Unterschied zum Agent-Digest?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Der Agent-Digest ist ein anderes Feature: einmal am Tag, was Coding-Agenten gepusht haben. Dieser Bericht fasst deine Deploys aus dem Journal zusammen."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Anleitungen",
+    "item": "https://deploycenter.app/de/anleitungen/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Wochenbericht",
+    "item": "https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Wöchentlicher Bericht über deine Deploys",
+  "description": "Die letzte Woche deiner Deploys in einem Block: Deploys, Fehlschläge, Rollbacks, aktivster Tag, Projekte und geschätzte Ersparnis, mit deploys digest.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Aufrufen",
+    "url": "https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/#run"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Die Ersparnis ist eine Schätzung",
+    "url": "https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/#saving"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Irgendwohin schicken",
+    "url": "https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/#send"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 4,
+    "name": "Wie du ihn liest",
+    "url": "https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/#read"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/anleitungen/">Anleitungen</a></p>
+<h1>Wöchentlicher Bericht über deine Deploys</h1>
+<p class="answer"><code>deploys digest</code> fasst die letzten 7 Tage aus dem Journal zusammen: Deploys, Fehlschläge, Rollbacks, erzwungene Starts, den betriebsamsten Tag, Deploys je Projekt und die letzten Fehlschläge. Dazu kommt eine Schätzung der gesparten Build-Kosten. Es startet nichts.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-23">23. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/guides/weekly-deploy-digest/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="run">1. Aufrufen</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys digest                    # letzte 7 Tage
+deploys digest --days 30
+deploys digest --no-savings       # ohne Ersparnis (kein Netz)
+deploys digest --json</code></pre>
+<p>Ein ausgedachtes Beispiel (die Ausgabe der CLI ist englisch):</p>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-text">Digest of the last 7 days (2026-11-16 to 2026-11-23)
+  2 deploys, 2 failed (50%), 1 rolled back, 1 forced
+  Busiest day: 2026-11-21 (1)
+  Projects:
+    web (Vercel): 2 deploys, 1 failed
+    api (Render): 0 deploys, 1 failed
+  Latest failures:
+    2026-11-22 02:04 api: Deploy failed
+    2026-11-21 06:04 web: Build failed: exit 1</code></pre>
+<h2 id="saving">2. Die Ersparnis ist eine Schätzung</h2>
+<p>Die Ersparnis kommt aus <code>deploys ledger</code>: Builds, die nicht liefen, weil Auto-Deploy aus ist, mal ein durchschnittlicher Build-Preis. Sie ist eine Schätzung, keine Rechnung, und braucht das Netz. <code>--no-savings</code> lässt sie weg, der Rest geht dann offline. Die Rechnung steht in <a href="/de/anleitungen/build-minuten-sparen/">Build-Minuten sparen</a>.</p>
+<h2 id="send">3. Irgendwohin schicken</h2>
+<p>Der Text ist schlicht und passt in eine Chat-Nachricht oder eine E-Mail. Starte ihn einmal pro Woche aus einem Zeitplaner deiner Wahl und poste die Ausgabe:</p>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys digest --no-savings > /tmp/digest.txt</code></pre>
+<p>Die Integrationen schicken eine tägliche Zusammenfassung selbst an Slack, Discord, Telegram oder ntfy. Der Bericht ist die Wochenansicht desselben Journals.</p>
+<h2 id="read">4. Wie du ihn liest</h2>
+<ul>
+  <li>Eine Fehlerquote über ein paar Prozent bei vielen Deploys ist einen Blick in <code>deploys timeline</code> wert.</li>
+  <li>Viele erzwungene Starts heißen: Das Zeitfenster passt nicht zu deiner Arbeitsweise.</li>
+  <li>Ein Projekt mit Fehlschlägen und ohne Deploys ist ein offener Ausfall, siehe <a href="/de/anleitungen/wie-lange-dauern-fehlgeschlagene-deploys/">Erholungszeit</a>.</li>
+</ul>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Startet der Bericht einen Deploy?</summary><p>Nein. Er liest das Journal und gibt aus. Nichts startet einen Build, einen Deploy oder einen Rollback ohne Klick oder einen Befehl mit <code>--yes</code>.</p></details>
+  <details><summary>Warum braucht er das Netz?</summary><p>Nur für die Ersparnis, die bei den Anbietern fragt, was sie gebaut hätten. Mit <code>--no-savings</code> berührt er das Netz nicht.</p></details>
+  <details><summary>Gibt es ihn als JSON?</summary><p>Ja. <code>deploys digest --json</code> liefert dieselben Zahlen für ein Skript.</p></details>
+  <details><summary>Was ist der Unterschied zum Agent-Digest?</summary><p>Der Agent-Digest ist ein anderes Feature: einmal am Tag, was Coding-Agenten gepusht haben. Dieser Bericht fasst deine Deploys aus dem Journal zusammen.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/cli/" lang="en">CLI reference</a> · <a href="/docs/journal/" lang="en">The deploy journal</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/de/anleitungen/deploy-zeitleiste/">Eine Deploy-Zeitleiste: was wann geschah</a></li>
+  <li><a href="/de/anleitungen/wie-lange-dauern-fehlgeschlagene-deploys/">Wie lange dauert ein fehlgeschlagener Deploy?</a></li>
+  <li><a href="/de/anleitungen/deploy-statusseite-einrichten/">Eine Statusseite für deine Deploys einrichten</a></li>
+  <li><a href="/de/anleitungen/automatischer-rollback-nach-deploy/">Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht</a></li>
+  <li><a href="/de/anleitungen/deploy-freeze-freitag/">Einen Deploy-Freeze für Freitagnachmittag einrichten</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>
