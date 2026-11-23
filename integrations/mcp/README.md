@@ -119,6 +119,8 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_explain(project)` | `deploys explain <p>` | Why a project is, or is not, counted as changed. |
 | `deploys_notes(project)` | `deploys notes <p>` | Release notes (Markdown) between what is live and the branch. |
 | `deploys_logs(project, lines, id?, runtime?)` | `deploys logs <p> <lines> [--id <d>] [--runtime]` | The end of the newest build log, of one deploy (`id`, from `deploys_history`), or of the running service (`runtime: true`; platforms with runtime logs). `lines` 1–2000, default 80. |
+| `deploys_timeline(days?, project?, limit?)` | `deploys timeline --json` | What happened, newest day first: deploys, failures, rollbacks, forced starts, notes. Read-only. |
+| `deploys_recovery(days?, project?)` | `deploys recovery --json` | How long failures lasted until the next deploy, and which are still open. Read-only. |
 | `deploys_guard_status()` | `deploys guard status --json` | Is the auto-deploy guard on, when did it last run, what did it turn off. Read-only. |
 | `deploys_allowed()` | `deploys autodeploy allowed --json` | Projects with a time-limited auto-deploy allowance right now. Read-only; revoking is not offered. |
 | `deploys_doctor` | `deploys doctor` | Tools and logins, as JSON. No key is printed. |

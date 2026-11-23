@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { costStatusText, costTooltip, freezeStatusText, freezeTooltip, parseFreeze, parseHistory, parseMonthCost, pendingDetails, pendingLabel, pendingRows, pendingSummary, plain, rollbackPreview, rollbackPreviewText, ruleText } from "../src/insights";
+import { costStatusText, costTooltip, freezeStatusText, freezeTooltip, parseFreeze, outageStatusText, outageTooltip, parseHistory, parseOutages, parseMonthCost, pendingDetails, pendingLabel, pendingRows, pendingSummary, plain, rollbackPreview, rollbackPreviewText, ruleText } from "../src/insights";
 import { mergeProjects } from "../src/model";
 
 const NOW = new Date("2026-11-20T10:00:00Z");
@@ -90,4 +90,14 @@ test("rollbackPreview: Render rows (no target, trigger instead of source); nothi
   assert.match(rollbackPreviewText("web", null).message, /no earlier production deploy/);
   assert.equal(parseHistory("nope"), null);
   assert.equal(parseHistory("{}"), null);
+});
+
+test("parseOutages: only the open ones, a text that is not the answer is refused", () => {
+  const out = JSON.stringify({ projects: [{ name: "api", open: 1, openSince: "2026-11-19T08:00:00Z" }, { name: "web", open: 0, openSince: null }] });
+  const list = parseOutages(out);
+  assert.deepEqual(list, [{ name: "api", since: "2026-11-19T08:00:00Z" }]);
+  assert.equal(outageStatusText(list), "$(error) 1 open outage");
+  assert.equal(outageStatusText([]), null);
+  assert.match(outageTooltip(list ?? []), /api · 2026-11-19 08:00/);
+  assert.equal(parseOutages("nope"), null);
 });

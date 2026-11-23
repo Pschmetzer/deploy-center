@@ -3,8 +3,8 @@
 
 import { execFile } from "node:child_process";
 import * as vscode from "vscode";
-import { canPreview, canRollback, deployArgs, deployFailure, errorLine, findCli, loadFreeze, loadHistory, loadMonthCost, loadPlanTotal, loadProjects, makeRunner, parseDeploy, projectArgs, rollbackArgs, Runner, urlIn } from "./cli";
-import { costStatusText, costTooltip, Freeze, freezeStatusText, freezeTooltip, MonthCost, pendingDetails, pendingLabel, pendingRows, PendingRow, pendingSummary, rollbackPreview, rollbackPreviewText } from "./insights";
+import { canPreview, canRollback, deployArgs, deployFailure, errorLine, findCli, loadFreeze, loadOutages, loadHistory, loadMonthCost, loadPlanTotal, loadProjects, makeRunner, parseDeploy, projectArgs, rollbackArgs, Runner, urlIn } from "./cli";
+import { costStatusText, costTooltip, Freeze, freezeStatusText, freezeTooltip, MonthCost, OpenOutage, outageStatusText, outageTooltip, pendingDetails, pendingLabel, pendingRows, PendingRow, pendingSummary, rollbackPreview, rollbackPreviewText } from "./insights";
 import { count, setTranslator, t } from "./i18n";
 import { coalesce } from "./coalesce";
 import { aiPrompt, maskSecrets } from "./log";
@@ -68,6 +68,8 @@ export class Controller implements vscode.TreeDataProvider<Project> {
   readonly freezeItem = vscode.window.createStatusBarItem("deployCenter.freeze", vscode.StatusBarAlignment.Left, 48);
   private monthCost: MonthCost | null = null;
   private freeze: Freeze | null = null;
+  readonly outageItem = vscode.window.createStatusBarItem("deployCenter.outages", vscode.StatusBarAlignment.Left, 47);
+  private outages: OpenOutage[] | null = null;
   private lastCostRead = 0;
   /** The running read of costs and freeze; tests wait for it so no call outlives them. */
   extrasLoad: Promise<void> = Promise.resolve();
@@ -95,6 +97,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     this.status.name = "Deploy Center";
     this.costItem.name = "Deploy Center: costs"; this.costItem.command = "deployCenter.costs";
     this.freezeItem.name = "Deploy Center: deploy freeze"; this.freezeItem.command = "deployCenter.showFreeze";
+    this.outageItem.name = "Deploy Center: open outages"; this.outageItem.command = "deployCenter.menu";
     this.status.command = "deployCenter.menu";
     this.status.text = "$(sync~spin) Deploy Center";
     this.status.show();
@@ -134,7 +137,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     for (const t of this.pending) clearTimeout(t);
     this.pending.clear();
     if (this.timer) clearInterval(this.timer);
-    this.costItem.dispose(); this.freezeItem.dispose(); this.pendingChanged.dispose();
+    this.costItem.dispose(); this.freezeItem.dispose(); this.outageItem.dispose(); this.pendingChanged.dispose();
     this.status.dispose(); this.output.dispose(); this.changed.dispose(); this.logChanged.dispose();
   }
 
@@ -175,12 +178,14 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     const wantCosts = cfg().showCosts;
     const stale = Date.now() - this.lastCostRead > COST_STALE_MS;
     if (wantCosts && stale) this.lastCostRead = Date.now();
-    const [freeze, cost] = await Promise.all([
+    const [freeze, outages, cost] = await Promise.all([
       loadFreeze(run, ms).catch(() => null),
+      loadOutages(run, ms).catch(() => null),
       wantCosts && stale ? loadMonthCost(run, ms).catch(() => null) : Promise.resolve(undefined),
     ]);
     if (this.disposed) return;
     this.freeze = freeze;
+    this.outages = outages;
     if (cost !== undefined) { this.monthCost = cost; if (!cost) this.lastCostRead = 0; }
     this.paintExtras();
     if (this.state === "ok") this.render("ok");
@@ -196,6 +201,12 @@ export class Controller implements vscode.TreeDataProvider<Project> {
       this.freezeItem.backgroundColor = this.freeze.closedNow ? new vscode.ThemeColor("statusBarItem.warningBackground") : undefined;
       this.freezeItem.show();
     } else this.freezeItem.hide();
+    const ot = outageStatusText(this.outages);
+    if (ot && this.outages) {
+      this.outageItem.text = ot; this.outageItem.tooltip = outageTooltip(this.outages);
+      this.outageItem.backgroundColor = new vscode.ThemeColor("statusBarItem.errorBackground");
+      this.outageItem.show();
+    } else this.outageItem.hide();
   }
 
   private render(state: ViewState): void {

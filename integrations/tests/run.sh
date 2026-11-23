@@ -117,7 +117,9 @@ case "\$*" in
     jq -s --arg b "\${FAKE_BUILDING:-}" '(.[0] | map(. + {platform:"vercel"})) + (.[1] | map(. + {platform:"render"}))
       | map({platform, name, building:(.name == \$b), state:"READY", changed})' "$tmp/vercel.json" "$tmp/render.json" ;;
   "digest --days "*" --json") echo '{"days":14,"deploys":7,"failures":1}' ;;
-  "freeze status --json") echo '{"configured":false,"closedNow":false,"reason":null,"rules":[]}' ;;
+  "timeline --days "*" --json") echo '{"days":3,"project":null,"total":2,"shown":2,"entries":[{"kind":"failed"},{"kind":"deploy"}]}' ;;
+"recovery --days "*" --json") echo '{"days":30,"open":1,"outages":[{"name":"api","open":true}]}' ;;
+"freeze status --json") echo '{"configured":false,"closedNow":false,"reason":null,"rules":[]}' ;;
   "ci "*" --json") echo '{"repo":"'"\$2"'","ref":"'"\$3"'","state":"green","reason":"all checks passed"}' ;;
   "guard status --json") echo '{"on":true,"lastRun":"2026-01-01T00:00:00Z","turnedOff":[]}' ;;
   "autodeploy allowed --json") echo '[]' ;;

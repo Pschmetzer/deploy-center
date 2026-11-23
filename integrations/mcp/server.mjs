@@ -656,6 +656,49 @@ const tools = [
     run: (a) => textOf(["digest", "--days", String(checkRange(a.days, "days", 7, 90)), "--json"]),
   },
   {
+    name: "deploys_timeline",
+    description:
+      "What happened, newest day first, from the local journal: deploys, failures, rollbacks, forced starts, notes (deploys timeline --json). Read-only. " +
+      "Use it to answer \"what happened to web this week?\". Returns {days, project, total, shown, entries}.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", minimum: 1, maximum: 90, default: 3, description: "How many days to look back (1–90, default 3)." },
+        project: { type: "string", description: "Only this project (optional)." },
+        limit: { type: "integer", minimum: 1, maximum: 500, default: 50, description: "At most this many entries (1–500, default 50)." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "Timeline from the journal", ...READ },
+    json: true,
+    run: (a) => {
+      const args = ["timeline", "--days", String(checkRange(a.days, "days", 3, 90)), "--limit", String(checkRange(a.limit, "limit", 50, 500))];
+      if (a.project !== undefined && a.project !== null) args.push("--project", checkProject(a.project));
+      return textOf([...args, "--json"]);
+    },
+  },
+  {
+    name: "deploys_recovery",
+    description:
+      "How long failures lasted until the next deploy of the same project, and which are still open (deploys recovery --json). Read-only. " +
+      "Use it to answer \"which projects are down right now?\" or \"how fast do we recover?\".",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", minimum: 1, maximum: 365, default: 30, description: "How many days to look back (1–365, default 30)." },
+        project: { type: "string", description: "Only this project (optional)." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "Recovery time from the journal", ...READ },
+    json: true,
+    run: (a) => {
+      const args = ["recovery", "--days", String(checkRange(a.days, "days", 30, 365))];
+      if (a.project !== undefined && a.project !== null) args.push("--project", checkProject(a.project));
+      return textOf([...args, "--json"]);
+    },
+  },
+  {
     name: "deploys_freeze",
     description:
       "Are deploys closed right now by the closed times of window.json, and which times are set (deploys freeze status --json). Read-only: " +
