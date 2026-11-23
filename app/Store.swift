@@ -8,12 +8,30 @@ import Network
 
 @MainActor
 final class Store: ObservableObject {
-    @Published var items: [Platform: [Item]] = [.vercel: [], .render: []] { didSet { waitingCache = [:] } }
+    @Published var items: [Platform: [Item]] = [.vercel: [], .render: []] {
+        didSet { waitingCache = [:]; for p in Platform.allCases { SelectionMemory.save(p, rows: items[p] ?? []) } }
+    }
     /// `waiting(for:)` per set of platforms, until the rows or the hidden marks change: the window
     /// asks for it several times per redraw (tabs, filter, footer, subtitle, badge).
     @Published var loading: Set<Platform> = []
     @Published var loadError: [Platform: String] = [:]
     @Published var doctor: Doctor?
+    /// The deploy window as `deploys freeze` last said (FreezeNote polls it), for the rows' "why waiting" line.
+    @Published var freezeReply: FreezeReply?
+    private var rulesCache: (at: Date, rules: RulesConfig)?
+    /// The rules file, read at most every 30 seconds (rows ask for it often).
+    var rulesConfig: RulesConfig {
+        if let c = rulesCache, Date().timeIntervalSince(c.at) < 30 { return c.rules }
+        let r = RulesConfig.load(); rulesCache = (Date(), r); return r
+    }
+    /// Why a waiting row still waits, if something known says so (see WaitReason).
+    func waitReason(_ i: Item) -> String? {
+        guard i.hasNewCommits, i.state == .idle else { return nil }
+        let keyOK: Bool? = doctor.map { i.platform == .vercel ? $0.vercelLoggedIn : $0.renderKey }
+        let f = freezeReply
+        return WaitReason.text(.init(keyMissing: keyOK == false, observer: observer, freezeClosed: f?.closed == true, freezeReason: f?.reason,
+                                     queue: queueText(i), holdRule: WaitReason.holdRule(project: i.id, platform: i.platform, in: rulesConfig)))
+    }
     /// An observer by a shared list (deploy-center.json), as Settings > Team last read it.
     @Published var teamObserver = false
     /// Observer mode: the window shows no deploy buttons, and the script would refuse anyway.
@@ -854,7 +872,10 @@ final class Store: ObservableObject {
     func merge(_ p: Platform, _ fresh: [Item]) {
         let again = Self.autoOnAgain(old: items[p] ?? [], fresh: fresh).filter { allowance($0) == nil }
         defer { for i in again { autoBackOn(i) } }
-        let old = Dictionary((items[p] ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        let had = items[p] ?? []
+        let old = Dictionary(had.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        // The first read of a run brings back the ticks of the last one.
+        let fresh = had.isEmpty ? SelectionMemory.restore(fresh, remembered: SelectionMemory.load(p)) : fresh
         items[p] = fresh.map { n in
             var n = n
             if let o = old[n.id] {

@@ -47,6 +47,8 @@ struct WindowActions {
     var speak: (() -> Void)? = nil
     /// ⌘K: the command palette in this window.
     var palette: () -> Void = {}
+    /// ⌘/: the list of keyboard shortcuts.
+    var shortcuts: () -> Void = {}
 }
 
 /// What "Put this live now?" says, the same from the footer, a row and the palette.
@@ -124,6 +126,7 @@ struct WindowCommands: Commands {
             }
             Button(L("Search", "Suchen")) { actions?.search() }.keyboardShortcut("f").disabled(actions == nil)
             Button(L("Command Palette …", "Befehlspalette …")) { actions?.palette() }.keyboardShortcut("k").disabled(actions == nil)
+            Button(L("Keyboard Shortcuts …", "Tastenkürzel …")) { actions?.shortcuts() }.keyboardShortcut("/").disabled(actions == nil)
             Divider()
         }
         CommandMenu(L("Deploy", "Deploy")) {
@@ -189,6 +192,7 @@ struct ContentView: View {
     @State private var detailItem: Item?
     @AppStorage("showAll") private var savedShowAll = false
     @State private var showCosts = false
+    @State private var showShortcuts = false
     @State private var pathItem: Item?
     @State private var budgetItem: Item?
     @State private var budgetText = ""
@@ -511,7 +515,7 @@ struct ContentView: View {
         // delegate, so it stays current with the window closed.
         .navigationSubtitle(waitingSubtitle)
         // Not while a sheet is open: there ⌘F belongs to the build log's find bar.
-        .focusedSceneValue(\.windowActions, logItem != nil || detailItem != nil || showJournal || showCosts ? nil
+        .focusedSceneValue(\.windowActions, logItem != nil || detailItem != nil || showJournal || showCosts || showShortcuts ? nil
                            : WindowActions(tabs: tabCommands, search: { searchFocused = true },
                                            history: { showJournal = true },
                                            costs: store.costs == nil ? nil : { showCosts = true },
@@ -519,7 +523,8 @@ struct ContentView: View {
                                            selectChanged: waitsForFreshList ? nil : { selectAllCommand() },
                                            clearSelection: selectedAll.isEmpty ? nil : { scopes.forEach { store.clearSelection($0) } },
                                            reload: { reloadNow() }, speak: { Speech.say(store.spokenSummary) },
-                                           palette: { PaletteCenter.shared.open(in: NSApp.keyWindow) }))
+                                           palette: { PaletteCenter.shared.open(in: NSApp.keyWindow) },
+                                           shortcuts: { showShortcuts = true }))
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: store.toast)
     }
 
@@ -539,6 +544,7 @@ struct ContentView: View {
         chrome
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView(costs: store.costs) }
+        .sheet(isPresented: $showShortcuts) { ShortcutSheet() }
         .sheet(isPresented: $showFirstStart) { FirstStartView(store: store) }
         .onAppear { checkFirstStartOnce() }
         .onChange(of: autoOnTotal + (firstStartDone ? 0 : 1_000_000)) { _, _ in
@@ -1543,7 +1549,7 @@ struct ContentView: View {
             showLog: store.provider(item.platform)?.caps.logs == false ? nil : { logItem = item },
             onCancel: { store.cancel(item) },
             onRetry: item.deployable && !store.observer ? { deployOne(item) } : nil,
-            usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), search: SearchQuery(appliedSearch).text,
+            usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), waitWhy: store.waitReason(item), search: SearchQuery(appliedSearch).text,
             autofix: fix, allowedUntil: store.allowance(item)?.expiresAt,
             autofixBusy: store.autofixBusy(item),
             onAutofix: store.canFixWithClaude(item) ? { Task { await store.fixWithClaude(item) } } : nil,
@@ -1702,7 +1708,7 @@ struct ContentView: View {
                             : L("\(count) selected", "\(count) ausgewählt"))
                 .foregroundStyle(.secondary)
                 .help(L("Shift-click ticks everything between the last tick and this one", "Mit ⇧-Klick wird alles zwischen dem letzten Haken und diesem angehakt"))
-            FreezeNote()
+            FreezeNote(reply: $store.freezeReply)
             // What these builds cost, before the button is pressed (an average build of the week each).
             let cost = Store.selectionCost(perBuild: selectedAll.map { $0.platform == .vercel ? store.costs?.perBuild($0.name) : nil })
             if count > 0, !cost.isEmpty {
