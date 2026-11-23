@@ -150,6 +150,7 @@ expect "xargs_par: exports the functions to that xargs only" "$(echo x | xargs_p
 # --- exit codes ---
 expect "die_usage: exit 2" "$( ( die_usage "x" ) >/dev/null 2>&1; echo $?)" "2"
 expect "exit-codes: prints the table, with the wrong-call code" "$(cli exit-codes | grep -c '2 a wrong call')" "1"
+expect "exit-codes: prints only its own block, not the code after it" "$(cli exit-codes | grep -c "autofix_run\|AF_NOT_FAILED")" "0"
 expect "a command without its argument is a wrong call (exit 2)" "$(cli watch >/dev/null 2>&1; echo $?)" "2"
 
 # --- completion: parses in every shell that is here, and finds the command after global options ---

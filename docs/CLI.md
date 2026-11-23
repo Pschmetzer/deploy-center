@@ -262,6 +262,7 @@ refused (`--retry-connrefused`); with several checks they run at the same time, 
 | `HTTP_DEADLINE` | seconds one platform call may take in all, tries and waits included (default 120) |
 | `DEPLOYS_CLOUDFLARE_PER_PAGE` | page size of the Cloudflare project list (default 10) |
 | `DEPLOYS_ANTHROPIC_API_KEY` | the key for `deploys ai`, before `ANTHROPIC_API_KEY` and the keychain |
+| `DEPLOYS_ANTHROPIC_API` | the base address of the Anthropic API for `deploys ai` (default `https://api.anthropic.com/v1`); it must be `https`, because it receives your key |
 | `DEPLOYS_VERCEL_USD_PER_MIN`, `DEPLOYS_RENDER_USD_PER_MIN` | build-minute prices for `simulate` and `ledger` |
 | `DEPLOYS_TIMEOUT` | the older name of `DEPLOYS_CLI_TIMEOUT`, used where that is not set |
 | `DEPLOYS_LOG_MAX_BYTES` | size past which a job log is renamed to `.1` (default 1 MB); runs from launchd rotate by themselves, others with `DEPLOYS_LOG_ROTATE=1` |

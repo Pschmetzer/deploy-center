@@ -5,6 +5,7 @@
 
 - every command word in the "Commands:" block of `deploys help` appears as `deploys <word>` in docs/CLI.md
 - every `deploys <word>` in a code span of docs/CLI.md is a command of the help, a provider, or a known alias
+- every DEPLOYS_* variable the scripts read is named in some docs page
 - the table of docs/providers/README.md has one row per provider with the caps `deploys providers --json` reports
 Provider verbs (`deploys vercel list`) are not checked here; tests/contract-json.sh covers them.
 """
@@ -64,6 +65,26 @@ for line in table.splitlines():
             problems.append(f"docs/providers/README.md: {pid} / {col} says {cell}, `deploys providers --json` says {want}")
 for pid in sorted(set(caps) - seen):
     problems.append(f"docs/providers/README.md: no row for the provider {pid}")
+
+# every DEPLOYS_* variable the scripts read is in some docs page, except the ones that only pass a value between our own calls
+INTERNAL = {"DEPLOYS_FORCE_REASON", "DEPLOYS_ONLY", "DEPLOYS_ONLY_ID", "DEPLOYS_SAVINGS_LIB", "DEPLOYS_SELF", "DEPLOYS_TEAM_LIB",
+            "DEPLOYS_LIB", "DEPLOYS_NO_JOURNAL", "DEPLOYS_CALLER"}
+def _read_all(paths):
+    out = ""
+    for pth in paths:
+        with open(pth, encoding="utf-8") as fh:
+            out += fh.read()
+    return out
+_scripts = [os.path.join(root, "deploys")] + [os.path.join(root, d, f) for d in ("lib", "providers")
+                                                   for f in sorted(os.listdir(os.path.join(root, d))) if f.endswith(".sh")]
+_docs = [os.path.join(root, f) for f in ("README.md", "README-CLI.md")]
+for _d in ("docs", os.path.join("docs", "providers")):
+    _docs += [os.path.join(root, _d, f) for f in sorted(os.listdir(os.path.join(root, _d)))
+              if f.endswith(".md") and not f.startswith("IDEEN")]
+_doc_text = _read_all(_docs)
+for _v in sorted(set(re.findall(r"\b(DEPLOYS_[A-Z0-9_]+)\b", _read_all(_scripts))) - INTERNAL):
+    if not re.search(r"\b" + _v + r"\b", _doc_text):
+        problems.append(f"{_v} is read by the scripts and named in no docs page (add it to docs/CLI.md, or to INTERNAL in scripts/check-cli-docs.py)")
 
 for line in problems:
     print(line)
