@@ -1032,7 +1032,7 @@ expect "ai status: never the key" "$(ANTHROPIC_API_KEY=sk-ant-api03-TESTKEY cli 
 
 # --- security: masking, no shell or jq code from data, names in API paths, secrets on stdin ---
 # The log handed to the Autofix routine: common token formats are masked, the build output is kept.
-# The same lines as the app's masker test (tests/app-tests.swift): one list for both maskers.
+# The same lines as the app's masker test (tests/app/): one list for both maskers.
 sample="$(cat tests/fixtures/mask/secrets.txt)"
 masked="$(printf '%s\n' "$sample" | af_mask)"
 expect "mask: no secret of any listed format survives" "$(printf '%s\n' "$masked" | sed 's/SECRET_KEY=/S_K=/' | grep -c SECRET)" "0"

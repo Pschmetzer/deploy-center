@@ -99,7 +99,7 @@ swiftc -parse-as-library -swift-version 5 -typecheck app/*.swift shared/*.swift
 
 `script-tests.sh` checks the rules in `deploys` with a stand-in for `gh`, without network. It also
 runs `tests/providers/*.sh`, the provider contract, against the fixtures in `tests/fixtures/<p>/`.
-`app-tests.sh` compiles the app's sources (without `App.swift`) with `tests/app-tests.swift`.
+`app-tests.sh` compiles the app's sources (without `App.swift`) with the files in `tests/app/` (one per topic, `main.swift` runs them; `tests/cli/` holds the CLI e2e tests the same way).
 
 ## Website
 
