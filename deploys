@@ -3831,7 +3831,7 @@ case "${1:-} ${2:-}" in
 
   "exit-codes"*)
     # The block "Exit codes" of the help, as it stands in the header of this script: one source.
-    sed -n '/^# Exit codes/,/^#$/p' "$SELF" | sed 's/^# \{0,1\}//'
+    sed -n '/^# Exit codes: /,/^#$/p' "$SELF" | sed 's/^# \{0,1\}//'
     echo "Every command: the table is in docs/CLI.md (Exit codes)." ;;
 
   "timeline "*)
