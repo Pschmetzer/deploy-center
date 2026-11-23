@@ -274,8 +274,9 @@ par_fn mtime   # team_fetch_one runs under xargs
 # a "_" of its own also gets its checksum, so a_b/c and a/b_c no longer meet in one file (one
 # answer was lost when they did).
 cache_name() {
-  local n; n="$(printf '%s' "$1" | tr '/@' '__')"
-  case "$1" in *_*) n="$n-$(printf '%s' "$1" | cksum | cut -d' ' -f1)" ;; esac
+  # No tr and no subshell: this runs once per repo (and again for each compare), in every parallel reader.
+  local n="${1//[\/@]/_}" ck
+  case "$1" in *_*) ck="$(printf '%s' "$1" | cksum)"; n="$n-${ck%% *}" ;; esac
   printf '%s' "$n"
 }
 par_fn cache_name
@@ -863,12 +864,13 @@ CHANGED_RULE='map(. + {building: (.phase == "queued" or .phase == "building")})
 # deploys cannot read (Bitbucket). noRepo says why; null for every other project. Such a project
 # has no branch head, so it is never "changed", and it is not "state unknown" either (UNKNOWN_RULE).
 with_norepo() {
-  local bad="[]" r
+  local bad="" r
+  # One jq for the whole list (it was one per repo with a host that is not supported). The unsupported repos go in a file.
   while IFS= read -r r; do
     [ -n "$r" ] || continue
-    [ "$(githost_of "$r")" != unknown ] || bad="$(jq -c --arg r "$r" '. + [$r]' <<<"$bad")"
+    [ "$(githost_of "$r")" != unknown ] || bad="$bad$r"$'\n'
   done < <(echo "$1" | jq -r '.[] | .repo // empty' | sort -u)
-  echo "$1" | jq --argjson bad "$bad" 'map(. + {noRepo:(
+  echo "$1" | jq --argjson bad "$(printf '%s' "$bad" | jq -R -s -c 'split("\n") | map(select(. != ""))')" 'map(. + {noRepo:(
       if (.repo // null) == null then "no git repo"
       elif (.repo as $r | $bad | index($r)) then "the git host of \(.repo) is not supported"
       elif (.ref // null) == null then "no branch"
