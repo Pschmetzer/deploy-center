@@ -56,6 +56,26 @@ enum HealthScore {
     }
 }
 
+/// One project's line in the card.
+struct HealthScoreRow: View {
+    let row: HealthScore.Result
+    private var label: String {
+        let score: String = row.score.map { L("score \($0)", "Wert \($0)") } ?? ""
+        return Demo.mask(row.name) + ", " + score + ", " + row.ratingText
+    }
+    var body: some View {
+        HStack {
+            Text(Demo.mask(row.name)).lineLimit(1)
+            Spacer()
+            if row.openOutage { Text(L("failure open", "Fehler offen")).font(.caption).foregroundStyle(Color.warningText) }
+            Text(row.score.map(String.init) ?? "–").monospacedDigit().bold()
+            Text(row.ratingText).font(.caption).foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(label)
+    }
+}
+
 /// The card in Settings → Platforms: the average and the weakest projects.
 struct HealthScoreCard: View {
     @State private var result: (rows: [HealthScore.Result], average: Int?)?
@@ -66,17 +86,7 @@ struct HealthScoreCard: View {
                 if let a = r.average {
                     Text(L("Average \(a) of 100", "Durchschnitt \(a) von 100")).font(.callout.weight(.semibold))
                 }
-                ForEach(r.rows.prefix(5)) { row in
-                    HStack {
-                        Text(Demo.mask(row.name)).lineLimit(1)
-                        Spacer()
-                        if row.openOutage { Text(L("failure open", "Fehler offen")).font(.caption).foregroundStyle(Color.warningText) }
-                        Text(row.score.map(String.init) ?? "–").monospacedDigit().bold()
-                        Text(row.ratingText).font(.caption).foregroundStyle(.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel(Demo.mask(row.name) + ", " + (row.score.map { L("score \($0)", "Wert \($0)") } ?? "") + ", " + row.ratingText)
-                }
+                ForEach(Array(r.rows.prefix(5))) { HealthScoreRow(row: $0) }
                 Text(L("Failures 40, recovery 25, freshness 20 points; CI is left out here. Same formula as `deploys health`.",
                        "Fehler 40, Wiederherstellung 25, Aktualität 20 Punkte; CI fehlt hier. Dieselbe Formel wie `deploys health`."))
                     .font(.caption).foregroundStyle(.secondary)
