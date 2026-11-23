@@ -36,12 +36,16 @@ def tokens():
         return {}
     css = open(path, encoding="utf-8").read()
     def vars_of(block):
-        return dict(re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})", block))
+        return dict(re.findall(r"--([\w-]+)\s*:\s*(#[0-9a-fA-F]{6})", block))
     dark = vars_of(re.search(r":root\{color-scheme:dark;(.*?)\}", css, re.S).group(1))
     light = vars_of(re.search(r':root\[data-theme="light"\]\{(.*?)\}', css, re.S).group(1))
     media = re.search(r"@media \(prefers-color-scheme: light\)\{(.*)\}\s*:root\[data-theme", css, re.S)
     if media and vars_of(media.group(1)) != light:
         problems.append("css/tokens.css: the light values of the system preference and of data-theme=light differ")
+    for theme, t in (("dark", dark), ("light", light)):
+        missing = sorted(({n for pair in PAIRS for n in pair[:2]} | {"btn-a", "btn-b"}) - set(t))
+        if missing:
+            problems.append(f"css/tokens.css ({theme}): no value for --{', --'.join(missing)} (the contrast of these cannot be checked)")
     return {"dark": dark, "light": light}
 
 
@@ -118,8 +122,10 @@ class Page(HTMLParser):
         if tag in ("input", "select", "textarea") and a.get("type") not in ("hidden", "submit", "button"):
             self.controls.append((tag, a, self._label_depth > 0))
         if tag == "img":
-            if self.stack and self.stack[-1][0] in ("a", "button"):
-                self.stack[-1][2] += " " + (a.get("alt") or "")
+            for item in reversed(self.stack):
+                if item[0] in ("a", "button"):
+                    item[2] += " " + (a.get("alt") or "")
+                    break
             return
         if tag in self.VOID:
             return
@@ -174,7 +180,8 @@ for p, pg in sorted(pages.items()):
             break
         prev = lv
     for tag, a, wrapped in pg.controls:
-        ok = wrapped or a.get("aria-label") or a.get("aria-labelledby") or a.get("title") or (a.get("id") in pg.labels_for)
+        ok = wrapped or a.get("aria-label") or a.get("aria-labelledby") or a.get("title") or (a.get("id") in pg.labels_for) \
+            or (tag == "input" and a.get("type") == "image" and a.get("alt"))
         if not ok:
             problems.append(f"{name}: <{tag} {a.get('name') or a.get('id') or a.get('type') or ''}> has no label")
     for u in pg.unnamed:
@@ -195,7 +202,7 @@ for f in sorted(os.listdir(os.path.join(ROOT, "css"))) if os.path.isdir(os.path.
     css = open(os.path.join(ROOT, "css", f), encoding="utf-8").read()
     if re.search(r"@keyframes|animation\s*:|transition\s*:", css) and "prefers-reduced-motion" not in css:
         problems.append(f"css/{f}: animates but has no prefers-reduced-motion rule")
-    if re.search(r":focus\s*\{[^}]*outline\s*:\s*(none|0)", css):
+    if re.search(r":focus(-visible)?\s*\{[^}]*outline(-style|-width)?\s*:\s*(none|0)\b", css):
         problems.append(f"css/{f}: removes the focus outline")
 
 for line in problems:

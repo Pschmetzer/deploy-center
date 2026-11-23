@@ -4012,6 +4012,7 @@ case "${1:-} ${2:-}" in
     # A closed window stops --yes before anything is asked of a platform (--wait-for-window waits for it further down).
     [ -z "$yes" ] || [ -n "$wfw" ] || freeze_check
     rc=0; list="$(changed_json)" || rc=$?
+    window_checked=""   # reading the platforms takes time: the check before the first start looks at the window again
     [ -n "${list//[[:space:]]/}" ] || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
     apply_rules "$byrules"
     # --only / --exclude / --platform / --max narrow what was found (names without a platform: every platform).
