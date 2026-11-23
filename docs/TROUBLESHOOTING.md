@@ -133,7 +133,7 @@ The last read of the list failed. The banner says when the list on screen is fro
 
 When only the newest builds could not be read, the list still comes. The row gets a small ⓘ whose tooltip says *The newest builds could not be read: a build under way may not show*. That is a notice, not an error: the next refresh fills it in.
 
-### "<project> has no remembered repo. Turn its auto-deploy off with this tool, or add it to …/vercel-repos.json"
+### "<project> has no remembered repo. Turn its auto-deploy off with this tool, add it to …/vercel-repos.json, or map it: deploys vercel map <project> <owner/repo> [branch]"
 
 Deploy Center learns a project's repo when it turns auto-deploy off. A project that was disconnected some other way has no repo on record. Tell it:
 
@@ -377,9 +377,13 @@ The same project was started less than a minute ago, from the app or from Termin
 
 A call to Vercel, Render or GitHub hung. Check your network and try again.
 
-### "No result after 40 minutes – check the dashboard"
+### "no result after 40 min – still asking, check the dashboard"
 
-The app stopped following a deploy after 40 minutes. The deploy may still be running. Look in the Vercel or Render dashboard, or run `deploys watch my-project`.
+A deploy has had no result for 40 minutes. The app keeps asking every 30 seconds and the row stays locked, so a second paid build cannot start by accident. You also get a notification ("my-project has no result after 40 minutes"). The deploy may still be running: look in the Vercel or Render dashboard, or run `deploys watch my-project`.
+
+### "No result after 12 hours – check the dashboard"
+
+The app gave up following a deploy after 12 hours. The row is free again, but a new start of the same project right away is held until you have looked. Check the dashboard to see what happened to the deploy.
 
 ### "Not started: the backend of the same repo failed"
 

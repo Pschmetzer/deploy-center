@@ -133,7 +133,7 @@ Das letzte Lesen der Liste ist fehlgeschlagen. Das Banner sagt, von wann die Lis
 
 Konnten nur die neuesten Builds nicht gelesen werden, kommt die Liste trotzdem. Die Zeile bekommt ein kleines ⓘ, dessen Tooltip sagt *The newest builds could not be read: a build under way may not show*. Das ist ein Hinweis, kein Fehler: Das nächste Neuladen füllt es auf.
 
-### "<project> has no remembered repo. Turn its auto-deploy off with this tool, or add it to …/vercel-repos.json"
+### "<project> has no remembered repo. Turn its auto-deploy off with this tool, add it to …/vercel-repos.json, or map it: deploys vercel map <project> <owner/repo> [branch]"
 
 Deploy Center lernt das Repo eines Projekts, wenn es dessen Auto-Deploy abschaltet. Ein Projekt, das auf anderem Weg getrennt wurde, hat kein gespeichertes Repo. Sag es ihm:
 
@@ -340,9 +340,13 @@ Dasselbe Projekt wurde vor weniger als einer Minute gestartet, aus der App oder 
 
 Ein Aufruf an Vercel, Render oder GitHub hing. Prüfe dein Netz und versuche es noch einmal.
 
-### "No result after 40 minutes – check the dashboard"
+### "no result after 40 min – still asking, check the dashboard"
 
-Die App hat aufgehört, einem Deploy zu folgen, nach 40 Minuten. Das Deploy kann noch laufen. Sieh im Vercel- oder Render-Dashboard nach oder führe `deploys watch my-project` aus.
+(In der deutschen App: „nach 40 Min. kein Ergebnis – fragt weiter, im Dashboard nachsehen“.) Ein Deploy hat seit 40 Minuten kein Ergebnis. Die App fragt alle 30 Sekunden weiter und die Zeile bleibt gesperrt, damit nicht aus Versehen ein zweiter kostenpflichtiger Build startet. Du bekommst außerdem eine Mitteilung („my-project hat nach 40 Minuten kein Ergebnis“). Das Deploy kann noch laufen: Sieh im Vercel- oder Render-Dashboard nach oder führe `deploys watch my-project` aus.
+
+### "No result after 12 hours – check the dashboard"
+
+(In der deutschen App: „Kein Ergebnis nach 12 Stunden – im Dashboard nachsehen“.) Die App hat aufgehört, einem Deploy zu folgen, nach 12 Stunden. Die Zeile ist wieder frei, aber ein neuer Start desselben Projekts wird sofort gehalten, bis du nachgesehen hast. Sieh im Dashboard nach, was aus dem Deploy geworden ist.
 
 ### "Not started: the backend of the same repo failed"
 
