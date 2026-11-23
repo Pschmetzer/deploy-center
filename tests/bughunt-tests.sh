@@ -59,4 +59,15 @@ expect "ignore: no lock and no temp file are left" "$(find "$DEPLOYS_CONFIG" -ma
 expect "ignore --list: a damaged list is named too" "$(cli ignore --list 2>&1 | grep -c 'ignored.json')" "1"
 rm -f "$DEPLOYS_CONFIG/ignored.json"
 
+# --- budget: no answer from `deploys costs` is "could not be read" (warn, or stop with --strict), not a jq crash ---
+printf '#!/bin/bash\nexit 1\n' > "$tmp/nocosts"; chmod +x "$tmp/nocosts"
+printf '#!/bin/bash\nexit 0\n' > "$tmp/emptycosts"; chmod +x "$tmp/emptycosts"
+echo '{"monthlyUsd":8,"strict":false}' > "$DEPLOYS_CONFIG/budget.json"
+load_savings
+for stub in nocosts emptycosts; do
+  b="$(SELF="$tmp/$stub" budget_json 0 2>&1)"; rc=$?
+  expect "budget ($stub): the spending is unknown, not a crash" "$rc:$(jq -r '.spentUsd == null and (.why | length > 0)' <<<"$b" 2>/dev/null)" "0:true"
+done
+rm -f "$DEPLOYS_CONFIG/budget.json"
+
 [ "$fails" = 0 ] && echo "all ok" || { echo "$fails failed"; exit 1; }
