@@ -41,7 +41,7 @@ case "$*" in
   *"/commits/main"*) echo '{"sha":"bbbb","commit":{"message":"head\nbody","committer":{"date":"2026-01-02T00:00:00Z"}}}' ;;
   *"/compare/"*) echo '{"ahead_by":2,"status":"ahead","commits":[
       {"sha":"c1","commit":{"message":"fix: one (#11)","committer":{"date":"2026-01-01T00:00:00Z"}}},
-      {"sha":"bbbb","commit":{"message":"head bbbb","committer":{"date":"2026-01-02T00:00:00Z"}}}]}' ;;
+      {"sha":"bbbb","commit":{"message":"head bbbb (#12)","committer":{"date":"2026-01-02T00:00:00Z"}}}]}' ;;
   *"pulls?state=open"*) echo '[]' ;;
   *) exit 1 ;;
 esac
@@ -74,13 +74,13 @@ run() {  # run <label> <deploys arguments...>: the time without counting, then t
 
 worst=0
 if [ -n "$only" ]; then
-  # shellcheck disable=SC2086
-  run "$only" $only; worst="$BENCH_LAST_MS"
+  read -r -a words <<<"$only"
+  run "$only" "${words[@]}"; worst="$BENCH_LAST_MS"
 else
   echo "bench: $n projects, fake platform and fake gh"
   for cmd in "fake json" "status --no-github --json" "status --json" "changed --json"; do
-    # shellcheck disable=SC2086
-    run "$cmd" $cmd; [ "$BENCH_LAST_MS" -le "$worst" ] || worst="$BENCH_LAST_MS"
+    read -r -a words <<<"$cmd"
+    run "$cmd" "${words[@]}"; [ "$BENCH_LAST_MS" -le "$worst" ] || worst="$BENCH_LAST_MS"
   done
 fi
 if [ -n "${BENCH_MAX_MS:-}" ] && [ "$worst" -gt "$BENCH_MAX_MS" ]; then echo "bench: slowest run $worst ms is over BENCH_MAX_MS=$BENCH_MAX_MS" >&2; exit 1; fi
