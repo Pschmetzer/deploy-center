@@ -6,6 +6,7 @@
 - Docs: `DEPLOYS_ANTHROPIC_API` (the address `deploys ai` talks to) is in the CLI reference and the man page; CI now fails when a `DEPLOYS_*` variable the scripts read is named in no docs page.
 - Providers: Deno Deploy, Firebase Hosting, Fly.io, GitHub Pages, Heroku, Koyeb and Railway read a time written with an offset (`2026-11-05T12:00:00+02:00`) correctly; before, the row had no "last deploy" time. Z times, with or without fractions, are unchanged.
 - iPhone app: "Recent deploys" (clock button above the list): the deploys of all projects in one timeline, newest first, grouped by day (today, yesterday, then the date) for the last 7 days, with the failures of each day counted. Read only; works offline from the last history read.
+- Website: guides (English and German) for `deploys certs`, `idle` and `metrics`.
 - Fix: `DEPLOYS_CI_IGNORE` now leaves out check runs by name (GitHub Actions jobs), not only commit statuses, so an optional check that is always red no longer blocks `deploy-changed --when-green`.
 - Docs: the website's Hosts section now has Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb and Deno Deploy and the table of what each host can do; the README host lists (also the German one) name every provider.
 - Docs: German versions of Autofix, Bug scan, Safe deploys, Team mode, GitLab, Claude in the app, Claude Code, Widgets and iPhone, Adding a host, Adding a git host and Uninstall (`docs/*.de.md`); README.de.md links them.

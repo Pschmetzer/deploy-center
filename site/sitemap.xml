@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://deploycenter.app/</loc><lastmod>2026-11-21</lastmod></url>
-  <url><loc>https://deploycenter.app/guides/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/guides/disable-vercel-auto-deploy/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/guides/stop-vercel-building-every-push/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/guides/vercel-ignored-build-step/</loc><lastmod>2026-11-20</lastmod></url>
@@ -60,7 +60,7 @@
   <url><loc>https://deploycenter.app/de/blog/builds-zaehlen-bevor-du-kuerzt/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/blog/previews-are-for-people/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/de/blog/previews-sind-fuer-menschen/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/de/anleitungen/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/compare/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/de/vergleich/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/de/blog/</loc><lastmod>2026-11-20</lastmod></url>
@@ -75,60 +75,7 @@
   <url><loc>https://deploycenter.app/de/anleitungen/nur-bei-gruenem-ci-deployen/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/de/anleitungen/taeglicher-deploy-nach-zeitplan/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/de/anleitungen/vor-dem-deploy-pruefen/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/de/anleitungen/</loc><lastmod>2026-11-20</lastmod></url>
-  <!-- docs: written by scripts/build-docs.py -->
-  <url><loc>https://deploycenter.app/docs/</loc><lastmod>2026-11-21</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/getting-started/</loc><lastmod>2026-11-21</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/safe-start/</loc><lastmod>2026-11-16</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/first-start/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/install-cli/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/cli/</loc><lastmod>2026-11-21</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/deploy-from-app/</loc><lastmod>2026-11-19</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/journal/</loc><lastmod>2026-11-18</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/search/</loc><lastmod>2026-11-19</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/auto-deploy/</loc><lastmod>2026-11-10</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/autofix/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/scan/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/widgets-ios/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/safe-deploy/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/guard/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/savings/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/team/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/claude/</loc><lastmod>2026-11-16</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/claude-code/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/gitlab/</loc><lastmod>2026-11-10</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/deploy-hooks/</loc><lastmod>2026-11-21</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/vercel/</loc><lastmod>2026-11-16</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/render/</loc><lastmod>2026-11-16</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/netlify/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/cloudflare-pages/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/aws-amplify/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/digitalocean/</loc><lastmod>2026-11-10</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/coolify/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/ci/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/uninstall/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/settings/</loc><lastmod>2026-11-19</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/numbers/</loc><lastmod>2026-11-10</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/glossary/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/faq/</loc><lastmod>2026-11-21</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/troubleshooting/</loc><lastmod>2026-11-21</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/providers/</loc><lastmod>2026-11-21</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/git-hosts/</loc><lastmod>2026-11-16</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/verify/</loc><lastmod>2026-11-12</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/action/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/badge/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/statuspage/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/notify/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/hooks/</loc><lastmod>2026-11-10</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/mcp/</loc><lastmod>2026-11-21</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/claude-code/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/digest/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/raycast/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/vscode/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/docker/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/integrations/alfred/</loc><lastmod>2026-11-20</lastmod></url>
-  <!-- /docs -->
+  <url><loc>https://deploycenter.app/de/anleitungen/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/guides/deploy-timeline/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/de/anleitungen/deploy-zeitleiste/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/guides/how-long-do-failed-deploys-last/</loc><lastmod>2026-11-23</lastmod></url>
@@ -139,4 +86,73 @@
   <url><loc>https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/guides/weekly-deploy-digest/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/de/anleitungen/woechentlicher-deploy-bericht/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/tls-certificate-expiry-check/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/find-projects-nobody-deploys/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/projekte-ohne-deploy-finden/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/prometheus-metrics-for-deploys/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/prometheus-metriken-fuer-deploys/</loc><lastmod>2026-11-23</lastmod></url>
+  <!-- docs: written by scripts/build-docs.py -->
+  <url><loc>https://deploycenter.app/docs/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/getting-started/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/safe-start/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/first-start/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/install-cli/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/cli/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/deploy-from-app/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/journal/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/search/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/auto-deploy/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/autofix/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/scan/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/widgets-ios/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/safe-deploy/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/guard/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/savings/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/team/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/claude/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/claude-code/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/gitlab/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/deploy-hooks/</loc><lastmod>2026-11-21</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/vercel/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/render/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/netlify/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/cloudflare-pages/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/aws-amplify/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/digitalocean/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/coolify/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/hosts/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/fly-io/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/railway/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/heroku/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/firebase-hosting/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/github-pages/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/koyeb/</loc><lastmod>2026-11-21</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/deno-deploy/</loc><lastmod>2026-11-21</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/ci/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/uninstall/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/migrating/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/security-model/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/settings/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/numbers/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/glossary/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/faq/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/troubleshooting/</loc><lastmod>2026-11-21</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/providers/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/git-hosts/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/verify/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/action/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/badge/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/statuspage/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/notify/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/hooks/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/mcp/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/claude-code/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/digest/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/raycast/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/vscode/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/docker/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/integrations/alfred/</loc><lastmod>2026-11-23</lastmod></url>
+  <!-- /docs -->
 </urlset>
