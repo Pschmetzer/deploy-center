@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix: `DEPLOYS_CI_IGNORE` now leaves out check runs by name (GitHub Actions jobs), not only commit statuses, so an optional check that is always red no longer blocks `deploy-changed --when-green`.
 - Docs: the website's Hosts section now has Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb and Deno Deploy and the table of what each host can do; the README host lists (also the German one) name every provider.
 - Docs: German versions of Autofix, Bug scan, Safe deploys, Team mode, GitLab, Claude in the app, Claude Code, Widgets and iPhone, Adding a host, Adding a git host and Uninstall (`docs/*.de.md`); README.de.md links them.
 - Docs: a guide for moving from auto-deploy to one deploy a day (`docs/MIGRATING.md`) and a plain-language security model page, both also in German.
