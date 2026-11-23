@@ -18,6 +18,9 @@
 - Mac app: a project that waits to go live says why when it knows (closed deploy times, a hold rule, the queue, a missing key, observer mode).
 - Integrations: MCP tools `deploys_timeline` and `deploys_recovery` (read-only), a Raycast command and an Alfred filter (`dct`) for the timeline, a widget "Open outages" (failed deploys and since when), and a VS Code status bar item for open outages.
 - Website: guides (English and German) for `deploys timeline`, `recovery`, `when`, `streak` and `digest`.
+- Platform calls: a `Retry-After` that is huge or has a leading zero (`08`) no longer breaks the wait check; a wait over a minute is now reported as such.
+- Exit codes: a wrong call (`Usage: …`, an unknown option or command) now ends with 2 in every command, as docs/CLI.md says; it was 1 in many.
+- Journal: an entry written after a crash that cut the last line short is no longer glued onto that broken line (it was lost with it).
 - Nightly check (Settings > Claude, `deploys nightly`): OSV-Scanner, gitleaks and Semgrep on every repo once a night; the first check of a repo is its starting point, then only new findings count, one notification. Optional: Claude gets only the new findings in a bug scan that opens a PR (at most 2 a night, never merges or deploys). Leaked keys are only reported. Optional weekly review: once a week Claude reads each repo's changes since its last review and looks for bugs they brought in (shares the nightly limit with the fixes). All switches are off by default.
 
 ## 0.12.0 - 2026-11-21

@@ -111,7 +111,8 @@ expect "schedule daily: without --weekdays one calendar entry, no Weekday" "$(gr
 for bad in "--only" "--max 0" "--max x" "--wait soon" "--platform nope" "--nope" "--only a/b"; do
   # shellcheck disable=SC2086  # the words are the point
   rc=0; sd 09:00 $bad >/dev/null 2>&1 || rc=$?
-  expect "schedule daily: [$bad] is refused" "$rc" "1"
+  want=1; [ "$bad" != "--nope" ] || want=2   # an unknown option is a wrong call
+  expect "schedule daily: [$bad] is refused" "$rc" "$want"
 done
 mkdir -p "$tmp/nolc"; for b in sed dirname basename; do ln -sf "$(command -v "$b")" "$tmp/nolc/$b"; done
 # shellcheck disable=SC2123  # a PATH without launchctl is the point

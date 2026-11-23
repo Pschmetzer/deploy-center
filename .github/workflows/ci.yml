@@ -109,6 +109,8 @@ jobs:
         run: bash tests/insights-tests.sh
       - name: Nightly check tests (new findings only, scan limit, leaks reported)
         run: bash tests/nightly-tests.sh
+      - name: Bug hunt tests (regressions found by reading deploys and lib/)
+        run: bash tests/bughunt-tests.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -216,6 +218,8 @@ jobs:
         run: bash tests/insights-tests.sh
       - name: Nightly check tests
         run: bash tests/nightly-tests.sh
+      - name: Bug hunt tests
+        run: bash tests/bughunt-tests.sh
 
   integrations:
     # integrations/tests/run.sh: Action, digest, statuspage, badge, notify, hooks, the Claude Code

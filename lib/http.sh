@@ -66,6 +66,11 @@ http_retry_after() {  # http_retry_after <header file>
   local v; v="$(tr -d '\r' < "$1" 2>/dev/null | awk 'tolower($1) == "retry-after:" { $1 = ""; sub(/^ +/, ""); print }' | tail -n 1)"
   case "$v" in
     "") return 0 ;;
+  esac
+  # A plain number: no leading zeros (08 is no number to bash arithmetic) and no more digits than it can count (such a
+  # wait is far over a minute anyway, and the callers' [ -gt ] must be able to read it).
+  case "$v" in *[!0-9]*) ;; *) v="${v#"${v%%[!0]*}"}"; [ -n "$v" ] || v=0; [ "${#v}" -le 9 ] || v=999999999 ;; esac
+  case "$v" in
     *[!0-9]*) local t now   # the date form: GNU date -d, BSD date -j -f
       t="$(date -u -d "$v" +%s 2>/dev/null || date -j -u -f '%a, %d %b %Y %H:%M:%S GMT' "$v" +%s 2>/dev/null)" || return 0
       [ -n "$t" ] || return 0

@@ -78,7 +78,9 @@ out="$(cli freeze remove 9 2>&1)"; rc=$?; expect "freeze remove: no such rule" "
 out="$(cli freeze remove x 2>&1)"; expect "freeze remove: usage" "$(grep -c 'Usage: deploys freeze remove' <<<"$out")" "1"
 for bad in "add bad 15:00" "add fri 25:00" "add fri 15:00 99" "add fri 15:00 15:00" "add fri" "add fri 15:00 --nope"; do
   # shellcheck disable=SC2086
-  cli freeze $bad >/dev/null 2>&1; expect "freeze: refuses [$bad]" "$?" "1"
+  cli freeze $bad >/dev/null 2>&1; rc=$?
+  case "$bad" in "add fri"|"add fri 15:00 --nope") want=2 ;; *) want=1 ;; esac   # a wrong call is 2, a bad value 1
+  expect "freeze: refuses [$bad]" "$rc" "$want"
 done
 expect "freeze: a refused add changes nothing" "$(cli freeze --json | jq '.rules | length')" "2"
 cp "$DEPLOYS_CONFIG/window.json" "$tmp/w.bak"; echo 'not json' > "$DEPLOYS_CONFIG/window.json"
@@ -150,7 +152,9 @@ expect "digest --json: counts" "$(cli digest --no-savings --json | jq -c '{deplo
 expect "digest --days 30 --json" "$(cli digest --no-savings --days 30 --json | jq .days)" "30"
 for bad in "--days 0" "--days x" "--days" "--days 99999" "--nope"; do
   # shellcheck disable=SC2086
-  cli digest --no-savings $bad >/dev/null 2>&1; expect "digest: refuses [$bad]" "$?" "1"
+  cli digest --no-savings $bad >/dev/null 2>&1; rc=$?
+  want=1; [ "$bad" != "--nope" ] || want=2   # an unknown option is a wrong call
+  expect "digest: refuses [$bad]" "$rc" "$want"
 done
 expect "digest: reads the journal and starts nothing" "$(wc -l < "$DEPLOYS_JOURNAL" | tr -d ' ')" "2"
 

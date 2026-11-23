@@ -42,8 +42,8 @@ expect "export: no journal gives only the header" "$(cli journal export | wc -l 
   echo "$r1:$(cat "$tmp/aw/state.json"):$(ls "$tmp/aw" | wc -l | tr -d ' ')" > "$tmp/aw.out"
 )
 expect "atomic_write: creates the folder, replaces whole, leaves no temp file" "$(cat "$tmp/aw.out")" "0:two:1"
-expect "exit code: an unknown command is 1" "$(cli frobnicate >/dev/null 2>&1; echo $?)" "1"
-expect "exit code: journal with a bad verb is 1" "$(cli journal bogus >/dev/null 2>&1; echo $?)" "1"
+expect "exit code: an unknown command is 2 (a wrong call)" "$(cli frobnicate >/dev/null 2>&1; echo $?)" "2"
+expect "exit code: journal with a bad verb is 2 (a wrong call)" "$(cli journal bogus >/dev/null 2>&1; echo $?)" "2"
 expect "exit code: idle --days 0 is 1" "$(cli idle --days 0 >/dev/null 2>&1; echo $?)" "1"
 
 # trap_fn (idea 6): exit actions without eval; words with spaces survive, the exit status passes through

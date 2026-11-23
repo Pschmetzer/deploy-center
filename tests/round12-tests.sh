@@ -126,7 +126,7 @@ expect "secrets --stdin: no hit in a clean diff" "$(printf '%s\n' "$sdiff" | cli
 # --- commands and flags ---
 expect "version --json: version, bash, providers" "$(cli version --json | jq -r '(.version | length > 0 | tostring) + ":" + (.providers | index("vercel") != null | tostring)')" "true:true"
 expect "doctor --text --strict is accepted and lists the helpers" "$(cli doctor --text --strict 2>/dev/null | grep -c '^\(ok\|off\)   *openssl')" "1"
-expect "doctor: an unknown option is refused" "$(cli doctor --nope >/dev/null 2>&1; echo $?)" "1"
+expect "doctor: an unknown option is refused (a wrong call: 2)" "$(cli doctor --nope >/dev/null 2>&1; echo $?)" "2"
 expect "deploy: --timeout is known (the usage line says so)" "$([ "$(grep -c 'wait \[--timeout 30m\]' deploys)" -gt 0 ] && echo yes)" "yes"
 expect "gh: environment for scripts is set" "$GH_PROMPT_DISABLED:$GH_NO_UPDATE_NOTIFIER:$GLAB_SEND_TELEMETRY" "1:1:false"
 

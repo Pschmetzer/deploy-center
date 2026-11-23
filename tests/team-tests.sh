@@ -94,7 +94,7 @@ expect "FEA-112: team init: this repo's projects with branch and health, the sch
   '0:[1,["api","docs","web"],"main","/up","vercel",true]'
 expect "FEA-112: team init writes nothing" "$(find "$DEPLOYS_CONFIG" -type f ! -path '*/team-cache/*' ! -path '*/locks/*' | sort | xargs cat 2>/dev/null | cksum)" "$before"
 out="$("${D[@]}" team init 2>&1)"; rc=$?
-expect "FEA-112: team init without a repo is a usage line" "$rc:$(echo "$out" | grep -c 'team init <owner/repo>')" "1:1"
+expect "FEA-112: team init without a repo is a usage line" "$rc:$(echo "$out" | grep -c 'team init <owner/repo>')" "2:1"
 expect "approvals: the project entry wins over the file default" "$(q '.projects.api.approvals.value')" "2"
 expect "a project named only in a file deploys from that repo" "$(q '.projects.api.repo | "\(.value) \(.from)"')" "acme/shop acme/shop:deploy-center.json"
 expect "a project in another repo's file takes that repo" "$(q '.projects.cli | "\(.repo.value) \(.branch.value)"')" "acme/tools stable"
