@@ -104,6 +104,9 @@ struct BuildLogView: View {
                     }
                 } else {
                     ScrollView {
+                        if let hint = FailureHint.hint(lines: log.lines, errorAt: log.errorAt) {
+                            HintCard(hint: hint)
+                        }
                         LazyVStack(alignment: .leading, spacing: 1) {
                             ForEach(Array(log.lines.enumerated()), id: \.offset) { i, l in
                                 if find.isEmpty || l.localizedCaseInsensitiveContains(find) {
@@ -181,5 +184,26 @@ struct ShaRow: View {
             Button { UIPasteboard.general.string = sha } label: { Label(L("Copy", "Kopieren"), systemImage: "doc.on.doc") }
         }
         .accessibilityAction(named: L("Copy", "Kopieren")) { UIPasteboard.general.string = sha }
+    }
+}
+
+/// "Likely cause" above a failed build's log; a documented one links to the troubleshooting guide.
+struct HintCard: View {
+    let hint: FailureHint.Hint
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label(L("Likely cause", "Mögliche Ursache"), systemImage: "lightbulb").font(.subheadline.bold())
+            Text(hint.text(german: appIsGerman)).font(.callout).fixedSize(horizontal: false, vertical: true)
+            if let u = FailureHint.url(for: hint, german: appIsGerman) {
+                Button(L("Open the troubleshooting guide", "Fehlerhilfe öffnen")) { openURL(u) }.font(.callout)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.quaternary, in: RoundedRectangle(cornerRadius: 12))
+        .padding([.horizontal, .top])
+        .accessibilityElement(children: .contain)
     }
 }
