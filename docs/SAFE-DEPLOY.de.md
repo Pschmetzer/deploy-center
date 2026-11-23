@@ -51,7 +51,7 @@ deploys ci owner/repo <sha-or-branch> [--wait 10m] [--json]
 Der Exit-Code ist 0 bei grün oder ohne Checks, 1 bei rot und 2, wenn Checks noch ausstehen oder
 GitHub nicht erreichbar ist. Mit `--json` ist der Exit-Code immer 0, und das Urteil steht in der Antwort.
 
-**In der App** hält eine rote CI nie ein Deploy zurück: Die Zeile zeigt „CI is red“ mit den fehlgeschlagenen
+**In der App** hält eine rote CI nie ein Deploy zurück: Die Zeile zeigt „CI ist rot“ mit den fehlgeschlagenen
 Checks, und Deployen startet es trotzdem. Der Schalter „Only when checks are green“ wurde entfernt.
 
 ## 2. Health-Check mit automatischem Rollback

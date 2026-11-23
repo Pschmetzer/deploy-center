@@ -43,7 +43,7 @@ prüft dein Editor die Datei beim Tippen.
 
 | Schlüssel | Was er bewirkt |
 |---|---|
-| `approvals`, `health`, `window` at the top | Standardwerte für jedes Projekt, das aus diesem Repo deployt |
+| `approvals`, `health`, `window` auf oberster Ebene | Standardwerte für jedes Projekt, das aus diesem Repo deployt |
 | `projects.<name>` | Ein Vercel-Projekt oder ein Render-Dienst: `platform`, `repo` (Standard: dieses Repo), `branch`, `health`, `window`, `approvals`, `ignored` |
 | `ignored` | Wird bei `deploys changed` und `deploy-changed` ausgelassen |
 | `groups.<name>` | Projekte, die zusammen deployt werden, in Reihenfolge. `deploys deploy shop` startet `shop-web`, sobald `shop-api` live ist |
