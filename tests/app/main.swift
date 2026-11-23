@@ -16,6 +16,7 @@ MainActor.assumeIsolated {
     suite_settings_status()
     suite_ci_lane_contract()
     suite_rounds_cost_quiet()
+    insightsAppTests(expect); insightsAppTests2(expect)
 }
 
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

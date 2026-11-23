@@ -1688,8 +1688,10 @@ final class Store: ObservableObject {
         let weeklyDue = backToMonday == 0 || (lastWeekly.map { $0 < thisMonday } ?? false)
         if d.bool(forKey: "weeklySummary"), weeklyDue, cal.component(.hour, from: now) >= 9, lastWeekly != localDay() {
             let day = localDay()
-            let week = JournalStats.periods(Journal.load(limit: .max), days: 7, now: cal.startOfDay(for: now)).recent
-            if let line = JournalStats.summaryLine(week) {
+            let all = Journal.load(limit: .max), start = cal.startOfDay(for: now)
+            let week = JournalStats.periods(all, days: 7, now: start).recent
+            if var line = JournalStats.summaryLine(week) {
+                if let before = WeeklyCompare.beforeNote(all, now: start) { line += " (" + before + ")" }
                 Notify.remind(L("Last week", "Letzte Woche"), line, id: "week-summary") { [weak self] sent in
                     if sent { UserDefaults.standard.set(day, forKey: "lastWeekly") } else { self?.summaryBlockedUntil = now.addingTimeInterval(900) }
                 }
