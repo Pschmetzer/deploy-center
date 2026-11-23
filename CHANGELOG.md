@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Mac app: "Link repo …" on a project without a Git source names its repo (stays on this Mac) so its commits show; hovering a waiting project shows who pushed, when and how many files changed. The two figures of the savings banner open popovers that show where they come from.
+
 ## 0.13.0 - 2026-11-23
 
 ### Highlights

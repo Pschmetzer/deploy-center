@@ -192,6 +192,9 @@ struct ContentView: View {
     @State private var detailItem: Item?
     @AppStorage("showAll") private var savedShowAll = false
     @State private var showCosts = false
+    @State private var linkRepoItem: Item?
+    @State private var linkRepoText = ""
+    @State private var linkRepoError: String?
     @State private var showShortcuts = false
     @State private var pathItem: Item?
     @State private var budgetItem: Item?
@@ -545,6 +548,25 @@ struct ContentView: View {
         .sheet(item: $logItem) { item in BuildLog(store: store, item: item) }
         .sheet(isPresented: $showJournal) { JournalView(costs: store.costs) }
         .sheet(isPresented: $showShortcuts) { ShortcutSheet() }
+        .sheet(item: $linkRepoItem) { i in
+            VStack(alignment: .leading, spacing: 10) {
+                Text(L("Link \(Demo.mask(i.name)) to a repo", "\(Demo.mask(i.name)) mit einem Repo verknüpfen")).font(.headline)
+                Text(L("Enter owner/name or the repo's address. This stays on this Mac and only lets Deploy Center show the project's commits; it does not make the project deployable.",
+                       "Gib owner/name oder die Adresse des Repos ein. Das bleibt auf diesem Mac und zeigt nur die Commits des Projekts; das Projekt wird dadurch nicht deploybar."))
+                    .font(.caption).foregroundStyle(.secondary)
+                TextField(L("owner/name", "owner/name"), text: $linkRepoText).textFieldStyle(.roundedBorder)
+                    .accessibilityLabel(L("Repo address", "Repo-Adresse"))
+                if let e = linkRepoError { ErrorText(e) }
+                HStack {
+                    Spacer()
+                    Button(L("Cancel", "Abbrechen")) { linkRepoItem = nil }.keyboardShortcut(.cancelAction)
+                    Button(L("Link", "Verknüpfen")) {
+                        if let e = store.linkRepo(i, linkRepoText) { linkRepoError = e } else { linkRepoItem = nil }
+                    }.keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(20).frame(width: 400)
+        }
         .sheet(isPresented: $showFirstStart) { FirstStartView(store: store) }
         .onAppear { checkFirstStartOnce() }
         .onChange(of: autoOnTotal + (firstStartDone ? 0 : 1_000_000)) { _, _ in
@@ -1549,7 +1571,8 @@ struct ContentView: View {
             showLog: store.provider(item.platform)?.caps.logs == false ? nil : { logItem = item },
             onCancel: { store.cancel(item) },
             onRetry: item.deployable && !store.observer ? { deployOne(item) } : nil,
-            usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), waitWhy: store.waitReason(item), search: SearchQuery(appliedSearch).text,
+            usualMinutes: store.usualMinutes(item), queueText: store.queueText(item), waitWhy: store.waitReason(item), loadHover: item.repo != nil && item.hasNewCommits ? { await WaitingHover.load(item) } : nil,
+            onLinkRepo: !item.deployable && item.repo == nil && !store.observer ? { linkRepoText = ""; linkRepoError = nil; linkRepoItem = item } : nil, search: SearchQuery(appliedSearch).text,
             autofix: fix, allowedUntil: store.allowance(item)?.expiresAt,
             autofixBusy: store.autofixBusy(item),
             onAutofix: store.canFixWithClaude(item) ? { Task { await store.fixWithClaude(item) } } : nil,
