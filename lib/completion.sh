@@ -48,6 +48,7 @@ ai:explain notes ship ask slow risk set-key forget-key verify model cap status
 gitlab:set-token forget-token
 providers:enable disable
 completion:zsh bash fish
+self-update:--check --json
 exit-codes:"
     # The flags of a command or provider verb (third place on): "<verb>:<flags>". Offered after a word that starts with -.
     flags_table="deploy:--preview --sha --wait --timeout --dry-run --force --yes --no-cache --json

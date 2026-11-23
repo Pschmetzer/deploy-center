@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `deploys self-update --check [--json]`: says whether a newer CLI release is out and prints the command that updates this copy (install script, Homebrew or Docker). It only checks: nothing is downloaded or installed. Exit 10 means an update exists, 1 means the release list could not be read (offline, proxy).
 - `changed`, `deploy-changed` and `plan`: when no platform could be read at all, they now stop with the error (exit 1) instead of printing a stray table header, "Would deploy these .", `command not found` lines or a jq error (exit 2).
 - Budget: when Vercel billing gives no answer at all (no key, not logged in), `deploys budget` and `deploy-changed --yes` now say the spending could not be read (a warning, or a stop with `--strict`) instead of ending with a jq error.
 - Widgets: while a build runs the widgets look again every 5 minutes (instead of 30), and once the picture is out of date (the app has not run for three hours) every hour, which spares the daily reload budget.
