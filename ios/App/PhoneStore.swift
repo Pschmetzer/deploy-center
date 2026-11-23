@@ -774,7 +774,7 @@ final class PhoneStore: ObservableObject {
         // One note per project replaces the last good news; an end that is not good stays (it has its own id).
         // A cancel the person made themselves needs none.
         if UIApplication.shared.applicationState != .active && !canceledByUser {
-            await Notes.post(text, project: p.key, id: ok || replaced ? nil : "deploy-\(p.key)-\(Int(Date().timeIntervalSince1970))")
+            await Notes.post(text, project: p.key, projectName: p.name, id: ok || replaced ? nil : "deploy-\(p.key)-\(Int(Date().timeIntervalSince1970))")
         }
         await reload()
     }
@@ -884,7 +884,7 @@ final class PhoneStore: ObservableObject {
         // A few: one note each, with a fixed id, so the same news replaces itself instead of piling up.
         // Many: one summary that says how many more there are.
         if events.count <= 3 {
-            for e in events { await Notes.post(e.text, project: e.key, id: e.id, news: true) }
+            for e in events { await Notes.post(e.text, project: e.key, projectName: projects.first { $0.key == e.key }?.name, id: e.id, news: true) }
         } else {
             let more = events.count - 3
             await Notes.post(events.prefix(3).map(\.text).joined(separator: " · ") + " · " + L("+\(more) more", "+\(more) weitere"),

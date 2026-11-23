@@ -442,5 +442,23 @@ check(FailureHint.url(for: FailureHint.hint(for: "ENOSPC")!, german: false) == n
 check(FailureHint.causes.allSatisfy { !$0.needles.isEmpty && $0.needles.allSatisfy { $0 == $0.lowercased() } && !$0.en.isEmpty && !$0.de.isEmpty },
       "hint: every cause has lowercase phrases and both texts")
 
+// MARK: Note plan
+
+do {
+    let f = NotePlan.make(id: "failed:site", project: "site", projectName: "Site", hideNames: false)
+    check(f.thread == "deploy-center-site" && f.relevance == 1.0 && f.level == .active && !f.waiting && f.summaryArgument == "Site", "note plan: a failure is one thread per project, urgent, named")
+    let w = NotePlan.make(id: "waiting:site", project: "site", projectName: "Site", hideNames: false)
+    check(w.waiting && w.relevance == 0.3 && w.level == .passive, "note plan: waiting is quiet and offers the deploy action")
+    check(NotePlan.make(id: "recovered:a", project: "a", hideNames: false).relevance == 0.5
+          && NotePlan.make(id: "live:a", project: "a", hideNames: false).relevance == 0.5, "note plan: good news ranks in the middle")
+    check(NotePlan.make(id: "deploy-a-123", project: "a", hideNames: false).relevance == 0.7, "note plan: a deploy's end ranks above news")
+    let s = NotePlan.make(id: "summary", project: nil, hideNames: false)
+    check(s.thread == "deploy-center" && s.summaryArgument == nil && s.level == .passive, "note plan: the summary has its own thread and no name")
+    check(NotePlan.make(id: "failed:site", project: "site", projectName: "Site", hideNames: true).summaryArgument == nil, "note plan: no project name with Unlock on open")
+    check(NotePlan.make(id: nil, project: "a", projectName: "", hideNames: false).summaryArgument == nil, "note plan: an empty name is none")
+    check(NotePlan.identifier(id: "failed:a", project: "a") == "failed:a" && NotePlan.identifier(id: nil, project: "a") == "deploy-a"
+          && NotePlan.identifier(id: nil, project: nil) == "deploy-", "note plan: the same news has the same identifier")
+}
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
