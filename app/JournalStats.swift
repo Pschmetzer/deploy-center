@@ -189,6 +189,7 @@ struct JournalStatsView: View {
                 Picker(L("Period", "Zeitraum"), selection: $days) {
                     Text(L("7 days", "7 Tage")).tag(7); Text(L("30 days", "30 Tage")).tag(30); Text(L("90 days", "90 Tage")).tag(90)
                 }.pickerStyle(.segmented).frame(width: 280)
+                if days == 7 { WeeklyCompareCard(entries: entries, costs: costs) }
                 figures(p)
                 Text(L("From this Mac's history only; lead time from commit to live needs GitHub and is not counted.",
                        "Nur aus dem Verlauf dieses Macs; die Zeit vom Commit bis live braucht GitHub und fehlt."))

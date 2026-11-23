@@ -6,11 +6,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 out="$(mktemp -d)"; trap 'rm -rf "$out"' EXIT
 cp tests/app-tests.swift "$out/main.swift"
+cp tests/insights-app-tests.swift "$out/insights-app-tests.swift"
 srcs=()
 for f in app/*.swift shared/*.swift; do
   case "$f" in app/App.swift|app/SoftwareUpdate.swift) ;; *) srcs+=("$f") ;; esac
 done
-swiftc -swift-version 5 -o "$out/tests" "${srcs[@]}" "$out/main.swift"
+swiftc -swift-version 5 -o "$out/tests" "${srcs[@]}" "$out/insights-app-tests.swift" "$out/main.swift"
 # The app's sources in Swift 5 mode with Swift 6's concurrency checks: data races show up as
 # warnings (counted here, listed with DC_CONCURRENCY=1), nothing fails on them. Not the test file:
 # its top-level code would need main-actor annotations only for this check.

@@ -2180,4 +2180,6 @@ do {
     expect("savings: fold key", SavingsEntry.collapsedKey, "savingsBannerCollapsed")
 }
 
+insightsAppTests(expect); insightsAppTests2(expect)
+
 if fails == 0 { print("All app tests passed.") } else { print("\(fails) failed."); exit(1) }

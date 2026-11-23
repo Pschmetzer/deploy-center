@@ -411,6 +411,7 @@ struct ProjectList: View {
                           systemImage: "wifi.slash").font(.footnote).foregroundStyle(.secondary)
                 }
                 Summary(store: store)
+                PhoneHealthCard(store: store)
                 let ready = store.projects.filter { $0.group == .waiting && asks.canDeploy($0, store) }
                 if ready.count >= 2 {
                     Button { asks.deployAll = ready } label: {
