@@ -39,6 +39,7 @@ echo "\$*" >> "$tmp/calls"
 case "\$*" in
   "costs 31") cat "$tmp/costs.json" ;;
   "journal export --since "*) cat "$tmp/journal.csv" ;;
+  "timeline --days 7 --limit 200 --json") cat "$tmp/timeline.json" ;;
   "guard status --json") cat "$tmp/guard.json" ;;
   "freeze --json") [ -n "\${NO_FREEZE:-}" ] && exit 1; cat "$tmp/freeze.json" ;;
   *) echo "unexpected: \$*" >&2; exit 2 ;;
@@ -58,6 +59,15 @@ expect "costs: the query filters the projects, the sum stays" "$(./deploys-costs
 expect "costs: missing days are said" "$(MISSING=2 bash -c 'sed -i.bak "s/\"missingDays\":0/\"missingDays\":2/" "'"$tmp"'/costs.json"; ./deploys-costs.sh' | jq -r '.items[0].subtitle')" "Vercel charges in $mon · builds \$8.10 · 2 days could not be read, a floor"
 expect "costs: a CLI without costs says so" "$(DEPLOYS=/usr/bin/false ./deploys-costs.sh | jq -r '.items[0].title')" "Could not read the costs"
 
+cat > "$tmp/timeline.json" <<'JSON'
+{"days":7,"project":null,"total":2,"shown":2,"entries":[
+ {"at":"2026-11-20T09:00:00Z","platform":"vercel","name":"app-web","kind":"failed","detail":"Build failed"},
+ {"at":"2026-11-19T08:00:00Z","platform":"render","name":"api","kind":"deploy","detail":""}]}
+JSON
+t="$(./deploys-timeline.sh)"
+expect "timeline: newest first, kind in the title" "$(jq -c '[.items[].title]' <<<"$t")" '["app-web · failed","api · deploy"]'
+expect "timeline: ↵ shows the project, ⌘C copies the line" "$(jq -r '.items[0] | .arg + " | " + .text.copy' <<<"$t")" "deploycenter://select?project=app-web | 2026-11-20T09:00:00Z vercel:app-web failed Build failed"
+expect "timeline: every word must match" "$(./deploys-timeline.sh 'API deploy' | jq -c '[.items[].title]')" '["api · deploy"]'
 j="$(./deploys-journal.sh)"
 expect "journal: newest first" "$(jq -c '[.items[].title]' <<<"$j")" '["site · deployed","api · rollback","app-web · failed","app-web · deployed","blog · forced"]'
 expect "journal: a detail over two lines is one line" "$(jq -r '.items[2].subtitle' <<<"$j")" "2026-11-19 10:30 · Build failed second line"
@@ -81,6 +91,6 @@ expect "guard: a CLI without a guard status says so" "$(DEPLOYS=/usr/bin/false .
 expect "guard: items are not actionable" "$(jq -c '[.items[].valid] | unique' <<<"$g")" '[false]'
 
 # Nothing here may start anything: only reads were asked of the CLI.
-expect "read-only: the CLI was asked for reads only" "$(grep -Ev '^(costs 31|journal export --since |guard status --json|freeze --json)' "$tmp/calls" | grep -c . || true)" 0
+expect "read-only: the CLI was asked for reads only" "$(grep -Ev '^(costs 31|journal export --since |timeline --days 7 --limit 200 --json|guard status --json|freeze --json)' "$tmp/calls" | grep -c . || true)" 0
 
 echo; [ "$fails" = 0 ] && echo "alfred: all passed" || { echo "alfred: $fails failed"; exit 1; }

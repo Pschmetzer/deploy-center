@@ -24,9 +24,9 @@ und braucht kein Netz. Neue Dateien statt Umbauten, damit parallele Arbeit nicht
 11. ⬜ **Erholungszeit-Karte** im Wochenbericht („typisch 1 h 20 m, 1 offen“).
 12. ⬜ **Shortcuts/Intents** „Status teilen“ und „Was wartet?“ (nur lesen; ein Deploy bleibt ein Klick mit Bestätigung).
 13. ⬜ **Tastaturkürzel-Blatt** (⌘/) mit allen Kürzeln der App, je Fenster.
-14. ⬜ **Widget „Offene Ausfälle“** – Projekte mit Fehlschlag ohne späteren Deploy, seit wann.
+14. ✅ **Widget „Offene Ausfälle“** – Projekte mit Fehlschlag ohne späteren Deploy, seit wann.
 
 ## D. Integrationen (offen)
 
-15. ⬜ MCP-Tools `deploys_timeline`, `deploys_recovery` (lesend).
-16. ⬜ Raycast/Alfred: „Zeitleiste“.
+15. ✅ MCP-Tools `deploys_timeline`, `deploys_recovery` (lesend).
+16. ✅ Raycast/Alfred: „Zeitleiste“.

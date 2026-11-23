@@ -5,7 +5,7 @@ import { ChildProcess, spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { Freeze, HistoryRow, MonthCost, parseFreeze, parseHistory, parseMonthCost } from "./insights";
+import { Freeze, HistoryRow, MonthCost, OpenOutage, parseFreeze, parseHistory, parseMonthCost, parseOutages } from "./insights";
 import { mergeProjects, parseArray, PlanTotal, Project } from "./model";
 import { t } from "./i18n";
 
@@ -200,6 +200,12 @@ export async function loadMonthCost(run: Runner, timeoutMs: number, now = new Da
 export async function loadFreeze(run: Runner, timeoutMs: number): Promise<Freeze | null> {
   const r = await run(["freeze", "--json"], timeoutMs);
   return r.code === 0 ? parseFreeze(r.stdout) : null;
+}
+
+/** `deploys recovery --json`: the projects with a failure that no deploy followed. Reads the journal only. */
+export async function loadOutages(run: Runner, timeoutMs: number): Promise<OpenOutage[] | null> {
+  const r = await run(["recovery", "--days", "30", "--json"], timeoutMs);
+  return r.code === 0 ? parseOutages(r.stdout) : null;
 }
 
 /** `deploys history <project> 20 --json`: the newest deploys, for the rollback preview. Null when unreadable. */

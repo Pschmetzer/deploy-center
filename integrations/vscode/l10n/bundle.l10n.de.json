@@ -137,5 +137,8 @@
   "{0} pull request waiting": "{0} Pull Request wartet",
   "{0} pull requests waiting": "{0} Pull Requests warten",
   "{0} project": "{0} Projekt",
-  "{0} projects": "{0} Projekte"
+  "{0} projects": "{0} Projekte",
+  "{0} open outage": "{0} offener Ausfall",
+  "{0} open outages": "{0} offene Ausfälle",
+  "A failed deploy with no deploy after it:": "Ein fehlgeschlagener Deploy ohne späteren Deploy:"
 }

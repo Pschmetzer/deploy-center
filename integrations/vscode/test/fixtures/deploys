@@ -22,6 +22,8 @@ case "$*" in
   "freeze --json")
     [ -n "${DEPLOYS_FAKE_FREEZE_NONE:-}" ] && { echo '{"file":"/x/window.json","configured":false,"closedNow":false,"reason":null,"now":"Mon 10:00","tz":null,"rules":[]}'; exit 0; }
     printf '{"file":"/x/window.json","configured":true,"closedNow":%s,"reason":"release freeze","now":"Fri 16:00","tz":null,"rules":[{"n":1,"days":["fri"],"from":"15:00","to":"24:00","reason":"release freeze"},{"n":2,"days":null,"from":"00:00","to":"06:00","reason":null}]}\n' "${DEPLOYS_FAKE_FREEZE_CLOSED:-false}" ;;
+  "recovery --days 30 --json")
+    printf '{"days":30,"outages":2,"recovered":1,"open":1,"medianSeconds":3600,"projects":[{"name":"api","platform":"render","recovered":0,"open":1,"openSince":"2026-11-19T08:00:00Z"},{"name":"app-web","platform":"vercel","recovered":1,"open":0,"openSince":null}]}\n' ;;
   "history app-web 20 --json")
     cat <<'JSON'
 [{"when":"2026-11-19 09:00","target":"preview","state":"READY","commit":"fff9999","source":"git","build":"40s","platform":"vercel","at":1763542800},

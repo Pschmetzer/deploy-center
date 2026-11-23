@@ -34,6 +34,13 @@
       "mode": "view"
     },
     {
+      "name": "timeline",
+      "title": "Timeline",
+      "subtitle": "Deploy Center",
+      "description": "What happened in the last 7 days, newest day first: deploys, failures, rollbacks. Only reads.",
+      "mode": "view"
+    },
+    {
       "name": "idle-projects",
       "title": "Idle Projects",
       "subtitle": "Deploy Center",

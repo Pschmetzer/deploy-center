@@ -379,6 +379,81 @@ struct ProblemsWidget: Widget {
     }
 }
 
+/// Open outages: the projects whose newest deploy failed and has not been followed by a good one, with how long.
+/// It reads the snapshot (`since` of a failed row is when that deploy started) and starts nothing.
+struct OutagesWidget: Widget {
+    static let kind = "DeployCenterOutages"
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: Self.kind, provider: Provider()) { OutagesWidgetView(entry: $0) }
+            .configurationDisplayName(Words(DeploySnapshot.read())("Open outages", "Offene Ausfälle"))
+            .description(Words(DeploySnapshot.read())("Projects whose newest deploy failed, and since when.",
+                                                      "Projekte, deren neuester Deploy fehlschlug, und seit wann."))
+            .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+struct OutagesWidgetView: View {
+    @Environment(\.widgetFamily) var family
+    let entry: Entry
+    var body: some View {
+        Group {
+            if let s = entry.snap, s.connected != false {
+                OutagesView(snap: s, date: entry.date, rows: family == .systemLarge ? 6 : family == .systemMedium ? 3 : 2)
+            } else {
+                NoSnapshotView(notConnected: entry.snap?.connected == false, problem: entry.problem)
+            }
+        }
+        .environment(\.words, Words(entry.snap))
+        .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(entry.snap?.projects.first(where: { $0.status == .failed }).map(link) ?? URL(string: "deploycenter://"))
+    }
+}
+
+struct OutagesView: View {
+    let snap: DeploySnapshot
+    let date: Date
+    let rows: Int
+    @Environment(\.words) private var w
+    var body: some View {
+        let bad = snap.projects.filter { $0.status == .failed }
+        VStack(alignment: .leading, spacing: 6) {
+            Header(snap: snap, date: date, compact: true)
+            if bad.isEmpty && snap.isStale(at: date) {
+                Spacer(minLength: 0)
+                Label(w("Out of date: open the app", "Veraltet: App öffnen"), systemImage: "clock.badge.exclamationmark")
+                    .font(.callout.weight(.medium)).warnText()
+                Spacer(minLength: 0)
+            } else if bad.isEmpty {
+                Spacer(minLength: 0)
+                Label(w("No open outages", "Keine offenen Ausfälle"), systemImage: "checkmark.circle.fill")
+                    .font(.callout.weight(.medium)).foregroundStyle(.green).widgetAccentable()
+                Spacer(minLength: 0)
+            } else {
+                ForEach(bad.prefix(rows)) { p in
+                    Link(destination: link(p)) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).font(.caption).widgetAccentable().accessibilityHidden(true)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(p.name).font(.caption.weight(.semibold)).lineLimit(1).privacySensitive()
+                                if let since = p.since {
+                                    Text("\(w("since", "seit")) \(since, style: .relative)").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                } else {
+                                    Text(p.platform).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                            }
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+                let more = snap.failed - min(rows, bad.count)
+                if more > 0 { Text(w("+\(more) more", "+\(more) weitere")).font(.caption2).foregroundStyle(.secondary) }
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
 #if os(iOS)
 /// Lock screen: only the number of failed deploys (and the first one's name), nothing else.
 struct ProblemsAccessoryView: View {
@@ -724,6 +799,7 @@ struct DeployWidgets: WidgetBundle {
     var body: some Widget {
         DeployWidget()
         ProblemsWidget()
+        OutagesWidget()
         #if os(macOS)
         NextDeployWidget()    // the Mac app writes the schedule; the iPhone has none to show
         #endif

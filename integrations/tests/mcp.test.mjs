@@ -71,7 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_explain", "deploys_freeze", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_providers", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status"];
+const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_explain", "deploys_freeze", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_providers", "deploys_recovery", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status", "deploys_timeline"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -232,6 +232,11 @@ check("journal report passes the month", !r.error && /2026-03/.test(r.text) && c
   const dg = await s.call("deploys_digest", { days: 14 });
   check("digest: days go to the CLI, as JSON", !dg.error && /digest --days 14 --json/.test(callLog()) && dg.structured?.deploys === 7, dg.text);
   check("digest: days out of range are refused", (await s.call("deploys_digest", { days: 400 })).error === true);
+  const tl = await s.call("deploys_timeline", { days: 5, project: "app-web", limit: 10 });
+  check("timeline: arguments go to the CLI, as JSON", !tl.error && /timeline --days 5 --limit 10 --project app-web --json/.test(callLog()) && tl.structured?.total === 2, tl.text);
+  check("timeline: bad days and a project that looks like an option are refused", (await s.call("deploys_timeline", { days: 400 })).error === true && (await s.call("deploys_timeline", { project: "--all" })).error === true);
+  const rc = await s.call("deploys_recovery", { days: 60 });
+  check("recovery: days go to the CLI, as JSON", !rc.error && /recovery --days 60 --json/.test(callLog()) && rc.structured?.open === 1, rc.text);
   const fz = await s.call("deploys_freeze");
   check("freeze: status through the CLI, nothing added", !fz.error && /freeze status --json/.test(callLog()) && fz.structured?.closedNow === false && !/freeze add|freeze clear/.test(callLog()), fz.text);
   const ci = await s.call("deploys_ci", { repo: "acme/web", ref: "main" });

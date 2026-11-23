@@ -29,11 +29,12 @@ with its own keyword.
 
 ## Costs, journal and guard
 
-Three more Script Filters, each read-only (they start, roll back and run nothing):
+Four more Script Filters, each read-only (they start, roll back and run nothing):
 
 | Script | Keyword | What it shows |
 |---|---|---|
 | `deploys-costs.sh` | `dcc` | This month's Vercel charges (`deploys costs 31`), then each project of the last 7 days with its price and, where the count is known, the price of one build. ↵ shows the project in Deploy Center. Alfred keeps the answer for 5 minutes: the CLI makes one billing call per day. |
+| `deploys-timeline.sh` | `dct` | What happened in the last 7 days, newest first (`deploys timeline --json`): deploys, failures, rollbacks, forced starts. Every word of the query must match. ↵ shows the project in Deploy Center. |
 | `deploys-journal.sh` | `dcj` | Search the journal of the last 90 days (`deploys journal export`): every word of the query must be in the project, platform, result or text. Newest first, 40 at most. ↵ shows the project, ⌘C copies the line. |
 | `deploys-guard.sh` | `dcg` | Is the guard on, when it ran last, what it did, the running allowances, and whether deploys are closed now (`deploys freeze`). It never runs the guard. |
 

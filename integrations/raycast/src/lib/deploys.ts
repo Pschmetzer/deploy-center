@@ -8,6 +8,8 @@ import {
   Freeze,
   Guard,
   JournalRow,
+  TimelineEntry,
+  parseTimeline,
   parseCosts,
   parseFreeze,
   parseGuard,
@@ -471,4 +473,9 @@ export function guardStatus(): Promise<Guard> {
 // `deploys freeze --json`: the closed times of window.json and whether deploys are closed now. A local file.
 export function freezeStatus(): Promise<Freeze> {
   return readParsed(["freeze", "--json"], parseFreeze, TIMEOUT.quick);
+}
+
+// `deploys timeline --days 7 --json`: what happened, newest first. A local file; no network.
+export function timelineEntries(days = 7): Promise<TimelineEntry[]> {
+  return readParsed(["timeline", "--days", String(days), "--limit", "100", "--json"], parseTimeline, TIMEOUT.quick);
 }

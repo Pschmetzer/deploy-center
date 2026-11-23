@@ -189,6 +189,14 @@ test("costs and freeze are read at a refresh and shown; nothing deploys or rolls
   assert.doesNotMatch(cliCalls(), /deploy-json|rollback/);
 });
 
+test("an open outage shows in its own status bar item; it only reads", async () => {
+  const c = await ready();
+  assert.match(cliCalls(), /recovery\n--days\n30\n--json/);
+  assert.equal(c.outageItem.text, "$(error) 1 open outage");
+  assert.match(String(c.outageItem.tooltip), /api · 2026-11-19 08:00/);
+  assert.doesNotMatch(cliCalls(), /deploy-json|rollback/);
+});
+
 test("a closed freeze says so in the status bar and the tooltip", async () => {
   process.env.DEPLOYS_FAKE_FREEZE_CLOSED = "true";
   try {

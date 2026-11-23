@@ -303,3 +303,33 @@ export function freezeText(f: Freeze | null): string {
   if (!f.configured) return "No closed times";
   return f.closedNow ? `Closed now${f.reason ? ` (${plain(f.reason, 60)})` : ""}` : "Open now";
 }
+
+// ---- timeline: what `deploys timeline --json` prints ----
+
+export interface TimelineEntry {
+  at: string;
+  platform: string;
+  name: string;
+  kind: string;
+  detail: string;
+}
+
+/** The entries of `deploys timeline --json`, newest first; null when the text is not that answer. */
+export function parseTimeline(stdout: string): TimelineEntry[] | null {
+  const o = obj(stdout);
+  if (!o || !Array.isArray(o.entries)) return null;
+  const out: TimelineEntry[] = [];
+  for (const e of o.entries) {
+    const r = rec(e);
+    const at = r && str(r.at);
+    if (!r || !at) continue;
+    out.push({
+      at,
+      platform: str(r.platform) ?? "",
+      name: str(r.name) ?? "?",
+      kind: str(r.kind) ?? "other",
+      detail: plain(str(r.detail) ?? ""),
+    });
+  }
+  return out;
+}

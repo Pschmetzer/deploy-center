@@ -108,6 +108,36 @@ export function freezeTooltip(f: Freeze): string {
   return lines.join("\n");
 }
 
+// ---- open outages: `deploys recovery --json` ----
+
+export interface OpenOutage { name: string; since: string | null }
+
+/** The projects whose newest failure has no later deploy. Null when the text is not that answer. */
+export function parseOutages(stdout: string): OpenOutage[] | null {
+  const o = obj(stdout);
+  if (!o || !Array.isArray(o.projects)) return null;
+  const out: OpenOutage[] = [];
+  for (const p of o.projects) {
+    const x = rec(p);
+    if (!x || num(x.open) !== 1) continue;
+    out.push({ name: plain(str(x.name) ?? "?", 60), since: str(x.openSince) });
+  }
+  return out;
+}
+
+/** The status bar text for open outages; null when there are none (nothing to show). */
+export function outageStatusText(list: OpenOutage[] | null): string | null {
+  if (!list || list.length === 0) return null;
+  return `$(error) ${count(list.length, "{0} open outage", "{0} open outages")}`;
+}
+
+export function outageTooltip(list: OpenOutage[]): string {
+  const lines = [t("A failed deploy with no deploy after it:")];
+  for (const o of list.slice(0, 10)) lines.push(`${o.name}${o.since ? ` · ${o.since.replace("T", " ").slice(0, 16)}` : ""}`);
+  if (list.length > 10) lines.push(t("… and {0} more", list.length - 10));
+  return lines.join("\n");
+}
+
 // ---- waiting commits per project ----
 
 export interface PendingRow {
