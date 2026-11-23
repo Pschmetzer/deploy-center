@@ -31,7 +31,7 @@ deploys changed                         # what is merged on GitHub and not live:
 deploys deploy-changed                  # the daily deploy: shows the list; add --yes to start it
 deploys deploy-changed --when-green --yes  # only commits whose CI passed (waits for running checks)
 deploys deploy my-project               # one project to production, on whichever platform it is
-deploys deploy-json my-project --no-cache --yes   # build without the host's cache (Render, Netlify, DigitalOcean, Coolify; other hosts refuse it)
+deploys deploy my-project --no-cache      # build without the host's cache (Render, Netlify, DigitalOcean, Coolify; other hosts refuse it)
 deploys deploy my-group                 # a group from deploy-center.json, in its order (TEAM.md)
 deploys plan [--when-green] [--since 1d]  # the same list with an estimate per build and the sum (starts nothing); --since: only what changed in that time
 deploys status                          # what is building now, and what failed last
@@ -336,7 +336,7 @@ waiting project: `[{rule, index, project, matched, action, unmet}]`.
 
 ## New JSON fields
 
-- `deploys details <owner/repo> <live sha> [<branch>]`: `secrets` (`[{file, line, kind}]`, lines
+- the `details` of a project (`deploys changed --json`, an internal call `<owner/repo> <live sha> [<branch>]`): `secrets` (`[{file, line, kind}]`, lines
   added in the diff that look like a key or a password assignment; the value is never printed),
   `lockfiles` (`[{file, additions, deletions}]`), `unverified` (commits without a verified
   signature) and per commit `verified` / `verification`.
