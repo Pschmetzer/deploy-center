@@ -70,4 +70,14 @@ for stub in nocosts emptycosts; do
 done
 rm -f "$DEPLOYS_CONFIG/budget.json"
 
+# --- changed, deploy-changed, plan: a read that gave nothing at all is "could not tell" (exit 1), not a table or a jq crash ---
+nc="$tmp/nocfg"; mkdir -p "$nc/c" "$nc/h"
+for c in "changed" "deploy-changed" "deploy-changed --yes" "plan" "plan --json"; do
+  read -ra cw <<<"$c"
+  out="$(DEPLOYS_CONFIG="$nc/c" HOME="$nc/h" DEPLOYS_NO_GITHUB=1 env -u DEPLOYS_LIB bash ./deploys "${cw[@]}" 2>&1)"; rc=$?
+  expect "deploys $c: nothing could be read is an error (1)" "$rc" "1"
+  expect "deploys $c: no jq error, no missing command, no table or promise after the error" \
+    "$(grep -c -E 'jq:|command not found|PLATFORM|Would deploy|Nothing to deploy' <<<"$out")" "0"
+done
+
 [ "$fails" = 0 ] && echo "all ok" || { echo "$fails failed"; exit 1; }

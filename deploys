@@ -3790,6 +3790,7 @@ case "${1:-} ${2:-}" in
     done
     [ "$forced" = 0 ] || die "--force is for starting a deploy; changed only looks"
     rc=0; list="$(changed_json)" || rc=$?
+    [ -n "${list//[[:space:]]/}" ] || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
     [ -z "$only" ] || list="$(echo "$list" | jq --arg p "$only" 'map(select(.platform == $p))')"
     if [ "$json" = 1 ]; then echo "$list"; exit "$rc"; fi
     if [ "$(echo "$list" | jq length)" = "0" ]; then
@@ -3965,6 +3966,7 @@ case "${1:-} ${2:-}" in
     done
     load_savings
     rc=0; list="$(changed_json)" || rc=$?
+    [ -n "${list//[[:space:]]/}" ] || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
     [ "$rc" = 0 ] || [ "$(echo "$list" | jq length)" != 0 ] || die "Could not tell what has changes (see above)."
     apply_rules ""
     # --since: only what changed in that time (the newest commit on the branch is not older)
@@ -4008,6 +4010,7 @@ case "${1:-} ${2:-}" in
     [ -z "$dryc" ] || [ -z "$yes" ] || die "--dry-run and --yes are opposites: --dry-run only shows what --yes would start."
     [ -z "$byrules" ] || rules_on || die "--by-rules needs rules.json with a rule that is on (see docs/CLI.md, Rules)."
     rc=0; list="$(changed_json)" || rc=$?
+    [ -n "${list//[[:space:]]/}" ] || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
     apply_rules "$byrules"
     # --only / --exclude / --platform / --max narrow what was found (names without a platform: every platform).
     if [ "${#only[@]}" -gt 0 ] || [ "${#excl[@]}" -gt 0 ] || [ -n "$platf" ] || [ "$maxn" != 0 ]; then
