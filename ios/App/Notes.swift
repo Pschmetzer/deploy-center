@@ -42,21 +42,24 @@ enum Notes {
         _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])
     }
 
-    static func post(_ body: String, project: String?, id: String? = nil, news: Bool = false) async {
+    static func post(_ body: String, project: String?, projectName: String? = nil, id: String? = nil, news: Bool = false) async {
         if news && muted { return }
-        let c = UNMutableNotificationContent()
         // With "Unlock on open" the lock screen must not name projects either (IDEEN-12 C23).
+        let hide = UserDefaults.standard.bool(forKey: "lockOnOpen")
+        let plan = NotePlan.make(id: id, project: project, projectName: projectName, hideNames: hide)
+        let c = UNMutableNotificationContent()
         c.title = "Deploy Center"; c.sound = .default
-        c.body = UserDefaults.standard.bool(forKey: "lockOnOpen") ? L("A project has news. Open the app.", "Ein Projekt hat Neuigkeiten. App öffnen.") : body
+        c.body = hide ? L("A project has news. Open the app.", "Ein Projekt hat Neuigkeiten. App öffnen.") : body
         // One thread per project groups its history; failures rise in the notification summary, news falls.
-        c.threadIdentifier = project.map { "deploy-center-" + $0 } ?? "deploy-center"
-        let kind = (id ?? "").split(separator: ":").first.map(String.init) ?? ""
-        c.relevanceScore = kind == "failed" ? 1.0 : kind == "waiting" ? 0.3 : kind == "recovered" ? 0.5 : kind == "live" ? 0.5 : 0.7
+        c.threadIdentifier = plan.thread
+        c.relevanceScore = plan.relevance
         // A failure may interrupt a Focus that allows it; news that something waits or is live does not (IDEEN-12 C24).
-        c.interruptionLevel = kind == "failed" ? .active : .passive
-        c.categoryIdentifier = (id ?? "").hasPrefix("waiting:") ? waitingCategory : category
+        c.interruptionLevel = plan.level == .active ? .active : .passive
+        c.categoryIdentifier = plan.waiting ? waitingCategory : category
+        // The stack's summary line: "3 more notifications from <project>".
+        if let name = plan.summaryArgument { c.summaryArgument = name }
         if let project { c.userInfo = ["project": project] }
-        let r = UNNotificationRequest(identifier: id ?? "deploy-\(project ?? "")", content: c, trigger: nil)
+        let r = UNNotificationRequest(identifier: NotePlan.identifier(id: id, project: project), content: c, trigger: nil)
         try? await UNUserNotificationCenter.current().add(r)
     }
 }
