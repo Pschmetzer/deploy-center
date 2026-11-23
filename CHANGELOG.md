@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- iPhone app (Dynamic Type): the four numbers above the list and the "Recent deploys" rows follow one set of rules, tested for every text size; at accessibility sizes the time moves under the project name and titles are no longer cut off.
 - Providers: Koyeb lists every service, not only the first 100 (it reads the next page while a page is full).
 - AI usage: a damaged `ai-usage.json` no longer makes the monthly token cap count nothing for ever (it starts again), and no temp file is left behind.
 - Fix: `deploys exit-codes` printed the rest of the script after its table; it now prints only the table.

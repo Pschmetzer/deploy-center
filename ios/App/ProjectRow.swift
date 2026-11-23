@@ -15,13 +15,14 @@ struct Summary: View {
         let building = Stat(value: store.projects.filter(\.building).count, label: L("building", "bauen"), tint: .blue)
         let failed = Stat(value: store.projects.filter(\.failed).count, label: L("failed", "Fehler"), tint: .red)
         Group {
-            // Four in a row get too tight from the largest standard text size on: two rows of two then.
-            if size.isAccessibilitySize {
+            // The steps are AdaptiveLayout.summary's (checked in ios/Tests).
+            switch AdaptiveLayout.summary(AdaptiveLayout.TextScale(size)) {
+            case .column:
                 // One column: at accessibility sizes even two stats side by side do not fit (IDEEN-12 C46).
                 VStack(alignment: .leading, spacing: 10) { prs; projects; building; failed }
-            } else if size >= .xxxLarge {
+            case .grid:
                 Grid(verticalSpacing: 12) { GridRow { prs; projects }; GridRow { building; failed } }
-            } else {
+            case .row:
                 HStack(spacing: 0) { prs; projects; building; failed }
             }
         }

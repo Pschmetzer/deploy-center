@@ -7,6 +7,7 @@ struct RecentDeploysView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var days: [DeployTimeline.Day] = []
     @State private var loading = true
+    @Environment(\.dynamicTypeSize) private var size
 
     var body: some View {
         NavigationStack {
@@ -45,15 +46,16 @@ struct RecentDeploysView: View {
 
     private func row(_ item: DeployTimeline.Item) -> some View {
         let r = item.record
+        let scale = AdaptiveLayout.TextScale(size)
+        let name = Text(item.projectName).font(.headline).lineLimit(AdaptiveLayout.titleLines(scale))
+        let time = Text(item.at.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(appLocale))).font(.caption).foregroundStyle(.secondary)
         return VStack(alignment: .leading, spacing: 2) {
-            HStack {
-                Text(item.projectName).font(.headline).lineLimit(1)
-                Spacer()
-                Text(item.at.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(appLocale))).font(.caption).foregroundStyle(.secondary)
-            }
+            // Side by side while both fit; at accessibility sizes the time goes under the name.
+            if AdaptiveLayout.timeBesideName(scale) { HStack { name; Spacer(); time } }
+            else { name; time }
             HStack(spacing: 6) {
                 Text(PhoneProject.stateWord(r.state)).foregroundStyle(r.failed ? .red : r.current ? .green : .secondary)
-                if let t = r.title { Text(t).lineLimit(1) }
+                if let t = r.title { Text(t).lineLimit(AdaptiveLayout.titleLines(scale)) }
             }
             .font(.caption).foregroundStyle(.secondary)
         }
