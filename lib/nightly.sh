@@ -25,6 +25,26 @@ ng_set() { local s; s="$(ng_settings | jq -c "$@")" && echo "$s" | atomic_write 
 ng_state_file() { echo "$SCAN_DIR/nightly-state.json"; }
 ng_state() { local f; f="$(ng_state_file)"; if [ -s "$f" ] && jq -e 'type == "object"' "$f" >/dev/null 2>&1; then cat "$f"; else echo '{"repos":{}}'; fi; }
 ng_save() { mkdir -p "$SCAN_DIR"; atomic_write "$(ng_state_file)"; }
+# The history: one entry per run, newest first, the last 90 (a run of its own writes it, under its lock).
+NIGHTLY_HISTORY_MAX=90
+ng_history_file() { echo "$SCAN_DIR/nightly-history.json"; }
+ng_history() { local f; f="$(ng_history_file)"; if [ -s "$f" ] && jq -e 'type == "array"' "$f" >/dev/null 2>&1; then cat "$f"; else echo '[]'; fi; }
+# ng_history_add <state after the run> <start time> <summary> <notified 0|1> <repos run>: what the run did, per repo.
+ng_history_add() {
+  local entry; mkdir -p "$SCAN_DIR"
+  entry="$(echo "$1" | jq -c --argjson t "$2" --arg s "$3" --argjson n "$4" --arg ran "$5" --argjson now "$(date +%s)" '
+    [(.repos // {}) | to_entries[] | select(.key as $k | ($ran | split(" ") | index($k)) != null)
+      | {repo:.key, code:(.value.code // null), newFindings:(.value.newFindings // 0), newLeaks:(.value.newLeaks // 0), scanId:(.value.scanId // null)}] as $r
+    | {at:$t, tookSec:($now - $t), summary:$s, notified:($n == 1), repos:($r | length),
+       newFindings:([$r[].newFindings] | add // 0), newLeaks:([$r[].newLeaks] | add // 0),
+       failing:((.failing // "") | split(" ") | map(select(. != ""))), results:$r}')" || return 0
+  ng_history | jq -c --argjson e "$entry" --argjson max "$NIGHTLY_HISTORY_MAX" '([$e] + .)[0:$max]' | atomic_write "$(ng_history_file)"
+}
+ng_history_print() {  # stdin: the history JSON
+  jq -r 'if length == 0 then "No nightly run yet. Start one: deploys nightly start"
+    else .[] | "\(.at | strftime("%Y-%m-%d %H:%M"))  \(.summary)  (\(.repos) repo(s), \(.tookSec)s\(if .notified then ", notified" else "" end))"
+      + ([.results[]? | select(.code != null and .code != "baseline") | "\n    \(.repo): \(.code)"] | join("")) end'
+}
 ng_scheduled() { [ -f "$(job_plist "$NIGHTLY_LABEL")" ] && launchctl print "gui/$(id -u)/$NIGHTLY_LABEL" >/dev/null 2>&1; }
 # Seam the tests replace: "<owner/repo>\t<branch>" for every GitHub repo of a project, once per
 # repo and branch (a monorepo has several projects). Without paused, ignored and skipped ones.
@@ -142,7 +162,7 @@ ng_review_all() {
 }
 
 nightly_run() {
-  local checked="" st cfg fix repo br cid prints seen rep newfix fresh newleaks nfix nnew nleak scans=0 reviews=0 sid reason code base total=0 tleak=0 tpr=0 failing="" now
+  local started ran=""; started="$(date +%s)"; local checked="" st cfg fix repo br cid prints seen rep newfix fresh newleaks nfix nnew nleak scans=0 reviews=0 sid reason code base total=0 tleak=0 tpr=0 failing="" now
   ng_lock || { echo "nightly: a run is in progress already."; return 0; }
   trap_add 'ng_unlock'
   log_rotate DeployCenter-nightly
@@ -150,6 +170,7 @@ nightly_run() {
   cfg="$(ng_settings)"; fix="$(echo "$cfg" | jq -r .fix)"; st="$(ng_state)"; now="$(date +%s)"
   while IFS=$'\t' read -r repo br; do
     [ -n "$repo" ] || continue
+    ran="$ran $repo"
     if ! cid="$(ng_check "$repo" "$br")"; then
       echo "nightly: $repo: the check failed or is running already"; failing="$failing $repo"
       st="$(echo "$st" | jq --arg r "$repo" --argjson t "$now" '.repos[$r] = ((.repos[$r] // {}) + {at:$t, code:"checkFailed", note:null, newFindings:0, newLeaks:0, scanId:null})')"
@@ -203,11 +224,14 @@ nightly_run() {
   # Failing checks are notified when the set of failing repos changes, not every night.
   local was; was="$(echo "$st" | jq -r '.failing // ""')"; failing="${failing# }"
   local summary; summary="Nightly check: $total new finding(s), $tleak new leak(s), $tpr fix PR(s)$([ "$reviews" = 0 ] || echo ", $reviews review(s)")$([ -z "$failing" ] || echo ", $(echo "$failing" | wc -w | tr -d ' ') check(s) failed")."
-  echo "$st" | jq --argjson t "$now" --arg s "$summary" --arg f "$failing" '. + {lastRun:$t, summary:$s, failing:$f}' | ng_save
+  st="$(echo "$st" | jq --argjson t "$now" --arg s "$summary" --arg f "$failing" '. + {lastRun:$t, summary:$s, failing:$f}')"
+  echo "$st" | ng_save
+  local notified=0; { [ "$total" -gt 0 ] || [ "$tleak" -gt 0 ] || [ "$failing" != "$was" ]; } && notified=1
+  ng_history_add "$st" "$started" "$summary" "$notified" "$ran"
   # Old check files go after 30 days (the nightly run makes one per repo and night).
   find "$SCAN_DIR/checks" -name '*.json' -mtime +30 -delete 2>/dev/null || true
   echo "$summary"
-  if [ "$total" -gt 0 ] || [ "$tleak" -gt 0 ] || [ "$failing" != "$was" ]; then
+  if [ "$notified" = 1 ]; then
     af_notify "$summary$([ "$tleak" = 0 ] || echo " A leaked key must be rotated.")" >/dev/null
   fi
   trap_pop; ng_unlock
@@ -275,8 +299,19 @@ nightly_main() {  # nightly_main <run|status|schedule|fix|skip|unskip|list> ...
       case "$2" in [A-Za-z0-9]*/[A-Za-z0-9._-]*) ;; *) die "not a repo: $2";; esac
       if [ "$1" = skip ]; then ng_set --arg r "$2" '.skip = ((.skip + [$r]) | unique)'; echo "$2 is left out of the nightly check."
       else ng_set --arg r "$2" '.skip -= [$r]'; echo "$2 is in the nightly check again."; fi ;;
+    history)
+      shift; local lim=14
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          --limit) case "${2:-}" in ''|*[!0-9]*|0) die "Usage: deploys nightly history [--limit N]" ;; esac; lim="$2"; shift ;;
+          *) die "Usage: deploys nightly history [--limit N] [--json]" ;;
+        esac
+        shift
+      done
+      if [ "${json:-0}" = 1 ]; then ng_history | jq -c --argjson n "$lim" '.[0:$n]'
+      else ng_history | jq -c --argjson n "$lim" '.[0:$n]' | ng_history_print; fi ;;
     list)
       ng_repos | (printf 'REPO\tBRANCH\n'; cat) | table ;;
-    *) die "Usage: deploys nightly run|start|status|schedule [on [HH:MM]|off]|fix [on|off]|review [on [1-7]|off]|skip|unskip <owner/repo>|list" ;;
+    *) die "Usage: deploys nightly run|start|status|schedule [on [HH:MM]|off]|fix [on|off]|review [on [1-7]|off]|skip|unskip <owner/repo>|list|history [--limit N]" ;;
   esac
 }

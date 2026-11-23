@@ -186,4 +186,22 @@ expect "review: after two failures it is left until the next week" "$(rv reviewP
 expect "review: settings in the status" "$(nightly_status | jq -c '[.review, .reviewDay]')" "[true,7]"
 expect "review: a bad weekday is refused" "$( (nightly_main review on 8) 2>&1 | grep -c Usage)" "1"
 
+# --- history: every run leaves one line, newest first, capped; an empty repo list is a run too ---
+rm -f "$(ng_history_file)"
+ng_projects() { echo '[]'; }
+nightly_run >/dev/null 2>&1
+expect "history: a run with no repos is recorded" "$(ng_history | jq -c '[length, .[0].repos, .[0].newFindings]')" "[1,0,0]"
+ng_projects() { echo '[{"name":"docs","platform":"vercel","repo":"acme/docs","ref":"main"}]'; }
+nightly_run >/dev/null 2>&1; nightly_run >/dev/null 2>&1
+expect "history: one entry per run" "$(ng_history | jq length)" "3"
+expect "history: view prints the summary" "$(nightly_main history 2>&1 | grep -c 'Nightly check:')" "3"
+expect "history: --limit" "$(nightly_main history --limit 1 2>&1 | grep -c 'Nightly check:')" "1"
+expect "history: json" "$(json=1 nightly_main history | jq -c 'length')" "3"
+i=0; while [ $i -lt 110 ]; do echo "$(jq -c '. + {at:1}' <<<'{"summary":"x"}')"; i=$((i+1)); done | jq -sc . > "$(ng_history_file)"
+nightly_run >/dev/null 2>&1
+expect "history: capped at 90" "$(ng_history | jq length)" "90"
+echo "garbage" > "$(ng_history_file)"
+expect "history: a damaged file reads as empty" "$(ng_history | jq length)" "0"
+expect "history: with none, says so" "$(nightly_main history 2>&1 | grep -c 'No nightly run yet')" "1"
+
 [ "$fails" = 0 ] && echo "nightly: all passed" || { echo "nightly: $fails failed"; exit 1; }

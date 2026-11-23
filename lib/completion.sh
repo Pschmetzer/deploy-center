@@ -35,7 +35,7 @@ ignore:--list --undo --json
 readonly:on off
 config:--refresh export import
 doctor:--text --fix --json
-freeze:status add remove clear --json
+freeze:status add import remove clear --json
 digest:--days --json --no-savings --format
 timeline:--days --project --limit --json
 recovery:--days --project --json
