@@ -50,4 +50,13 @@ expect "ai_add_usage: no temp file is left behind" "$(find "$CONFIG_DIR" -maxdep
 ai_add_usage 20 2>/dev/null
 expect "ai_add_usage: and it keeps adding" "$(ai_used)" "120"
 
+# --- ignore: a damaged ignored.json is named, nothing is changed, no lock or temp file stays ---
+printf '["a"' > "$DEPLOYS_CONFIG/ignored.json"
+out="$(cli ignore web 2>&1)"; rc=$?
+expect "ignore: a damaged list is an error (1) that names the file" "$rc:$(grep -c 'ignored.json' <<<"$out")" "1:1"
+expect "ignore: the damaged file is left as it is" "$(cat "$DEPLOYS_CONFIG/ignored.json")" '["a"'
+expect "ignore: no lock and no temp file are left" "$(find "$DEPLOYS_CONFIG" -maxdepth 1 \( -name 'ignored.json.lock' -o -name '.ignore.*' \) | wc -l | tr -d ' ')" "0"
+expect "ignore --list: a damaged list is named too" "$(cli ignore --list 2>&1 | grep -c 'ignored.json')" "1"
+rm -f "$DEPLOYS_CONFIG/ignored.json"
+
 [ "$fails" = 0 ] && echo "all ok" || { echo "$fails failed"; exit 1; }
