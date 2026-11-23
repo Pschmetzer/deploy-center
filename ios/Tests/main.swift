@@ -528,5 +528,21 @@ do {
     check(PhoneHealth.average([fine], history: { _ in [rec("1", "READY", 1)] }, now: now)?.score == 100, "average: one clean project")
 }
 
+// MARK: Widget refresh
+
+do {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    func ago(_ s: TimeInterval) -> Date { now.addingTimeInterval(-s) }
+    check(WidgetRefresh.interval(snapshotAt: ago(60), building: 0, now: now) == 30 * 60, "refresh: nothing moves, every 30 minutes")
+    check(WidgetRefresh.interval(snapshotAt: ago(60), building: 2, now: now) == 5 * 60, "refresh: a build runs, every 5 minutes")
+    check(WidgetRefresh.interval(snapshotAt: ago(Words.staleAfter + 1), building: 2, now: now) == 60 * 60, "refresh: an out-of-date snapshot waits longer, even with a build in it")
+    check(WidgetRefresh.interval(snapshotAt: ago(Words.staleAfter), building: 1, now: now) == 5 * 60, "refresh: exactly three hours old is not yet out of date")
+    check(WidgetRefresh.interval(snapshotAt: nil, building: 0, now: now) == 30 * 60, "refresh: no snapshot, every 30 minutes")
+    check(WidgetRefresh.nextReload(snapshotAt: ago(60), building: 1, now: now) == now.addingTimeInterval(300), "refresh: the next reload is now plus the interval")
+    check(WidgetRefresh.staleEntryDate(snapshotAt: ago(3600), now: now) == ago(3600).addingTimeInterval(Words.staleAfter), "refresh: the out-of-date entry sits three hours after the snapshot")
+    check(WidgetRefresh.staleEntryDate(snapshotAt: ago(Words.staleAfter), now: now) == nil && WidgetRefresh.staleEntryDate(snapshotAt: nil, now: now) == nil,
+          "refresh: no out-of-date entry when it is already past or there is no snapshot")
+}
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)

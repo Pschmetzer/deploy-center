@@ -34,8 +34,8 @@ struct Provider: TimelineProvider {
         // the snapshot is three hours old, so "out of date" shows without the app (iOS only, see isStale).
         let r = DeploySnapshot.readOutcome(), snap = r.snapshot, now = Date()
         var entries = [Entry(date: now, snap: snap, problem: r.problem)]
-        if let s = snap, s.at.addingTimeInterval(Words.staleAfter) > now { entries.append(Entry(date: s.at.addingTimeInterval(Words.staleAfter), snap: s)) }
-        completion(Timeline(entries: entries, policy: .after(now.addingTimeInterval(30 * 60))))
+        if let s = snap, let d = WidgetRefresh.staleEntryDate(snapshotAt: s.at, now: now) { entries.append(Entry(date: d, snap: s)) }
+        completion(Timeline(entries: entries, policy: .after(WidgetRefresh.nextReload(snapshotAt: snap?.at, building: snap?.building ?? 0, now: now))))
     }
 }
 
@@ -636,8 +636,8 @@ struct FilteredProvider: AppIntentTimelineProvider {
         let e = entry(configuration, preview: false)
         var entries = [e]
         // A second entry once the snapshot is three hours old, so "out of date" shows without the app (as in Provider).
-        if let s = e.snap, s.at.addingTimeInterval(Words.staleAfter) > e.date { entries.append(Entry(date: s.at.addingTimeInterval(Words.staleAfter), snap: s)) }
-        return Timeline(entries: entries, policy: .after(Date().addingTimeInterval(30 * 60)))
+        if let s = e.snap, let d = WidgetRefresh.staleEntryDate(snapshotAt: s.at, now: e.date) { entries.append(Entry(date: d, snap: s)) }
+        return Timeline(entries: entries, policy: .after(WidgetRefresh.nextReload(snapshotAt: e.snap?.at, building: e.snap?.building ?? 0, now: e.date)))
     }
 }
 
