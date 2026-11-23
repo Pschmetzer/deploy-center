@@ -42,8 +42,9 @@ export GITLAB_HOST=git.example.com
 
 Das Token geht nur an `GITLAB_HOST` (gitlab.com, wenn nicht gesetzt), nie an einen anderen Host, den eine Repo-URL
 nennt, und es geht über stdin an curl, sodass es nie in der Prozessliste auftaucht. Die App startet das
-Skript über launchd, das dein Shell-Profil nicht liest: Lege die Variablen dorthin, woher der PATH der Login-Shell der App
-kommt (`~/.zprofile`), oder nimm glab, dessen Login glab selbst speichert.
+Skript selbst und übernimmt von deiner Login-Shell nur den `PATH`; `GITLAB_HOST` und `GITLAB_TOKEN` aus deinem Shell-Profil
+kommen dort also nicht an: Nimm in der App glab, dessen Login glab selbst speichert. `deploys` im Terminal liest die
+Variablen wie gewohnt aus deiner Shell.
 
 Prüfe es:
 

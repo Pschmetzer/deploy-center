@@ -1052,7 +1052,9 @@ CI_RULE='($s[0] // {}) as $s | ($r[0] // {}) as $r
       | select((.context // "") | test("^Vercel( |$)|^(deploy/)?[Nn]etlify|^Cloudflare Pages|^[Rr]ender( |$)|^DigitalOcean") | not)
       | select(($ENV.DEPLOYS_CI_IGNORE // "") == "" or ((.context // "") | test($ENV.DEPLOYS_CI_IGNORE) | not))
       | {name:.context, state:(if .state == "success" then "ok" elif .state == "pending" then "wait" else "bad" end)}]
-     + [($r.check_runs // [])[] | select((.conclusion // "") != "stale") | {name, state:(if .status != "completed" then "wait"
+     + [($r.check_runs // [])[] | select((.conclusion // "") != "stale")
+         | select(($ENV.DEPLOYS_CI_IGNORE // "") == "" or ((.name // "") | test($ENV.DEPLOYS_CI_IGNORE) | not))
+         | {name, state:(if .status != "completed" then "wait"
          elif ((.conclusion // "") | IN("success", "neutral", "skipped")) then "ok"
          # Cancelled (a newer run took over) or waiting for an approval: not green yet, but not red either.
          elif ((.conclusion // "") | IN("cancelled", "action_required")) then "wait" else "bad" end)}]) as $all

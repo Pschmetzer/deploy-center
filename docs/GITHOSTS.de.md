@@ -2,9 +2,9 @@
 
 Die deutsche Fassung von [GITHOSTS.md](GITHOSTS.md). Verlinkte Seiten ohne eigene deutsche Fassung sind englisch.
 
-[PROVIDERS.md](PROVIDERS.md) handelt davon, wo ein Projekt *deployt* wird (Vercel, Render, …). Diese Seite handelt davon, wo sein *Code liegt*: der Git-Host, den `deploys` fragt „Was wartet?“. GitHub und GitLab sind eingebaut. Bitbucket und Gitea sind die meistgewünschten nächsten. Ein Repo auf einem Host, den `deploys` nicht fragen kann, wird als `unknown` aufgeführt und nie als wartend gezählt.
+[PROVIDERS.de.md](PROVIDERS.de.md) handelt davon, wo ein Projekt *deployt* wird (Vercel, Render, …). Diese Seite handelt davon, wo sein *Code liegt*: der Git-Host, den `deploys` fragt „Was wartet?“. GitHub und GitLab sind eingebaut. Bitbucket und Gitea sind die meistgewünschten nächsten. Ein Repo auf einem Host, den `deploys` nicht fragen kann, wird als `unknown` aufgeführt und nie als wartend gezählt.
 
-Der Code ist `lib/githost.sh` (GitLab und die Dispatcher) und, für GitHub, die Funktionen `head_of`, `pending_of` und `open_prs_of` in `deploys`. Lies zuerst [GITLAB.md](GITLAB.md), was ein Benutzer sieht.
+Der Code ist `lib/githost.sh` (GitLab und die Dispatcher) und, für GitHub, die Funktionen `head_of`, `pending_of` und `open_prs_of` in `deploys`. Lies zuerst [GITLAB.de.md](GITLAB.de.md), was ein Benutzer sieht.
 
 ## Wie ein Repo geschrieben wird
 
@@ -59,4 +59,4 @@ Dispatch-Zeilen, die du ergänzen musst: die drei `githost_*`-Funktionen in `lib
 
 ## Einen Pull Request öffnen
 
-Halte ihn klein: ein Host, die Funktionen oben, die Tests und eine Doku-Seite wie [GITLAB.md](GITLAB.md). Nimm ausgedachte Projektnamen. Siehe [CONTRIBUTING.md](../CONTRIBUTING.md).
+Halte ihn klein: ein Host, die Funktionen oben, die Tests und eine Doku-Seite wie [GITLAB.de.md](GITLAB.de.md). Nimm ausgedachte Projektnamen. Siehe [CONTRIBUTING.md](../CONTRIBUTING.md).

@@ -5,7 +5,7 @@ Die deutsche Fassung von [SAFE-DEPLOY.md](SAFE-DEPLOY.md). Verlinkte Seiten ohne
 Wenn KI-Agenten 30 bis 50 Mal am Tag pushen, soll nicht jeder Push live gehen. Deploy Center kann diese Pushes
 zu einem Deploy bündeln, und vier Prüfungen halten dieses Deploy sicher:
 
-1. **Grüne CI**: Nur Commits, deren Checks durchgelaufen sind, gehen live.
+1. **Grüne CI**: Mit `deploy-changed --when-green` gehen nur Commits live, deren Checks durchgelaufen sind (auch Commits ganz ohne Checks gehen live; in der App hält eine rote CI kein Deploy zurück).
 2. **Health-Check mit Rollback**: Ist die Seite nach dem Deploy kaputt, geht Produktion zurück.
 3. **Deploy-Fenster**: Zu Zeiten deiner Wahl (Freitagnachmittag, Feiertage) gibt es keine Deploys, es sei denn, du nennst einen Grund.
 4. **Risiko-Ampel**: Ein roter Punkt, wenn der wartende Diff Migrationen, einen sehr großen Diff oder Ähnliches enthält.

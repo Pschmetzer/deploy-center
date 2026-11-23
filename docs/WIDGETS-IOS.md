@@ -211,7 +211,7 @@ of "Data Not Collected".
   Settings → API Keys), or the GitHub token. On the phone, "Delete the keys on this iPhone" removes
   the copies there.
 - **Not done:** encrypting the code with a short number typed on the phone. It would cost a step for
-  everyone; the five-minute limit covers the photo case.
+  everyone; the five-minute limit only stops an old code from being imported into this app: a photo of the code still holds the keys, unencrypted, and they work until you revoke them.
 
 ### When iCloud Keychain brings nothing
 

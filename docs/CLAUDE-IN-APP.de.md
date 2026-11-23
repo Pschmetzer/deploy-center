@@ -35,8 +35,8 @@ wenn der Schalter an ist und ein Key gespeichert ist.
 - Der Key wird in dieser Reihenfolge genommen: `DEPLOYS_ANTHROPIC_API_KEY`, dann `ANTHROPIC_API_KEY`, dann der
   Schlüsselbund. `ANTHROPIC_API_KEY` ist oft für ein anderes Konto gesetzt (Claude Code, ein SDK), und dann
   zahlt dieses Konto. `deploys ai status` sagt das (`envHidesKeychain: true`), und Einstellungen → Claude →
-  Claude in der App warnt. Setze `DEPLOYS_ANTHROPIC_API_KEY` oder hebe `ANTHROPIC_API_KEY` auf, um den
-  Key zu nutzen, den du gespeichert hast.
+  Claude in der App warnt. Setze `DEPLOYS_ANTHROPIC_API_KEY`, um einen anderen Key zu nutzen, oder hebe `DEPLOYS_ANTHROPIC_API_KEY` und
+  `ANTHROPIC_API_KEY` beide auf, um den Key zu nutzen, den du gespeichert hast (jede der beiden Variablen gilt vor dem Schlüsselbund).
 - Alles, was gesendet wird, läuft zuerst durch denselben Maskierer wie bei Autofix: API-Keys und Tokens (`sk-…`,
   `ghp_…`, `github_pat_…`, `xox…`, `AKIA…`, `rnd_…`, JWTs), Werte der Art `token=` / `password:`,
   Passwörter in URLs und E-Mail-Adressen. Eine Hilfe, keine Garantie: Lies [SECURITY.md](../SECURITY.md).

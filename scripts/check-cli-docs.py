@@ -55,6 +55,9 @@ for line in table.splitlines():
     pid = m.group(1)
     seen.add(pid)
     cells = [c.strip() for c in m.group(2).split("|")]
+    if len(cells) != len(cols):
+        problems.append(f"docs/providers/README.md: the row of {pid} has {len(cells)} cells, {len(cols)} expected")
+        continue
     for col, cell in zip(cols, cells):
         want = "yes" if caps[pid].get(col) else "no"
         if cell != want:

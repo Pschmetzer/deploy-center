@@ -91,14 +91,15 @@ Nur die CLI, mit Homebrew installiert: `brew uninstall deploys`.
 | Anthropic-API-Schlüssel (Claude in der App) | Schlüsselbund, Dienstname `deploy-center-anthropic` | `deploys ai forget-key`, oder `security delete-generic-password -a "$USER" -s deploy-center-anthropic` |
 | Autofix-Routine-Token | Schlüsselbund, Dienstname `deploy-center-routine` | `deploys autofix forget-token`, oder `security delete-generic-password -a "$USER" -s deploy-center-routine` |
 | Schlüssel der Opt-in-Hosts (Netlify, Cloudflare, DigitalOcean, Coolify; Amplify behält nur einen Profilnamen) | Schlüsselbund, Dienstnamen `deploy-center-netlify`, `deploy-center-cloudflare`, `deploy-center-digitalocean`, `deploy-center-coolify`, `deploy-center-amplify` | `security delete-generic-password -a "$USER" -s deploy-center-<name>` für jeden, den du gesetzt hast |
-| Deploy-Hook-URLs | Schlüsselbund, `deploy-center-hook-<name>` (ohne Schlüsselbund: `~/.config/deploys/hook-urls/`) | `deploys hook remove <name>` |
+| Deploy-Hook-URLs | Schlüsselbund, `deploy-center-hook-<name>` (ohne Schlüsselbund: `~/.config/deploys/hook-urls/`) | `deploys hook remove <name>` (bevor du die CLI entfernst), oder `security delete-generic-password -a "$USER" -s deploy-center-hook-<name>` |
+| GitLab-Token (`deploys gitlab set-token`) | Schlüsselbund, Dienstname `deploy-center-gitlab` | `deploys gitlab forget-token`, oder `security delete-generic-password -a "$USER" -s deploy-center-gitlab` |
 | Das für das iPhone erzeugte Vercel-Token | Schlüsselbund, Dienstname `deploy-center-phone-vercel` | `security delete-generic-password -a "$USER" -s deploy-center-phone-vercel` |
 | Dem iPhone übergebene Schlüssel | iCloud-Schlüsselbund (synchronisiert), Dienst `app.deploycenter.link` | schalte zuerst **Einstellungen → iPhone** aus (siehe oben); das entfernt sie auf allen Geräten |
 | Widget-Daten (ein kleiner Schnappschuss dessen, was wartet) | `~/Library/Group Containers/<team id>.app.deploycenter/` | lösche diesen Ordner (nur Builds mit Widgets haben ihn) |
 | App-Einstellungen | `~/Library/Preferences/app.deploycenter.mac.plist` | `defaults delete app.deploycenter.mac` |
 | Zwischengespeicherte Listen, Deploy-Verlauf, Site-Logos | `~/Library/Caches/app.deploycenter.mac/` | `rm -rf ~/Library/Caches/app.deploycenter.mac` |
 | Fehlerprotokoll | `~/Library/Logs/DeployCenter.log` | `rm ~/Library/Logs/DeployCenter.log` |
-| CLI-Einstellungen: gemerkte Repos, Team, ignorierte Projekte, Claude-Modell, Limit und Verbrauch (`ai-*`), Autofix- und Wächter-Zustand, Freigaben, Netlify-Hook-URLs | `~/.config/deploys/` (oder `$DEPLOYS_CONFIG`) | `rm -rf ~/.config/deploys` |
+| CLI-Einstellungen: gemerkte Repos, Team, ignorierte Projekte, Claude-Modell, Limit und Verbrauch (`ai-*`), Autofix- und Wächter-Zustand, Freigaben, Netlify-Hook-URLs | `~/.config/deploys/`, oder der Ordner, den `$DEPLOYS_CONFIG` nennt | `rm -rf ~/.config/deploys`; hast du `DEPLOYS_CONFIG` gesetzt, prüfe zuerst `echo "$DEPLOYS_CONFIG"` und entferne stattdessen diesen Ordner |
 
 Hattest du einen Schlüssel unter dem alten Namen, führe die Schlüsselbund-Zeile noch einmal mit `-s render-api-key` aus.
 

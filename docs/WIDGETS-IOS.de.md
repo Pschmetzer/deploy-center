@@ -213,7 +213,7 @@ von „Daten werden nicht erhoben“.
   Settings → API Keys) oder das GitHub-Token. Auf dem Handy entfernt „Schlüssel auf diesem iPhone löschen“
   die Kopien dort.
 - **Nicht gemacht:** den Code mit einer kurzen, am Handy getippten Zahl zu verschlüsseln. Das würde jeden einen
-  Schritt kosten; die Fünf-Minuten-Grenze deckt den Foto-Fall ab.
+  Schritt kosten; die Fünf-Minuten-Grenze verhindert nur, dass ein alter Code in diese App importiert wird: Ein Foto des Codes enthält die Keys weiter unverschlüsselt, und sie gelten, bis du sie widerrufst.
 
 ### Wenn der iCloud-Schlüsselbund nichts bringt
 

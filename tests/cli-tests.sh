@@ -166,6 +166,15 @@ r6="$tmp/r6"; mkdir -p "$r6"
       *) echo '{"statuses":[]}' ;; esac; }
   expect "260: a failure on the second page is red" "$( (gh() { ci260 "$@"; }; ci_of me/app abc1234) | jq -c '[.state, .checks]')" '["red",2]'
 
+  # DEPLOYS_CI_IGNORE leaves out check runs by name (not only commit statuses): an optional red check does not block, another one does.
+  ciign() { case "$*" in
+      *check-runs*) [[ "$*" == *--paginate* ]] || { echo '{"check_runs":[]}'; return 0; }
+        echo '{"total_count":2,"check_runs":[{"name":"build","status":"completed","conclusion":"success"},{"name":"lint-optional","status":"completed","conclusion":"failure"}]}' ;;
+      *) echo '{"statuses":[]}' ;; esac; }
+  expect "CI_IGNORE: a red optional check run is ignored" "$( (gh() { ciign "$@"; }; DEPLOYS_CI_IGNORE='^lint-optional$' ci_of me/app abc1234) | jq -r .state)" "green"
+  expect "CI_IGNORE: without it the same check run is red" "$( (gh() { ciign "$@"; }; DEPLOYS_CI_IGNORE='' ci_of me/app abc1234) | jq -r .state)" "red"
+  expect "CI_IGNORE: a pattern that does not match still blocks" "$( (gh() { ciign "$@"; }; DEPLOYS_CI_IGNORE='^other$' ci_of me/app abc1234) | jq -r .state)" "red"
+
   # 261: GitLab CI from the commit's newest pipeline; not readable is unknown and final (no wait).
   gl261() { echo "{\"id\":\"abc\",\"last_pipeline\":{\"id\":7,\"status\":\"$1\"}}"; }
   expect "261: a failed pipeline is red" "$( (gitlab_api() { gl261 failed; }; ci_of gitlab.com/g/app abc) | jq -r .state)" "red"
