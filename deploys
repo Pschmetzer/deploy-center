@@ -3550,6 +3550,8 @@ case "${1:-} ${2:-}" in
   "ignore "*)
     # Leave a project out of `changed` and `deploy-changed` (again with: ignore <p> --undo).
     f="$CONFIG_DIR/ignored.json"; [ -f "$f" ] || echo '[]' 2>/dev/null > "$f" || true
+    # A list cut off by a crash is named, not changed: jq would fail in the middle (exit 5) with a lock and a temp file left.
+    jq -e 'type == "array"' "$f" >/dev/null 2>&1 || die "$f is damaged (no JSON list): fix it or move it away; nothing was changed."
     if [ "${2:-}" = "--list" ] || [ -z "${2:-}" ]; then
       if [ "$json" = 1 ]; then jq -c . "$f"; else jq -r '.[]' "$f"; fi; exit 0
     fi
