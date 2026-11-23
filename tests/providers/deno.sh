@@ -50,6 +50,16 @@ expect "status: a finished deployment is ready" "$(deno_status alpha dpl-alpha-3
 expect "latest: the newest deployment" "$(deno_latest alpha | cut -f1)" "dpl-alpha-3"
 expect "latest: none without deployments" "$(deno_latest delta)" "$(printf 'none\t\tnone')"
 expect "status: an odd id is refused before a call" "$(: > "$CALLS"; (deno_status alpha '../x') >/dev/null 2>&1; echo $?:"$(grep -c '^curl' "$CALLS")")" "1:0"
+# More than 100 projects: page 2 is read; an API that ignores page does not loop.
+pg="$tmp/pg"; mkdir -p "$pg"; cp -R "$PWD/tests/fixtures/deno" "$pg/deno"
+jq -n '[range(0;100) | {name:"p\(.)"}]' > "$pg/p1.json"
+{ cat "$pg/p1.json"; echo 200; } > "$pg/deno/GET_v1_organizations_org-fixture_projects_limit_100.json"
+{ echo '[{"name":"last"}]'; echo 200; } > "$pg/deno/GET_v1_organizations_org-fixture_projects_limit_100_page_2.json"
+: > "$CALLS"
+expect "list: a second page past 100 projects is read" "$(FIXTURES="$pg" deno_projects | jq 'length')" "101"
+expect "list: page 2 asked with page=2" "$(grep -c 'projects?limit=100&page=2' "$CALLS")" "1"
+{ cat "$pg/p1.json"; echo 200; } > "$pg/deno/GET_v1_organizations_org-fixture_projects_limit_100_page_2.json"
+expect "list: an API that ignores page ends the read" "$(FIXTURES="$pg" deno_projects | jq 'length')" "100"
 expect "url" "$(deno_url alpha)" "https://alpha.deno.dev"
 expect "the token is not in any logged call" "$(grep -c 'ddo_secret_token_123' "$CALLS")" "0"
 
