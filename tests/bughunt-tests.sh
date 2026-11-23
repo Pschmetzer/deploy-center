@@ -37,8 +37,8 @@ expect "http_retry_after: 08 is eight seconds, not an octal error" "$(http_retry
 cli() { env -u DEPLOYS_LIB bash ./deploys "$@"; }
 for c in "freeze add" "freeze remove" "freeze remove x" "journal" "journal bogus" "hooks" "scan log" "check show" "ai" "autofix --only" \
          "frobnicate" "ignore --bogus" "idle --bogus" "doctor --bogus" "deploy-changed --bogus" "journal export --bogus"; do
-  # shellcheck disable=SC2086  # the words of $c are the arguments
-  expect "exit code: a wrong call is 2: deploys $c" "$(cli $c >/dev/null 2>&1; echo $?)" "2"
+  read -ra cw <<<"$c"
+  expect "exit code: a wrong call is 2: deploys $c" "$(cli "${cw[@]}" >/dev/null 2>&1; echo $?)" "2"
 done
 expect "exit code: an error that is no wrong call stays 1 (a date that is none)" "$(cli journal export --since x >/dev/null 2>&1; echo $?)" "1"
 
