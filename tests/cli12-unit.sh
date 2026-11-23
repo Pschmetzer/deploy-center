@@ -258,5 +258,29 @@ expect "import: a missing file is refused" "$( (freeze_main import "$tmp/none.ic
 freeze_main status 2>&1 | grep -q "2026-12-24" ; expect "status: shows dates" "$?" "0"
 rm -f "$WINDOW"
 
+# --- freeze import: an event that ends at midnight closes its own evening only ---
+printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART:20261210T220000\r\nDTEND:20261211T000000\r\nSUMMARY:Late\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20261212T220000\r\nDTEND:20261213T020000\r\nSUMMARY:Overnight\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' > "$tmp/mid.ics"
+expect "ics: an end at midnight next day is the end of the day" "$(freeze_ics_rules "$(freeze_ics_events "$tmp/mid.ics")" 2026-11-23 | jq -c '[.[] | [(.dates|join(",")), .from, .to]]')" '[["2026-12-10","22:00","24:00"],["2026-12-12,2026-12-13",null,null]]'
+
+# --- rules: per-project overrides tune a rule's numbers and can switch a rule off for one project ---
+nowt="$(date +%s)"
+rules_facts() { jq -nc --argjson t "$((nowt - 7200))" '[{platform:"vercel",name:"web",oldestPendingAt:$t,headAt:$t,pendingCommits:3,pendingPRs:1,files:null,ci:null,labels:null},
+  {platform:"vercel",name:"docs",oldestPendingAt:$t,headAt:$t,pendingCommits:3,pendingPRs:1,files:null,ci:null,labels:null}]'; }
+rm -f "$RULES"
+chk() { rules_check_json '[]' | jq -c 'map([.project, .matched] | join(":")) | join(",")'; }
+echo '{"rules":[{"name":"young","when":{"minAgeHours":4},"then":"deploy"}]}' > "$RULES"
+expect "rules overrides: without them 2 h is too young" "$(chk)" '"vercel/web:false,vercel/docs:false"'
+echo '{"rules":[{"name":"young","when":{"minAgeHours":4},"then":"deploy"}],"overrides":{"vercel/docs":{"minAgeHours":1}}}' > "$RULES"
+expect "rules overrides: one project waits less" "$(chk)" '"vercel/web:false,vercel/docs:true"'
+echo '{"rules":[{"name":"young","when":{"minAgeHours":1},"then":"deploy"}],"overrides":{"vercel/*":{"skip":["young"]},"vercel/docs":{"minAgeHours":9}}}' > "$RULES"
+expect "rules overrides: skip switches a rule off, a number beats nothing it was not given" "$(chk)" '"vercel/web:false,vercel/docs:false"'
+expect "rules overrides: and says so" "$(rules_check_json '[]' | jq -r '.[0].unmet[0]')" "the rule is switched off for vercel/web"
+echo '{"rules":[{"name":"young","when":{"minAgeHours":1},"then":"deploy"}],"overrides":{"vercel/web":{"ciGreen":true,"minAgeHours":"x"}}}' > "$RULES"
+expect "rules overrides: no new conditions; a number that is none is ignored" "$(chk)" '"vercel/web:true,vercel/docs:true"'
+echo '{"rules":[{"name":"young","when":{"minAgeHours":1},"then":"deploy"}],"overrides":"nope"}' > "$RULES"
+expect "rules overrides: a wrong shape is ignored" "$(chk)" '"vercel/web:true,vercel/docs:true"'
+rm -f "$RULES"; unset -f rules_facts
+. ./lib/rules.sh
+
 echo
 [ "$fails" = 0 ] && echo "All round 12 CLI tests passed." || { echo "$fails failed."; exit 1; }
