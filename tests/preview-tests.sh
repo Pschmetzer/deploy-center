@@ -84,4 +84,16 @@ expect "group: run without --yes and without a terminal starts nothing" "$(gcli 
 expect "group: an unknown group is refused" "$(gcli group run nope >/dev/null 2>&1; echo $?)" "1"
 expect "group: a bad name is refused" "$(gcli group add 'a b' x y >/dev/null 2>&1; echo $?)" "1"
 
+# --- prepare_decide ---
+rows='[{"platform":"vercel","name":"web","action":"would-deploy"},{"platform":"vercel","name":"api","action":"would-skip"}]'
+c0='{"noFreeze":true,"yes":false,"whenGreen":true,"args":[]}'
+expect "prepare: prepares, starts nothing" "$(prepare_decide "$c0" false "$rows" | jq -c '[.state, (.rows|length)]')" '["prepared",1]'
+expect "prepare: frozen does nothing" "$(prepare_decide "$c0" true "$rows" | jq -r .state)" "frozen"
+expect "prepare: frozen is ignored without --no-freeze" "$(prepare_decide '{"noFreeze":false,"yes":false}' true "$rows" | jq -r .state)" "prepared"
+expect "prepare: nothing waits" "$(prepare_decide "$c0" false '[]' | jq -r .state)" "nothing"
+expect "prepare: yes stored starts" "$(prepare_decide '{"noFreeze":true,"yes":true}' false "$rows" | jq -r .state)" "start"
+expect "prepare: yes stored, still frozen: no start" "$(prepare_decide '{"noFreeze":true,"yes":true}' true "$rows" | jq -r .state)" "frozen"
+expect "prepare: args" "$(prepare_args '{"whenGreen":true,"args":["--only","web"]}' | paste -sd' ' -)" "--when-green --only web"
+expect "prepare: status without an entry" "$(env -u DEPLOYS_LIB bash ./deploys prepare status 2>&1 | head -c 24)" "No prepared deploy is sc"
+
 [ "$fails" = 0 ] && echo "all ok" || { echo "$fails failed"; exit 1; }
