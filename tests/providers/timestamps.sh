@@ -13,7 +13,7 @@ expect() { [ "$2" = "$3" ] && ok "$1" || fail "$1" "expected [$3], got [$2]"; }
 run() {  # run <jq var> <def name> <timestamp>
   DEPLOYS_LIB=1 PATH="/usr/bin:/bin:$PATH" HOME="$PWD" DEPLOYS_CONFIG="$(mktemp -d)" /bin/bash -c '. ./deploys; set +e; jq -n --arg v "$3" "${!1}"'"'"'$v | '"$2"''"'" _ "$1" "$2" "$3" 2>&1
 }
-for spec in "NETLIFY_JQ:t" "COOLIFY_JQ:t" "DIGITALOCEAN_JQ:t" "CF_PHASE:cf_t"; do
+for spec in "NETLIFY_JQ:t" "COOLIFY_JQ:t" "DIGITALOCEAN_JQ:t" "CF_PHASE:cf_t" "DENO_JQ:t" "FIREBASE_JQ:t" "FLY_JQ:t" "GHPAGES_JQ:t" "HEROKU_JQ:t" "KOYEB_JQ:t" "RAILWAY_JQ:t" "NORTHFLANK_JQ:t"; do
   var="${spec%%:*}"; fn="${spec#*:}"; name="${var%%_*}"
   for pair in "2026-11-05T10:00:00Z=1793872800" "2026-11-05T10:00:00.123456Z=1793872800" "2026-11-05T12:00:00+02:00=1793872800" \
               "2026-11-05T05:00:00-05:00=1793872800" "2026-11-05T10:00:00+00:00=1793872800" "not a date=null" "=null"; do
