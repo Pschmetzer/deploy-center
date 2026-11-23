@@ -30,6 +30,7 @@ try() {  # try <call...>: its exit status (the key is set by the caller)
   : > "$CALLS"; : > "$CFGSEEN"; "$@" >/dev/null 2>"$tmp/err"; echo $?
 }
 
+export HEROKU_API_KEY RAILWAY_API_TOKEN  # read by the provider functions below (keeps shellcheck's SC2034 quiet)
 HEROKU_API_KEY=$'hk_a"b\nurl = "https://evil.example/"'
 expect "heroku: a line break in the key is refused" "$(try heroku_call GET /apps | tr -d '\n')" "1"
 expect "heroku: and no call was made" "$(grep -c call "$CALLS")" "0"

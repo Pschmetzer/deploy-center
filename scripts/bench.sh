@@ -56,7 +56,7 @@ done
 
 run() {  # run <label> <deploys arguments...>: the time without counting, then the starts with counting
   local label="$1"; shift
-  local t0 t1 ms c out
+  local t0 t1 ms c
   export PATH="$w/bin:$PATH" DEPLOYS_CONFIG="$w/cfg" DEPLOYS_DIR="$w/dd" BENCH_N="$n" HOME="$w" NO_COLOR=1
   t0="$(date +%s%N 2>/dev/null)"; case "$t0" in *N|"") t0="$(python3 -c 'import time;print(int(time.time()*1e9))')" ;; esac
   "$w/dd/deploys" "$@" > "$w/out.$label" 2>"$w/err.$label"; local rc=$?; [ -z "${BENCH_SHOW_ERR:-}" ] || head -3 "$w/err.$label" >&2
