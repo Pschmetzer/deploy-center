@@ -111,6 +111,17 @@ printf '<urlset><url><loc>https://deploycenter.app/</loc></url><url><loc>https:/
 out="$(python3 "$repo/scripts/check-site.py" "$site" 2>&1)"; expect "check-site: a good site passes" "$?" 0
 out="$(python3 "$repo/scripts/check-links.py" "$site" 2>&1)"; expect "check-links: a good site passes" "$?" 0
 
+# --- check-a11y.py: the pages above have no skip link, no <main> and no footer ----------------
+out="$(python3 -I "$repo/scripts/check-a11y.py" "$site" 2>&1)"; expect "check-a11y: a page without skip link and landmarks fails" "$?" 1
+contains "check-a11y: names the skip link" "$out" "not a skip link"
+contains "check-a11y: names the missing main" "$out" "0 <main>"
+mkdir -p "$tmp/a11y/css"; cp "$repo/site/css/tokens.css" "$tmp/a11y/css/"
+printf '<!doctype html><html lang="en"><body><a class="skip" href="#main">Skip</a><main id="main"><h1>T</h1><h2>S</h2></main><footer>f</footer></body></html>\n' > "$tmp/a11y/index.html"
+out="$(python3 -I "$repo/scripts/check-a11y.py" "$tmp/a11y" 2>&1)"; expect "check-a11y: a page with skip link and landmarks passes" "$?" 0
+sed -i 's/--muted:#a3abbd/--muted:#555a66/' "$tmp/a11y/css/tokens.css"
+out="$(python3 -I "$repo/scripts/check-a11y.py" "$tmp/a11y" 2>&1)"; expect "check-a11y: low contrast in the tokens fails" "$?" 1
+contains "check-a11y: names the pair" "$out" "--muted on --bg"
+
 rm "$site/favicon.ico"
 out="$(python3 "$repo/scripts/check-site.py" "$site" 2>&1)"; expect "check-site: a missing rel=\"shortcut icon\" fails" "$?" 1
 contains "check-site: names it" "$out" "broken link /favicon.ico"
