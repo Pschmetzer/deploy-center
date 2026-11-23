@@ -29,6 +29,7 @@ idle:--days --json
 creds:--max-age --json
 certs:--days --json
 domains:--warn --json
+forecast:--warn --json
 secrets:--stdin --json
 plan:--when-green --since --json
 list:--platform --auto --manual --format --json

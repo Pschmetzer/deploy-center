@@ -50,6 +50,7 @@ No key is ever printed.
   deploys ignore <p> [\-\-undo] | \-\-list      leave a project out of changed and deploy\-changed
   deploys certs [\-\-days 14] [\-\-json]        TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out soon
   deploys domains [\-\-warn 30] [\-\-json]      custom domains and platform addresses with the days their TLS certificate has left; exit 1 inside \-\-warn
+  deploys forecast [\-\-warn 80] [\-\-json]     the month's build cost so far and where it ends (estimate), against budget; exit 1 when over
   deploys creds [\-\-max\-age 90] [\-\-json]     where each platform's key comes from, if it works, how old a keychain key is
   deploys idle [\-\-days 90] [\-\-json]         projects with no deploy for N days (candidates to pause)
   deploys list [\-\-platform <p>] [\-\-auto|\-\-manual] [\-\-format tsv] [\-\-json]   every project on every provider that is on, with its platform

@@ -46,4 +46,17 @@ expect "domains: a lower threshold" "$(domains_from 10 <<<"$tsv" | jq .problems)
 expect "domains: empty input" "$(domains_from 30 </dev/null | jq -c '{problems, n:(.domains|length)}')" '{"problems":0,"n":0}'
 expect "domains: bad --warn refused" "$(env -u DEPLOYS_LIB bash ./deploys domains --warn x >/dev/null 2>&1; echo $?)" "1"
 
+# --- forecast_from ---
+fnow=1799841600   # 2027-01-13 12:00 UTC: day 13 of 31
+fj="$(printf '%s\n' '{"at":"2027-01-05T10:00:00Z","platform":"vercel","name":"web","result":"live"}' '{"at":"2027-01-06T10:00:00Z","platform":"vercel","name":"web","result":"live"}' '{"at":"2027-01-07T10:00:00Z","platform":"vercel","name":"api","result":"other","detail":"Started from the terminal"}' '{"at":"2027-01-08T10:00:00Z","platform":"render","name":"old","result":"live"}' '{"at":"2026-12-30T10:00:00Z","platform":"vercel","name":"web","result":"live"}' '{"at":"2027-01-06T10:00:00Z","platform":"vercel","name":"web","result":"failed"}' 'junk')"
+f="$(forecast_from "$fnow" 13 30 80 <<<"$fj")"
+expect "forecast: projection by days" "$(jq -c '[.daysInMonth, .projectedUsd]' <<<"$f")" '[31,31]'
+expect "forecast: over the limit warns" "$(jq -r .warning <<<"$f")" "over"
+expect "forecast: near the limit" "$(forecast_from "$fnow" 13 35 80 <<<"$fj" | jq -r .warning)" "near"
+expect "forecast: under the limit" "$(forecast_from "$fnow" 13 100 80 <<<"$fj" | jq -r .warning)" "null"
+expect "forecast: spend unknown" "$(forecast_from "$fnow" null 30 80 <<<"$fj" | jq -c '[.projectedUsd, .warning]')" '[null,null]'
+expect "forecast: this month only, failures left out" "$(jq -c '[.projects[] | "\(.name)=\(.deploys)"]' <<<"$f")" '["web=2","api=1","old=1"]'
+expect "forecast: render has no estimate" "$(jq -c '[.projects[] | select(.platform == "render") | .estimateUsd]' <<<"$f")" '[null]'
+expect "forecast: no journal" "$(forecast_from "$fnow" 0 null 80 </dev/null | jq -c '.projects')" '[]'
+
 [ "$fails" = 0 ] && echo "all ok" || { echo "$fails failed"; exit 1; }
