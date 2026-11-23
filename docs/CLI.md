@@ -21,6 +21,9 @@ deploys doctor --fix [--json]           # what to do about each problem, as comm
 deploys digest [--days 7] [--json] [--no-savings]   # the last week from the journal: deploys, failures, rollbacks, busiest day, projects, and the saving of `ledger` (an estimate; --no-savings skips it, it needs the network)
 deploys timeline [--days 3] [--project <name>] [--limit 50] [--json]   # what happened, newest day first: deploys, failures, rollbacks, forced starts (from the journal, UTC; reads only)
 deploys recovery [--days 30] [--project <name>] [--json]   # how long a failure lasted until the next deploy of that project; an outage without a later deploy is "open"
+deploys health [--days 30] [--project <name>] [--no-ci] [--json]   # 0-100 per project, worst first (formula below); CI is read from GitHub/GitLab, --no-ci stays offline
+deploys weeks [--days 7] [--project <name>] [--json]   # the last --days days against the same number before: deploys, failure rate, typical recovery, open failures (from the journal; reads only)
+deploys export [--format csv|json] [--what journal|costs|all] [--days 30] [--project <name>] [--out <file>]   # journal and Vercel costs with a fixed schema (below); secrets in details masked, files 0600
 deploys streak [--days 90] [--project <name>] [--json]   # deploys in a row without a failure per project: now and longest (from the journal; reads only)
 deploys note <project> "text"           # one line in the journal (result `note`, 200 characters); it shows in `timeline`. A text that looks like a secret is refused. Touches no platform.
 deploys when [--days 90] [--by weekday|hour] [--json]   # on which weekday or hour of the day your deploys failed more often (UTC); a slot needs 5 tries to count
@@ -45,7 +48,7 @@ deploys list                            # every project on every provider that i
 ```
 
 `freeze` writes only the `deny` list of `window.json` (its `tz` and other keys stay) and starts nothing; it is allowed in observer mode, since it only closes times. A `window.json` that cannot be read is never overwritten.
-`--json` is on every command that lists something: `list`, `idle`, `certs`, `creds`, `plan`, `history`, `providers`, `window`, `freeze`, `digest`, `timeline`, `recovery`, `when`, `streak`, `doctor --fix`, `ignore --list`, `team list`, `scan list` and `autofix list`.
+`--json` is on every command that lists something: `list`, `idle`, `certs`, `creds`, `plan`, `history`, `providers`, `window`, `freeze`, `digest`, `timeline`, `recovery`, `when`, `health`, `weeks`, `export --format json`, `streak`, `doctor --fix`, `ignore --list`, `team list`, `scan list` and `autofix list`.
 
 ## Safe deploys ([SAFE-DEPLOY.md](SAFE-DEPLOY.md))
 
@@ -220,6 +223,26 @@ as `<name>.bak`). `deploys digest`, `simulate` and `ledger` take `--format markd
 the TLS certificate (`--cert-days N`), wait for a fresh service (`--warmup 30s`) and ask again while the connection is
 refused (`--retry-connrefused`); with several checks they run at the same time, and a check that got no answer says why
 (DNS, refused, timeout, TLS) in `checks[].why`.
+
+## Health score and export schema
+
+`deploys health` gives each project 0-100 from four parts of the journal (and CI):
+
+| Part | Points | Full points | Zero points |
+| --- | ---: | --- | --- |
+| Failures | 40 | no failed deploy in `--days` | 50% or more of the tries failed (linear between) |
+| Recovery | 25 | no failure, or a typical recovery of 1 hour or less | a failure still open, or 72 hours or more |
+| Freshness | 20 | last deploy 7 days ago or less (whole journal) | 90 days or more |
+| CI | 15 | CI of the branch head green, or no checks | red (pending gives 10) |
+
+A part without data (no deploy in the window, no deploy ever, CI unknown or `--no-ci`) is left out and the others are scaled to 100; with no part at all the score is `null`. 80 or more is `good`, 50 or more `watch`, below `poor`. Projects without a deploy or failure in the last 365 days are not listed. The score is a hint from your own history, not a verdict.
+
+`deploys export` writes these columns, always in this order (new columns are only added at the end):
+
+- `journal`: `at`, `platform`, `name`, `result`, `detail` (UTC; keys and tokens in `detail` are masked like a log; a cell that starts with `=`, `+`, `-` or `@` gets a `'` in front in CSV).
+- `costs`: `day`, `total_usd`, `build_usd` (Vercel billing, up to 90 days; without Vercel the rows are empty and the JSON says why).
+
+JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[...],"reason":null}}`. With `--out` the file is written with mode 0600; `--what all --format csv` writes `journal.csv` and `costs.csv` into the folder given.
 
 ## Exit codes
 
