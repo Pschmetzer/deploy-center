@@ -64,7 +64,7 @@ Homebrew 6 fragt einmal, ob du einem fremden Tap vertraust (`brew trust`). Ohne 
 | GitHub CLI `gh` | optional: was wartet (*Neue Änderungen*, Commits und PRs) | `brew install gh`, dann `gh auth login` |
 
 Die App findet `vercel` aus nvm, volta oder fnm nur, wenn deine Login-Shell sie einrichtet (`~/.zprofile`, nicht nur `~/.zshrc`).
-Siehe [Fehlerbehebung](docs/TROUBLESHOOTING.de.md).
+Siehe [Fehlerbehebung](docs/TROUBLESHOOTING.de.md#vercel-ist-installiert-nvm-volta-fnm-aber-die-app-findet-es-nicht).
 </details>
 
 ## Warum
