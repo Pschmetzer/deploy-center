@@ -323,7 +323,13 @@ export function parseTimeline(stdout: string): TimelineEntry[] | null {
     const r = rec(e);
     const at = r && str(r.at);
     if (!r || !at) continue;
-    out.push({ at, platform: str(r.platform) ?? "", name: str(r.name) ?? "?", kind: str(r.kind) ?? "other", detail: plain(str(r.detail) ?? "") });
+    out.push({
+      at,
+      platform: str(r.platform) ?? "",
+      name: str(r.name) ?? "?",
+      kind: str(r.kind) ?? "other",
+      detail: plain(str(r.detail) ?? ""),
+    });
   }
   return out;
 }

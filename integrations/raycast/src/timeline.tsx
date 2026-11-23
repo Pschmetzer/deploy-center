@@ -53,7 +53,10 @@ export default function Timeline() {
                   actions={
                     <ActionPanel title={e.name}>
                       <Action.OpenInBrowser title="Show in Deploy Center" url={deployCenterURL(e.name)} />
-                      <Action.CopyToClipboard title="Copy Line" content={`${e.at} ${e.platform}:${e.name} ${e.kind} ${e.detail}`.trim()} />
+                      <Action.CopyToClipboard
+                        title="Copy Line"
+                        content={`${e.at} ${e.platform}:${e.name} ${e.kind} ${e.detail}`.trim()}
+                      />
                       <Action title="Refresh" icon={Icon.ArrowClockwise} onAction={revalidate} />
                     </ActionPanel>
                   }

@@ -140,15 +140,33 @@ test("plain: control characters out, long text cut", () => {
 });
 
 test("parseTimeline: entries of the CLI answer, text cleaned, other text refused", () => {
-  const out = JSON.stringify({ days: 3, total: 2, entries: [{ at: "2026-11-20T09:00:00Z", platform: "vercel", name: "app-web", kind: "failed", detail: "Build\nfailed" }, { name: "x" }] });
-  assert.deepEqual(parseTimeline(out), [{ at: "2026-11-20T09:00:00Z", platform: "vercel", name: "app-web", kind: "failed", detail: "Build failed" }]);
+  const out = JSON.stringify({
+    days: 3,
+    total: 2,
+    entries: [
+      { at: "2026-11-20T09:00:00Z", platform: "vercel", name: "app-web", kind: "failed", detail: "Build\nfailed" },
+      { name: "x" },
+    ],
+  });
+  assert.deepEqual(parseTimeline(out), [
+    { at: "2026-11-20T09:00:00Z", platform: "vercel", name: "app-web", kind: "failed", detail: "Build failed" },
+  ]);
   assert.equal(parseTimeline("not json"), null);
   assert.equal(parseTimeline("[]"), null);
 });
 
 test("parseTimeline: entries of the CLI answer, text cleaned, other text refused", () => {
-  const out = JSON.stringify({ days: 3, total: 2, entries: [{ at: "2026-11-20T09:00:00Z", platform: "vercel", name: "app-web", kind: "failed", detail: "Build\nfailed" }, { name: "x" }] });
-  assert.deepEqual(parseTimeline(out), [{ at: "2026-11-20T09:00:00Z", platform: "vercel", name: "app-web", kind: "failed", detail: "Build failed" }]);
+  const out = JSON.stringify({
+    days: 3,
+    total: 2,
+    entries: [
+      { at: "2026-11-20T09:00:00Z", platform: "vercel", name: "app-web", kind: "failed", detail: "Build\nfailed" },
+      { name: "x" },
+    ],
+  });
+  assert.deepEqual(parseTimeline(out), [
+    { at: "2026-11-20T09:00:00Z", platform: "vercel", name: "app-web", kind: "failed", detail: "Build failed" },
+  ]);
   assert.equal(parseTimeline("not json"), null);
   assert.equal(parseTimeline("[]"), null);
 });
