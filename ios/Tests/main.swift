@@ -460,5 +460,36 @@ do {
           && NotePlan.identifier(id: nil, project: nil) == "deploy-", "note plan: the same news has the same identifier")
 }
 
+// MARK: Timeline
+
+do {
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+    let now = Date(timeIntervalSince1970: 1_800_000_000)             // a fixed moment
+    let day: TimeInterval = 86400
+    let startToday = cal.startOfDay(for: now)
+    func rec(_ id: String, _ state: String, _ at: Date?) -> DeployRecord { DeployRecord(id: id, state: state, at: at) }
+    let a = DeployTimeline.Source(key: "vercel/a", name: "Alpha", records: [
+        rec("1", "READY", now.addingTimeInterval(-3600)), rec("2", "ERROR", startToday.addingTimeInterval(-3600)),
+        rec("3", "READY", startToday.addingTimeInterval(-day * 3)), rec("old", "READY", startToday.addingTimeInterval(-day * 9)),
+        rec("none", "READY", nil)])
+    let b = DeployTimeline.Source(key: "render/b", name: "Beta", records: [
+        rec("1", "live", now.addingTimeInterval(-60)), rec("fut", "live", now.addingTimeInterval(7200))])
+    let days = DeployTimeline.build([a, b], now: now, calendar: cal)
+    check(days.count == 3, "timeline: three days with deploys")
+    check(days.first?.label == .today && days.first?.items.count == 3, "timeline: today first, a future time counts as today")
+    check(days.first?.items.map(\.id).first == "render/b/fut" || days.first?.items.first?.projectName == "Beta", "timeline: newest first")
+    check(days.dropFirst().first?.label == .yesterday && days.dropFirst().first?.failures == 1, "timeline: yesterday, with its failure counted")
+    if case .date(let d)? = days.last?.label { check(d == startToday.addingTimeInterval(-day * 3), "timeline: an older day carries its date") }
+    else { check(false, "timeline: an older day carries its date") }
+    let ids = days.flatMap(\.items).map(\.id)
+    check(!ids.contains("vercel/a/old") && !ids.contains("vercel/a/none"), "timeline: older than the window and undated are left out")
+    check(Set(ids).count == ids.count && ids.contains("vercel/a/1") && ids.contains("render/b/1"), "timeline: the same deploy id in two projects stays two items")
+    check(DeployTimeline.build([a, b], now: now, calendar: cal, days: 7, limit: 2).flatMap(\.items).count == 2, "timeline: the limit keeps the newest")
+    check(DeployTimeline.build([a, b], now: now, calendar: cal, days: 1).count == 1, "timeline: one day is today only")
+    check(DeployTimeline.build([], now: now, calendar: cal).isEmpty && DeployTimeline.build([a], now: now, calendar: cal, days: 0).isEmpty, "timeline: nothing in, nothing out")
+    let tie = DeployTimeline.build([DeployTimeline.Source(key: "x", name: "X", records: [rec("b", "READY", now), rec("a", "READY", now)])], now: now, calendar: cal)
+    check(tie.first?.items.map(\.id) == ["x/a", "x/b"], "timeline: the same time sorts by id, so the order is stable")
+}
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
