@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TLS-Zertifikate finden, die bald ablaufen · Deploy Center</title>
+<meta name="description" content="Prüfe das TLS-Zertifikat jeder Projektadresse mit einem Befehl, bekomme einen Exit-Code für Zeitplaner oder CI und sieh, wer nicht erreichbar ist, mit deploys certs.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/tls-certificate-expiry-check/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/tls-certificate-expiry-check/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-23">
+<meta property="article:published_time" content="2026-11-23">
+<meta property="og:title" content="TLS-Zertifikate finden, die bald ablaufen · Deploy Center">
+<meta property="og:description" content="Prüfe das TLS-Zertifikat jeder Projektadresse mit einem Befehl, bekomme einen Exit-Code für Zeitplaner oder CI und sieh, wer nicht erreichbar ist, mit deploys certs.">
+<meta property="og:url" content="https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="TLS-Zertifikate finden, die bald ablaufen · Deploy Center">
+<meta name="twitter:description" content="Prüfe das TLS-Zertifikat jeder Projektadresse mit einem Befehl, bekomme einen Exit-Code für Zeitplaner oder CI und sieh, wer nicht erreichbar ist, mit deploys certs.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "TLS-Zertifikate finden, die bald ablaufen",
+  "description": "Prüfe das TLS-Zertifikat jeder Projektadresse mit einem Befehl, bekomme einen Exit-Code für Zeitplaner oder CI und sieh, wer nicht erreichbar ist, mit deploys certs.",
+  "url": "https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/",
+  "mainEntityOfPage": "https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/",
+  "datePublished": "2026-11-23",
+  "dateModified": "2026-11-23",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Startet deploys certs einen Deploy?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Nein. Es liest die Zertifikate und gibt aus. Nichts startet einen Build, einen Deploy oder einen Rollback ohne Klick oder einen Befehl mit --yes."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Welche Adressen prüft es?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Die Adresse jedes Projekts, das Deploy Center kennt, und die eigene Domain des Anbieters dazu."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Warum ist ein Projekt unknown?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Der Host hat nicht geantwortet: DNS, eine abgelehnte Verbindung oder eine Zeitüberschreitung. Es zählt nicht als Fehler."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Gibt es es als JSON?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. deploys certs --json gibt einen JSON-Wert für ein Skript aus."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Anleitungen",
+    "item": "https://deploycenter.app/de/anleitungen/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Zertifikatsablauf",
+    "item": "https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "TLS-Zertifikate finden, die bald ablaufen",
+  "description": "Prüfe das TLS-Zertifikat jeder Projektadresse mit einem Befehl, bekomme einen Exit-Code für Zeitplaner oder CI und sieh, wer nicht erreichbar ist, mit deploys certs.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Aufrufen",
+    "url": "https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/#run"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Den Exit-Code nutzen",
+    "url": "https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/#exit"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Unbekannt ist nicht fehlgeschlagen",
+    "url": "https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/#unknown"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 4,
+    "name": "Auch einen Deploy prüfen",
+    "url": "https://deploycenter.app/de/anleitungen/tls-zertifikat-ablauf-pruefen/#after"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/anleitungen/">Anleitungen</a></p>
+<h1>TLS-Zertifikate finden, die bald ablaufen</h1>
+<p class="answer"><code>deploys certs</code> prüft das TLS-Zertifikat jeder Projektadresse, auch die eigene Domain des Anbieters, und endet mit <code>1</code>, wenn eines innerhalb der eingestellten Tage abläuft. Ein Host, den es nicht erreicht, heißt <b>unknown</b> (unbekannt) und gilt nicht als Fehler.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-23">23. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/guides/tls-certificate-expiry-check/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="run">1. Aufrufen</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys certs                 # warnt, wenn ein Zertifikat in 14 Tagen abläuft
+deploys certs --days 30
+deploys certs --json</code></pre>
+<p>Es fragt jede Adresse einmal und liest das Zertifikat. Es deployt, ändert oder erneuert nichts.</p>
+<h2 id="exit">2. Den Exit-Code nutzen</h2>
+<p>Der Exit-Code ist <code>0</code>, wenn nichts bald abläuft, und <code>1</code>, wenn doch. Das passt zu einem Zeitplaner, einem CI-Job oder einem Schritt vor dem Deploy:</p>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys certs --days 21 || echo "ein Zertifikat läuft in 21 Tagen ab"</code></pre>
+<p>Lege es in einen wöchentlichen Job und schicke den Fehler an den Chat, den du ohnehin liest. Anbieter wie Vercel, Netlify und Render erneuern ihre Zertifikate selbst. Meist läuft eine eigene Domain mit eigenem Zertifikat ab, oder ein DNS-Eintrag zeigt woandershin.</p>
+<h2 id="unknown">3. Unbekannt ist nicht fehlgeschlagen</h2>
+<p>Ein Host, der nicht antwortet (DNS, abgelehnt, Zeitüberschreitung), erscheint als <b>unknown</b>. Das setzt den Exit-Code nicht auf 1, ein Projekt, das offline ist, weckt dich also nachts nicht. Sieh dir die unbekannten selbst an, oft ist es ein stillgelegtes Projekt. <code>deploys ignore &lt;project&gt;</code> lässt so ein Projekt weg.</p>
+<h2 id="after">4. Auch einen Deploy prüfen</h2>
+<p>Nach einem Deploy kann <code>deploys verify</code> das Zertifikat im selben Lauf prüfen, siehe <a href="/de/anleitungen/automatischer-rollback-nach-deploy/">automatisch zurückrollen</a>:</p>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys verify web --cert-days 14</code></pre>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Startet deploys certs einen Deploy?</summary><p>Nein. Es liest die Zertifikate und gibt aus. Nichts startet einen Build, einen Deploy oder einen Rollback ohne Klick oder einen Befehl mit <code>--yes</code>.</p></details>
+  <details><summary>Welche Adressen prüft es?</summary><p>Die Adresse jedes Projekts, das Deploy Center kennt, und die eigene Domain des Anbieters dazu.</p></details>
+  <details><summary>Warum ist ein Projekt unknown?</summary><p>Der Host hat nicht geantwortet: DNS, eine abgelehnte Verbindung oder eine Zeitüberschreitung. Es zählt nicht als Fehler.</p></details>
+  <details><summary>Gibt es es als JSON?</summary><p>Ja. <code>deploys certs --json</code> gibt einen JSON-Wert für ein Skript aus.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/cli/" lang="en">CLI reference</a> · <a href="/docs/troubleshooting/" lang="en">Troubleshooting</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/de/anleitungen/vor-dem-deploy-pruefen/">Prüfen, was ein Deploy ausliefert: Risiko, Diff, Secrets</a></li>
+  <li><a href="/de/anleitungen/deploy-statusseite-einrichten/">Eine Statusseite für deine Deploys einrichten</a></li>
+  <li><a href="/de/anleitungen/build-minuten-sparen/">Build-Minuten sparen, bei jedem Hosting-Anbieter</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>
