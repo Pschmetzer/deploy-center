@@ -712,7 +712,9 @@ final class PhoneStore: ObservableObject {
         running[p.key] = rollback ? "rollback" : "queued"
         // Kept while this loop runs: an app that is killed meanwhile follows the deploy again at its next launch.
         if !rollback { FollowedRuns.add(key: p.key, id: id) }
-        defer { FollowedRuns.remove(p.key) }
+        // Cleared when this follow ends, however it ends: a cancel mark that was never used (the deploy finished first)
+        // must not make a later canceled build of this project look like the person's own cancel.
+        defer { FollowedRuns.remove(p.key); userCanceled.remove(p.key) }
         let keep = KeepAlive.start(title: rollback ? L("Rolling back \(p.name)", "\(p.name) wird zurückgerollt") : L("Deploying \(p.name)", "\(p.name) wird deployt"),
                                    subtitle: p.provider.rawValue)
         let live = LiveDeploy.start(p, rollback: rollback)

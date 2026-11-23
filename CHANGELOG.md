@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- iPhone app (fix): a cancel of a followed deploy that came too late (the deploy had finished) no longer hides the failure of a later canceled build of the same project.
 - iPhone app (Dynamic Type): the four numbers above the list and the "Recent deploys" rows follow one set of rules, tested for every text size; at accessibility sizes the time moves under the project name and titles are no longer cut off.
 - Providers: Deno Deploy lists every project of the organization, not only the first 100 (it reads the next page while a page is full).
 - Website: a guide (English and German) for `deploys doctor` and `creds`.
