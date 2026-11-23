@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Mac app: "Link repo …" on a project without a Git source names its repo (stays on this Mac) so its commits show; hovering a waiting project shows who pushed, when and how many files changed. The two figures of the savings banner open popovers that show where they come from.
+
+## 0.13.0 - 2026-11-23
+
+### Highlights
+
+- Nightly security check on every repo (OSV-Scanner, gitleaks, Semgrep), with a history view and freeze import from an ICS calendar
+- Mac app: shortcut sheet (⌘/), why-is-this-waiting line per row, error-pattern hints, cost forecast, several accounts per host, health score
+- iPhone app: timeline of recent deploys, failure-cause hint, open outages, Dynamic Type rules
+- New host Northflank (opt-in); Koyeb and Deno Deploy read every page; more reliable times and escaped keys on other hosts
+- Timeline and recovery in MCP, Raycast, Alfred, the widget and VS Code; German docs for every page, a troubleshooting page and a security model page
+
+### All changes
+
 - `changed`, `deploy-changed` and `plan`: when no platform could be read at all, they now stop with the error (exit 1) instead of printing a stray table header, "Would deploy these .", `command not found` lines or a jq error (exit 2).
 - Budget: when Vercel billing gives no answer at all (no key, not logged in), `deploys budget` and `deploy-changed --yes` now say the spending could not be read (a warning, or a stop with `--strict`) instead of ending with a jq error.
 - Widgets: while a build runs the widgets look again every 5 minutes (instead of 30), and once the picture is out of date (the app has not run for three hours) every hour, which spares the daily reload budget.
@@ -41,6 +55,8 @@
 - Costs sheet: a forecast for the month per project with a warning when a project's budget will be passed, and what a project would cost on the other host (your prices per build minute, `deploys price`).
 - Several accounts per host (Settings > Platforms): keys only in the keychain, one click to switch.
 - Health score per project (0-100, the formula of `deploys health`) in Settings > Platforms; the weekly report compares this week with the week before; the iPhone app shows open outages and the average health.
+- New read-only commands: `deploys health` (0-100 per project from failure rate, recovery time, age of the last deploy and CI; the formula is in docs/CLI.md), `deploys weeks` (the last week against the one before) and `deploys export` (journal and costs as CSV or JSON, fixed columns, secrets masked, files private).
+
 - Nightly check (Settings > Claude, `deploys nightly`): OSV-Scanner, gitleaks and Semgrep on every repo once a night; the first check of a repo is its starting point, then only new findings count, one notification. Optional: Claude gets only the new findings in a bug scan that opens a PR (at most 2 a night, never merges or deploys). Leaked keys are only reported. Optional weekly review: once a week Claude reads each repo's changes since its last review and looks for bugs they brought in (shares the nightly limit with the fixes). All switches are off by default.
 
 ## 0.12.0 - 2026-11-21

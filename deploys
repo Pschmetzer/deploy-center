@@ -62,6 +62,9 @@
 #   deploys streak [--days 90] [--project <p>]   deploys in a row without a failure, per project
 #   deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
 #   deploys when [--days 90] [--by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
+#   deploys health [--days 30] [--project <p>] [--no-ci]   0-100 per project from failures, recovery, age of the last deploy, CI
+#   deploys weeks [--days 7] [--project <p>]       the last days against the same number before: deploys, failure rate, recovery
+#   deploys export [--format csv|json] [--what journal|costs|all] [--days 30] [--out <file>]   journal and costs, fixed columns, secrets masked
 #   deploys doctor --fix [--json]             what to do about each problem (shown only, nothing is run)
 #   --force "why"                             deploy inside a closed window; the reason goes to the journal
 #
@@ -452,6 +455,10 @@ if [ -f "$LIB_DIR/fixes.sh" ]; then . "$LIB_DIR/fixes.sh"; fi
 # timeline, recovery and when (lib/insights.sh): read-only views of the journal.
 # shellcheck source=lib/insights.sh
 if [ -f "$LIB_DIR/insights.sh" ]; then . "$LIB_DIR/insights.sh"; fi
+# shellcheck source=lib/health.sh
+if [ -f "$LIB_DIR/health.sh" ]; then . "$LIB_DIR/health.sh"; fi
+# shellcheck source=lib/export.sh
+if [ -f "$LIB_DIR/export.sh" ]; then . "$LIB_DIR/export.sh"; fi
 # streak and note (lib/notes.sh; it uses INSIGHTS_JQ of lib/insights.sh).
 # shellcheck source=lib/notes.sh
 if [ -f "$LIB_DIR/notes.sh" ]; then . "$LIB_DIR/notes.sh"; fi
@@ -3858,6 +3865,10 @@ case "${1:-} ${2:-}" in
     declare -F when_main >/dev/null || die "lib/insights.sh is not next to deploys."
     when_main "${@:2}" ;;
 
+  "health "*|"weeks "*|"export "*)
+    declare -F "${1}_main" >/dev/null || die "lib/health.sh and lib/export.sh must be next to deploys."
+    "${1}_main" "${@:2}" ;;
+
   "streak "*)
     declare -F streak_main >/dev/null || die "lib/notes.sh is not next to deploys."
     streak_main "${@:2}" ;;
@@ -4029,8 +4040,7 @@ case "${1:-} ${2:-}" in
       echo "$held" | jq -r '.[] | "  \(.platform)  \(.name)  held by the rule \"\(.rule.name)\""'
     fi
     if [ "$n" = "0" ]; then
-      # Nothing could be read: a closed window is still named first (it stops a start before a platform is asked).
-      [ "$rc" = 0 ] || { [ -z "$yes" ] || freeze_check; die "Could not tell what has changes (see above). Nothing was started."; }
+      [ "$rc" = 0 ] || { [ -z "$yes" ] || freeze_check; die "Could not tell what has changes (see above). Nothing was started."; }   # a closed window is named first
       if [ "$json" = 1 ]; then echo "$held" | jq '.'; else echo "Nothing to deploy."; fi; exit 0
     fi
     if [ -z "$yes" ]; then
