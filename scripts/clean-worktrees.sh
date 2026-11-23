@@ -32,7 +32,7 @@ git -C "$main" fetch -q origin 2>/dev/null || echo "clean-worktrees: fetch faile
 cwds="$(lsof -a -d cwd -Fn -u "$(id -u)" 2>/dev/null | sed -n 's/^n//p')"
 now="$(date +%s)"
 kept=0 stale=0 removed=0
-mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || echo 0; }   # GNU first: its `stat -f` is something else
 
 while IFS= read -r wt; do
   [ -n "$wt" ] || continue
