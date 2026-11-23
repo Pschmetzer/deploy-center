@@ -437,10 +437,23 @@ struct SavingsEntry: View {
 
     private func ledgerLine(_ l: LedgerReport) -> some View {
         // No green bar while nothing is saved (or its size is not known yet).
-        bar(icon: "leaf", text: l.bannerText, button: L("Ledger …", "Bilanz …"), neutral: l.savedAmount == nil) { sheet = .ledger }
+        bar(icon: "leaf", text: l.bannerText, button: L("Ledger …", "Bilanz …"), neutral: l.savedAmount == nil, figures: figures(l)) { sheet = .ledger }
     }
 
-    private func bar(icon: String, text: String, button: String, neutral: Bool = false, close: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
+    /// "≈ $4.20 saved since 3 Nov · 12 builds skipped" with both figures opening a popover; nil while no amount is known.
+    private func figures(_ l: LedgerReport) -> AnyView? {
+        guard let a = l.savedAmount else { return nil }
+        let since = SavingsFormat.day(l.since), n = SavingsFormat.count(l.skipped)
+        return AnyView(HStack(spacing: 4) {
+            FigureButton(title: a, lines: SavingsDetail.amountLines(l))
+            Text(L("saved since \(since) ·", "gespart seit \(since) ·")).font(.callout)
+            FigureButton(title: L(counted(n, "build", "builds"), counted(n, "Build", "Builds")),
+                         lines: SavingsDetail.skippedLines(l, mask: { Demo.mask($0) }))
+            Text(L("skipped", "übersprungen")).font(.callout)
+        }.accessibilityElement(children: .contain))
+    }
+
+    private func bar(icon: String, text: String, button: String, neutral: Bool = false, figures: AnyView? = nil, close: (() -> Void)? = nil, action: @escaping () -> Void) -> some View {
         HStack(spacing: 8) {
             Button { collapsed.toggle() } label: { Image(systemName: collapsed ? "chevron.right" : "chevron.down").frame(width: 10) }
                 .buttonStyle(.borderless)
@@ -452,7 +465,7 @@ struct SavingsEntry: View {
                 Text(L("Savings", "Ersparnis")).font(.callout).foregroundStyle(.secondary)
                 Spacer()
             } else {
-                Text(text).font(.callout)
+                if let figures { figures } else { Text(text).font(.callout) }
                 Spacer()
                 Button(button, action: action).buttonStyle(.link)
             }

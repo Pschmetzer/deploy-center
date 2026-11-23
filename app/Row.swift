@@ -19,6 +19,13 @@ struct Row: View {
     var queueText: String? = nil
     /// "Why is this waiting?" (WaitReason), only for a row that waits.
     var waitWhy: String? = nil
+    /// Hover on a waiting row: who pushed, when, how many files (loaded when asked).
+    var loadHover: (() async -> [String])? = nil
+    /// "Link repo …" on a project the platform has no Git source for.
+    var onLinkRepo: (() -> Void)? = nil
+    @State private var hoverLines: [String] = []
+    @State private var showHover = false
+    @State private var hoverTask: Task<Void, Never>?
     var search = ""
     var autofix: RowAutofix? = nil
     var allowedUntil: Date? = nil
@@ -145,6 +152,23 @@ struct Row: View {
         }
         .padding(.vertical, compact ? 1 : 4)
         .contentShape(Rectangle())
+        .onHover { inside in
+            hoverTask?.cancel()
+            guard inside, item.hasNewCommits, let loadHover else { showHover = false; return }
+            hoverTask = Task {
+                try? await Task.sleep(nanoseconds: 700_000_000)
+                guard !Task.isCancelled else { return }
+                let l = await loadHover()
+                guard !Task.isCancelled, !l.isEmpty else { return }
+                hoverLines = l; showHover = true
+            }
+        }
+        .popover(isPresented: $showHover, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(hoverLines, id: \.self) { Text($0).font(.callout) }
+            }
+            .padding(10)
+        }
         // Not dimmed as a whole (the text would fall under 3:1): the tick is faint and a line says why.
         .onTapGesture { if !item.state.isActive { toggle() } }
         // A double click opens the details; the two single clicks inside it tick and untick again.
@@ -163,8 +187,15 @@ struct Row: View {
                 .help(Demo.scrub(m, items: [item]))
         default:
             if !item.deployable {
-                Text(L("Cannot be deployed here (no Git source to build from)", "Hier nicht deploybar (keine Git-Quelle zum Bauen)"))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(L("Cannot be deployed here (no Git source to build from)", "Hier nicht deploybar (keine Git-Quelle zum Bauen)"))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    if let onLinkRepo, item.repo == nil {
+                        Button(L("Link repo …", "Repo verknüpfen …"), action: onLinkRepo).buttonStyle(.link).font(.caption)
+                            .help(L("Tell Deploy Center which repo this project is, to see its commits. Stays on this Mac; it does not make the project deployable.",
+                                    "Deploy Center sagen, zu welchem Repo das Projekt gehört, um seine Commits zu sehen. Bleibt auf diesem Mac; das Projekt wird dadurch nicht deploybar."))
+                    }
+                }
             }
         }
     }
@@ -185,6 +216,7 @@ struct Row: View {
         .accessibilityAction { if item.deployable && !item.state.isActive { toggle() } }
         .accessibilityActions {
             if let showDetails { Button(L("Details", "Details"), action: showDetails) }
+            if let onLinkRepo, !item.deployable, item.repo == nil { Button(L("Link repo", "Repo verknüpfen"), action: onLinkRepo) }
             if let showLog { Button(L("Build log", "Build-Log"), action: showLog) }
             if case .failed = item.state, let onRetry { Button(L("Try again", "Nochmal versuchen"), action: onRetry) }
             if let onAutofix, !autofixBusy { Button(L("Fix with Claude", "Mit Claude beheben"), action: onAutofix) }

@@ -39,6 +39,9 @@ freeze:status add import remove clear --json
 digest:--days --json --no-savings --format
 timeline:--days --project --limit --json
 recovery:--days --project --json
+health:--days --project --no-ci --json
+weeks:--days --project --json
+export:--format --what --days --project --out
 streak:--days --project --json
 when:--days --by --json
 savings:--format --json

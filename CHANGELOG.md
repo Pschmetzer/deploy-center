@@ -2,8 +2,12 @@
 
 ## Unreleased
 
+<<<<<<< HEAD
 - Guard: the notification says why auto-deploy was turned off ("its allowance ended", or "auto-deploy was on and no allowance covers it") and what went wrong when a switch failed (the first error, short, tokens masked); `guard status --json` has a `reason` per action.
 - Fix: `deploy-changed --yes` that could not read anything names a closed deploy window first again (it said "Could not tell" before the window was checked).
+=======
+- Mac app: "Link repo …" on a project without a Git source names its repo (stays on this Mac) so its commits show; hovering a waiting project shows who pushed, when and how many files changed. The two figures of the savings banner open popovers that show where they come from.
+>>>>>>> origin/main
 
 ## 0.13.0 - 2026-11-23
 
@@ -56,6 +60,8 @@
 - Costs sheet: a forecast for the month per project with a warning when a project's budget will be passed, and what a project would cost on the other host (your prices per build minute, `deploys price`).
 - Several accounts per host (Settings > Platforms): keys only in the keychain, one click to switch.
 - Health score per project (0-100, the formula of `deploys health`) in Settings > Platforms; the weekly report compares this week with the week before; the iPhone app shows open outages and the average health.
+- New read-only commands: `deploys health` (0-100 per project from failure rate, recovery time, age of the last deploy and CI; the formula is in docs/CLI.md), `deploys weeks` (the last week against the one before) and `deploys export` (journal and costs as CSV or JSON, fixed columns, secrets masked, files private).
+
 - Nightly check (Settings > Claude, `deploys nightly`): OSV-Scanner, gitleaks and Semgrep on every repo once a night; the first check of a repo is its starting point, then only new findings count, one notification. Optional: Claude gets only the new findings in a bug scan that opens a PR (at most 2 a night, never merges or deploys). Leaked keys are only reported. Optional weekly review: once a week Claude reads each repo's changes since its last review and looks for bugs they brought in (shares the nightly limit with the fixes). All switches are off by default.
 
 ## 0.12.0 - 2026-11-21
