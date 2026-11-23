@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Mac app: the menu bar says "5 waiting, 2 failed" and lists the failed projects; the "Claude found" hint says what connecting gives and never comes back after you close it.
+
 ## 0.13.0 - 2026-11-23
 
 ### Highlights
