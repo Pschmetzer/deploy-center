@@ -30,6 +30,7 @@ creds:--max-age --json
 certs:--days --json
 domains:--warn --json
 forecast:--warn --json
+group:list add remove run --yes --preview --json
 env-diff:--json
 secrets:--stdin --json
 plan:--when-green --since --json

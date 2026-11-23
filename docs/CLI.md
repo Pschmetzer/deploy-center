@@ -18,6 +18,7 @@ deploys certs [--days 14] [--json]      # TLS certificate of every project's add
 deploys domains [--warn 30] [--json]    # custom domains apart from the platform's own addresses, with the days their TLS certificate has left; exit 1 inside --warn (certificate only, no registration lookup)
 deploys forecast [--warn 80] [--json]   # this month's build cost so far, projected to the end of the month (an estimate: Vercel billing, shared by the journal's deploys; Render has no billing API), with a warning near the `budget` limit; exit 1 when over
 deploys env-diff <project> [--json]    # variable NAMES that exist in production but not in preview and the other way round (Vercel; values are never read into output). Exit 1 when they differ; hosts without a preview/production split say so
+deploys group list | add <name> <p>... | remove <name> | run <name> [--preview] [--yes]   # your own ordered groups (groups.json in the config folder): `run` deploys one member after the other, waits until each is live and stops at the first failure. Without --yes it asks on a terminal and otherwise only shows the order. Team groups: `deploys deploy group:<name>`
 deploys creds [--max-age 90] [--json]   # per platform: where its key comes from (environment, keychain, login), if it works, how old a keychain key is. Reads only; never shows a key.
 deploys doctor --text                   # one line each (ok or the problem), with the fix
 deploys doctor --fix [--json]           # what to do about each problem, as commands for you to type; shows only, runs and changes nothing

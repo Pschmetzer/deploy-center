@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `deploys group`: your own ordered groups ("first api, then web"); a run waits for each member and stops at the first failure, and never starts without `--yes` or a "y" on a terminal.
 - `deploys env-diff <project>`: environment variable names in production but not in preview (Vercel), names only, never values.
 - `deploys forecast`: this month's build cost so far, projected to month end and shared by project (an estimate), with a warning near the `budget` limit.
 ## 0.13.0 - 2026-11-23

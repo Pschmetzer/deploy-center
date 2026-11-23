@@ -71,4 +71,17 @@ expect "env-diff: a value is not in the text" "$(envdiff_print web <<<"$e" | gre
 expect "env-diff: same names" "$(envdiff_from <<<'[{"key":"A","targets":["production","preview"]}]' | jq .same)" "true"
 expect "env-diff: a single string target" "$(envdiff_from <<<'[{"key":"A","targets":"production"}]' | jq -c .production)" "1"
 
+# --- groups ---
+g="$(groups_add_json '{}' api api web)"
+expect "group: add keeps the order" "$(jq -c .api <<<"$g")" '["api","web"]'
+expect "group: add replaces and keeps others" "$(groups_add_json "$g" site a | jq -c 'keys')" '["api","site"]'
+expect "group: remove" "$(groups_remove_json "$g" api | jq -c .)" '{}'
+expect "group: print" "$(groups_print <<<"$g")" "api: api -> web"
+expect "group: print empty" "$(groups_print <<<'{}' | head -c 15)" "No groups yet: "
+gcli() { env -u DEPLOYS_LIB bash ./deploys "$@"; }
+expect "group: add" "$(gcli group add stack api web >/dev/null 2>&1; jq -c .stack "$DEPLOYS_CONFIG/groups.json")" '["api","web"]'
+expect "group: run without --yes and without a terminal starts nothing" "$(gcli group run stack 2>&1 | grep -c 'Nothing was started')" "1"
+expect "group: an unknown group is refused" "$(gcli group run nope >/dev/null 2>&1; echo $?)" "1"
+expect "group: a bad name is refused" "$(gcli group add 'a b' x y >/dev/null 2>&1; echo $?)" "1"
+
 [ "$fails" = 0 ] && echo "all ok" || { echo "$fails failed"; exit 1; }
