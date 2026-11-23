@@ -337,6 +337,11 @@ deploy window and the budget still count); `notify` only shows in `rules check`.
 without a condition is ignored. `deploys rules check [--json]` shows each rule against each
 waiting project: `[{rule, index, project, matched, action, unmet}]`.
 
+Per-project overrides tune one project without a second rule: `"overrides": {"vercel/docs": {"minAgeHours": 1, "skip": ["api waits a day"]}}`.
+The key is `<platform>/<name>` (`*` matches any part; every match applies, in file order). A number or flag the rule already has
+(`minAgeHours`, `minAgeDays`, `minCommits`, `minPRs`, `ciGreen`, `onlyPaths`, `paths`, `labels`) is replaced for that project, with the same type only;
+an override never adds a condition. `skip` lists rule names that do not apply to the project.
+
 ## New JSON fields
 
 - the `details` of a project (an internal call `<owner/repo> <live sha> [<branch>]`): `secrets` (`[{file, line, kind}]`, lines

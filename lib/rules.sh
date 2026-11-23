@@ -21,6 +21,8 @@
 #   minAgeDays   the same in days (both given: the longer one counts)
 #   minCommits   at least this many commits wait (collect, then ship)
 #   minPRs       at least this many pull requests wait
+# "overrides": {"vercel/docs": {"minAgeHours": 1, "skip": ["api waits a day"]}} tunes one project (or a pattern, "vercel/*"):
+# a number or flag a rule already has is replaced for that project, "skip" switches the named rules off for it.
 # Together they are AND ("3 days and 200 PRs"); for OR use two rules, the first match decides.
 # Sourced by deploys; uses ci_of, gh, cat_all from there.
 
@@ -117,8 +119,18 @@ def unmet($w; $p; $now):
        if $p.pendingPRs == null then "the number of waiting pull requests is not known"
        elif $p.pendingPRs >= $w.minPRs then empty
        else "\($p.pendingPRs) pull requests wait, not \($w.minPRs)" end else empty end) ];
+# Per-project overrides ("overrides": {"<platform>/<name>": {...}}, * matches any part, all that match apply in file order):
+# a number or flag the rule already has is replaced (same type only; no new conditions), "skip": ["rule name"] switches rules off.
+def ovfor($p): ("\($p.platform)/\($p.name)") as $k
+  | [($ov | if type == "object" then . else {} end) | to_entries[] | select(.value | type == "object")
+     | select(.key as $g | $k | test("^" + ($g | gsub("(?<c>[.+^$(){}|\\[\\]\\\\])"; "\\\(.c)") | gsub("\\*"; ".*")) + "$")) | .value];
+def eff($w; $p): reduce ovfor($p)[] as $o ($w; . as $cur
+  | $cur + ($o | with_entries(.key as $k | select($k != "skip" and ($cur | has($k)) and ((.value | type) == ($cur[$k] | type))))));
+def switched_off($r; $p): any(ovfor($p)[]; (.skip // []) | if type == "array" then index($r.name) != null else false end);
 [ $facts[] as $p | $rules[] as $r
-  | (if $r.problem then [$r.problem] else unmet($r.when; $p; $now) end) as $u
+  | (if $r.problem then [$r.problem]
+     elif switched_off($r; $p) then ["the rule is switched off for \($p.platform)/\($p.name)"]
+     else unmet(eff($r.when; $p); $p; $now) end) as $u
   | {rule:$r.name, index:$r.index, project:"\($p.platform)/\($p.name)", platform:$p.platform, name:$p.name,
      matched:($u | length == 0), action:$r.then, unmet:$u} ]'
 
@@ -126,7 +138,8 @@ rules_check_json() {  # rules_check_json <changed list JSON>: [{rule, index, pro
   local rl facts; rl="$(rules_list)"
   [ "$(echo "$rl" | jq length)" != 0 ] || { echo '[]'; return 0; }
   facts="$(rules_facts "$1" "$rl")"
-  jq -nc --argjson rules "$rl" --argjson facts "$facts" --argjson now "$(date +%s)" "$RULES_JQ"
+  jq -nc --argjson rules "$rl" --argjson facts "$facts" --argjson now "$(date +%s)" \
+    --argjson ov "$(jq -c '.overrides // {}' "$RULES" 2>/dev/null || echo '{}')" "$RULES_JQ"
 }
 
 # The first matching rule per project, added to the list as .rule {name, index, then}; nothing without rules.

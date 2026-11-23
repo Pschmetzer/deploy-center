@@ -4,6 +4,8 @@
 
 - Fix: `deploys exit-codes` printed the rest of the script after its table; it now prints only the table.
 - Docs: `DEPLOYS_ANTHROPIC_API` (the address `deploys ai` talks to) is in the CLI reference and the man page; CI now fails when a `DEPLOYS_*` variable the scripts read is named in no docs page.
+- CLI: per-project overrides in `rules.json`: `"overrides": {"vercel/docs": {"minAgeHours": 1, "skip": ["api waits a day"]}}` changes a number or flag a rule already has for that project (a pattern like `vercel/*` works too) and `skip` switches named rules off for it; `rules check` says "the rule is switched off for ...". Overrides add no new conditions.
+- CLI: `freeze import` closes only the evening of an event that ends at midnight of the next day (it used to close both days).
 - Fix: `DEPLOYS_CI_IGNORE` now leaves out check runs by name (GitHub Actions jobs), not only commit statuses, so an optional check that is always red no longer blocks `deploy-changed --when-green`.
 - Docs: the website's Hosts section now has Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb and Deno Deploy and the table of what each host can do; the README host lists (also the German one) name every provider.
 - Docs: German versions of Autofix, Bug scan, Safe deploys, Team mode, GitLab, Claude in the app, Claude Code, Widgets and iPhone, Adding a host, Adding a git host and Uninstall (`docs/*.de.md`); README.de.md links them.

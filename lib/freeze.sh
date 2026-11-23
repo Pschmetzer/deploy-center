@@ -128,14 +128,16 @@ freeze_ics_rules() {
      | (.[0]) as $s | (.[1] // "") as $e | (.[2] // "") as $t
      | ($s | length > 8) as $timed | ($s | endswith("Z")) as $utc
      | ($s[0:8] | iso) as $sd
-     | (if ($e | test("^[0-9]{8}")) then ($e[0:8] | iso) else "" end) as $ed
+     | (if ($e | test("^[0-9]{8}")) then ($e[0:8] | iso) else "" end) as $ed0
+     | (if $timed and $ed0 > $sd and ($e | test("^[0-9]{8}T0000[0-9]{2}Z?$")) then (($ed0 + "T00:00:00Z" | fromdateiso8601 - 86400) | strftime("%Y-%m-%d")) else $ed0 end) as $ed
+     | ($ed != $ed0) as $midnight
      | (if $timed then
-          (if $ed == "" or $ed == $sd or ($ed > $sd and $e[9:13] == "0000" and false) then [$sd] else days($sd; $ed) + [$ed] end)
+          (if $ed == "" or $ed <= $sd then [$sd] else days($sd; $ed) + [$ed] end)
         else (if $ed > $sd then days($sd; $ed) else [$sd] end) end) as $d
      | ($d | .[0:366]) as $dd
      | select(($dd | last) >= $today)
      | {dates:$dd}
-       + (if $timed and ($utc | not) and ($dd | length) == 1 then {from:"\($s[9:11]):\($s[11:13])", to:(if $ed == $sd then "\($e[9:11]):\($e[11:13])" else "24:00" end)} else {} end)
+       + (if $timed and ($utc | not) and ($dd | length) == 1 then {from:"\($s[9:11]):\($s[11:13])", to:(if $ed == $sd and ($midnight | not) then "\($e[9:11]):\($e[11:13])" else "24:00" end)} else {} end)
        + (if ($t | gsub("[\u0000-\u001f]"; "") | .[0:120]) != "" then {reason:($t | gsub("[\u0000-\u001f]"; "") | .[0:120])} else {} end)
      | select((.from // "") != (.to // "") or .from == null)]' <<<"$1"
 }
