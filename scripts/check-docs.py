@@ -64,6 +64,10 @@ ALIAS = {"docs/NUMBERS.md": "docs/ZAHLEN.md", "docs/SAVINGS.md": "docs/ERSPARNIS
          "docs/FIRST-START.md": "docs/FIRST-START.de.md", "docs/SETTINGS.md": "docs/SETTINGS.de.md",
          "docs/SEARCH.md": "docs/SEARCH.de.md", "docs/AUTO-DEPLOY.md": "docs/AUTO-DEPLOY.de.md", "docs/GUARD.md": "docs/GUARD.de.md",
          "docs/JOURNAL.md": "docs/JOURNAL.de.md", "docs/DEPLOY-FROM-APP.md": "docs/DEPLOY-FROM-APP.de.md"}
+# every other docs/X.md with a docs/X.de.md stands in for itself
+for _p in glob.glob(os.path.join(root, "docs", "*.de.md")):
+    _n = os.path.basename(_p)[:-6]
+    ALIAS.setdefault("docs/" + _n + ".md", "docs/" + _n + ".de.md")
 de_links = set(doclinks(de))
 missing = [d for d in doclinks(en) if d not in de_links and ALIAS.get(d) not in de_links]
 if missing:
