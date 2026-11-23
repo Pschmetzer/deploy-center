@@ -17,6 +17,8 @@ RAILWAY_KEYCHAIN="deploy-center-railway"
 RAILWAY_API="${RAILWAY_API:-https://backboard.railway.com/graphql/v2}"
 
 declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
+# shellcheck source=../lib/http.sh
+declare -F curl_cfg_quote >/dev/null || { _ra_h="$(dirname "${BASH_SOURCE[0]}")/../lib/http.sh"; [ ! -f "$_ra_h" ] || . "$_ra_h"; unset _ra_h; }
 
 railway_key() {
   local k=""
@@ -33,13 +35,15 @@ railway_key() {
 # http_call, which asks again after a 429. The token goes to curl on stdin. A GraphQL error comes
 # with HTTP 200, so it is checked here: the first message goes to stderr and the rc is 1.
 railway_gql() {
-  local q="$1" v="${2:-}" k body bf err out code hint="" fix="pbpaste | deploys railway set-key"
+  local q="$1" v="${2:-}" k qk body bf err out code hint="" fix="pbpaste | deploys railway set-key"
   k="$(railway_key)" || return 1
+  # Escaped for curl's config line; a control character is refused without a call (see heroku_call).
+  qk="$(curl_cfg_quote "$k")" || { echo "Railway: the token has a line break or control character in it (a paste mistake?): set it again without" >&2; return 1; }
   [ -n "$v" ] || v='{}'
   [ -z "${RAILWAY_API_TOKEN:-}" ] || fix="check RAILWAY_API_TOKEN in the environment"
   body="$(jq -nc --arg q "$q" --argjson v "$v" '{query:$q, variables:$v}')" || return 1
   bf="$(mktemp)"; err="$(mktemp)"; printf '%s' "$body" > "$bf"
-  out="$(printf 'header = "Authorization: Bearer %s"\n' "$k" | curl -sS --connect-timeout 10 --max-time 60 -X POST \
+  out="$(printf 'header = "Authorization: Bearer %s"\n' "$qk" | curl -sS --connect-timeout 10 --max-time 60 -X POST \
     -H "Content-Type: application/json" -H "Accept: application/json" -K - --data-binary "@$bf" -w '\n%{http_code}' "$RAILWAY_API" 2>"$err")" || out=$'\n000'
   code="${out##*$'\n'}"; out="${out%$'\n'*}"
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
