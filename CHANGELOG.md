@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix: `deploy-changed --yes` in a closed deploy window stops with the window's reason before it reads any platform (since the "no platform is on" stop it said that instead).
 - Website: `scripts/check-a11y.py` (run by CI) checks WCAG 2.2 AA basics on every page and on the color tokens: contrast of text, links and buttons in dark and light, a skip link, one `<main>`, labelled navs, heading order, form labels, names of links and buttons, and reduced motion. Docs tables without a header row now mark the first cell of each row as a row header for screen readers.
 - `changed`, `deploy-changed` and `plan`: when no platform could be read at all, they now stop with the error (exit 1) instead of printing a stray table header, "Would deploy these .", `command not found` lines or a jq error (exit 2).
 - Budget: when Vercel billing gives no answer at all (no key, not logged in), `deploys budget` and `deploy-changed --yes` now say the spending could not be read (a warning, or a stop with `--strict`) instead of ending with a jq error.
