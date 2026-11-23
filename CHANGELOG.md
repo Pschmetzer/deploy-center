@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Providers: Koyeb lists every service, not only the first 100 (it reads the next page while a page is full).
+- AI usage: a damaged `ai-usage.json` no longer makes the monthly token cap count nothing for ever (it starts again), and no temp file is left behind.
 - Fix: `deploys exit-codes` printed the rest of the script after its table; it now prints only the table.
 - Docs: `DEPLOYS_ANTHROPIC_API` (the address `deploys ai` talks to) is in the CLI reference and the man page; CI now fails when a `DEPLOYS_*` variable the scripts read is named in no docs page.
 - Providers: Deno Deploy, Firebase Hosting, Fly.io, GitHub Pages, Heroku, Koyeb and Railway read a time written with an offset (`2026-11-05T12:00:00+02:00`) correctly; before, the row had no "last deploy" time. Z times, with or without fractions, are unchanged.

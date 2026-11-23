@@ -42,4 +42,12 @@ for c in "freeze add" "freeze remove" "freeze remove x" "journal" "journal bogus
 done
 expect "exit code: an error that is no wrong call stays 1 (a date that is none)" "$(cli journal export --since x >/dev/null 2>&1; echo $?)" "1"
 
+# --- ai_add_usage: a damaged ai-usage.json must not make the monthly cap count nothing for ever ---
+printf '{"%s": 5' "$(ai_month)" > "$AI_USAGE"
+ai_add_usage 100 2>/dev/null
+expect "ai_add_usage: a damaged usage file starts again instead of dropping the count" "$(ai_used)" "100"
+expect "ai_add_usage: no temp file is left behind" "$(find "$CONFIG_DIR" -maxdepth 1 -name '.ai-usage.*' | wc -l | tr -d ' ')" "0"
+ai_add_usage 20 2>/dev/null
+expect "ai_add_usage: and it keeps adding" "$(ai_used)" "120"
+
 [ "$fails" = 0 ] && echo "all ok" || { echo "$fails failed"; exit 1; }
