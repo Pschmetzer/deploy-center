@@ -32,9 +32,9 @@ accounts. Run each one by hand once and read the log; please report what you fin
 | [config/hooks.d/pre-deploy-friday](config/hooks.d/pre-deploy-friday) | `hooks.d`: refuses a start from Friday 15:00 on and on weekends. | `sh examples/config/validate.sh` |
 | [config/hooks.d/pre-deploy-require-sha](config/hooks.d/pre-deploy-require-sha) | `hooks.d`: refuses a start that names no commit. | `sh examples/config/validate.sh` |
 | [config/hooks.d/post-deploy-notify](config/hooks.d/post-deploy-notify) | `hooks.d`: tells a plain-text webhook (such as ntfy) what was started; does nothing without `DEPLOY_NOTIFY_URL`. | `sh examples/config/validate.sh` |
-
 | [config/hooks.d/pre-deploy-backup](config/hooks.d/pre-deploy-backup) | `hooks.d`: before a start, saves `window.json`, `rules.json`, `budget.json`, `ignored.json` and the journal as a private tar (the newest 20 are kept); no network. | `bash tests/examples-tests.sh` |
 | [config/hooks.d/post-deploy-smoke](config/hooks.d/post-deploy-smoke) | `hooks.d`: after a start, asks `DEPLOY_SMOKE_URL` (`%s` is the project) until it answers; says so on stderr when it does not. Cannot undo a deploy. | `bash tests/examples-tests.sh` |
+
 
 ## Presets for four ways of working
 
