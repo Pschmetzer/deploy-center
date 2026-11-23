@@ -1,6 +1,6 @@
 # Moving from auto-deploy to deploying by hand
 
-A checklist for a team or a person who has "every push deploys" today and wants "one deploy a day, on purpose". It takes an afternoon for a few projects. [SAFE-START.md](SAFE-START.md) is the short tour; this page is the plan around it. Nothing here starts a build unless a command says `--yes` or you click.
+A checklist for a team or a person who has "every push deploys" today and wants "one deploy a day, on purpose". It takes an afternoon for a few projects. [SAFE-START.md](SAFE-START.md) is the short tour; this page is the plan around it. Nothing here starts a build by itself: `deploys deploy-changed` only lists without `--yes`, while `deploys deploy <project>` starts its build when you run it (add `--dry-run` to see what would start first), as does a click in the app.
 
 ## 1. Find out what builds today
 
@@ -36,15 +36,15 @@ Follow [SAFE-START.md](SAFE-START.md): one project you can afford to have stale 
 
 ```bash
 deploys deploy-changed                       # shows what it would deploy
-deploys deploy-changed --when-green --yes    # only green commits (waits for running checks)
+deploys deploy-changed --when-green --yes    # commits whose CI passed, and commits with no checks once the grace period (DEPLOYS_CI_GRACE, 90 s) has passed; waits for running checks
 deploys schedule daily 17:30 --weekdays --when-green
 ```
 
-`deploys plan` prints the same list with an estimate of the cost. In the app: select the changed projects, check the commit messages in the confirmation, press **Deploy**.
+`deploys plan` prints the same list with an estimate of the cost. `--when-green` is a CLI option; if you need a hard CI gate, also require status checks in branch protection. In the app: select the changed projects, check the commit messages in the confirmation, press **Deploy**.
 
 ## 5. Put the safety nets on
 
-- `deploys deploy my-project && deploys verify my-project --path /health` asks the site after a deploy and rolls back when it answers 5xx ([SAFE-DEPLOY.md](SAFE-DEPLOY.md)).
+- `deploys deploy my-project && deploys verify my-project --path /health` asks the site after a deploy and rolls back when it answers 5xx or not at all. Use your real health path: with `--path`, a 4xx (a missing `/health`) counts as a failure too ([SAFE-DEPLOY.md](SAFE-DEPLOY.md)).
 - `deploys guard schedule on` turns auto-deploy off again within 30 minutes when someone switches it back on ([GUARD.md](GUARD.md)). For a few hours of auto-deploy on purpose: `deploys autodeploy allow vercel my-project 4`.
 - `deploys journal verify` checks the journal of what was started and by whom ([JOURNAL.md](JOURNAL.md)).
 
@@ -54,9 +54,13 @@ deploys schedule daily 17:30 --weekdays --when-green
 
 ## Going back
 
+First `deploys guard schedule off`, or the guard turns auto-deploy off again.
+
 ```bash
-deploys vercel autodeploy-on --all     # connects Git again from the remembered repos
-deploys render autodeploy-on --all     # auto-deploy "On Commit"
+deploys vercel autodeploy-on my-project   # connects Git again from the remembered repo
+deploys render autodeploy-on my-service   # auto-deploy "On Commit"
 ```
+
+Name each project. `--all` turns on every service that is off, including ones that were manual before, and sets Render services to "On Commit" even if one used "After CI Checks Pass". For Render Blueprints also remove `autoDeployTrigger: off` from `render.yaml` and sync, or the next sync turns it off again.
 
 Keep `~/.config/deploys/vercel-repos.json` until every Vercel project is connected again. What the other hosts do: [providers/README.md](providers/README.md).

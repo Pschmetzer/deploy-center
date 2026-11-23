@@ -2,7 +2,7 @@
 
 Die deutsche Fassung von [MIGRATING.md](MIGRATING.md). Verlinkte Seiten ohne eigene deutsche Fassung sind englisch.
 
-Eine Checkliste für alle, bei denen heute „jeder Push deployt" gilt und die künftig „ein Deploy am Tag, mit Absicht" wollen. Für ein paar Projekte reicht ein Nachmittag. [SAFE-START.de.md](SAFE-START.de.md) ist die kurze Tour, diese Seite der Plan drumherum. Nichts davon startet einen Build, solange kein Befehl `--yes` hat und du nicht klickst.
+Eine Checkliste für alle, bei denen heute „jeder Push deployt“ gilt und die künftig „ein Deploy am Tag, mit Absicht“ wollen. Für ein paar Projekte reicht ein Nachmittag. [SAFE-START.de.md](SAFE-START.de.md) ist die kurze Tour, diese Seite der Plan drumherum. Nichts startet von selbst einen Build: `deploys deploy-changed` listet ohne `--yes` nur auf, `deploys deploy <project>` startet seinen Build, sobald du es ausführst (mit `--dry-run` siehst du vorher, was starten würde), ebenso ein Klick in der App.
 
 ## 1. Herausfinden, was heute baut
 
@@ -38,15 +38,15 @@ Folge [SAFE-START.de.md](SAFE-START.de.md): ein Projekt, das ein paar Minuten ve
 
 ```bash
 deploys deploy-changed                       # zeigt, was es deployen würde
-deploys deploy-changed --when-green --yes    # nur grüne Commits (wartet auf laufende Checks)
+deploys deploy-changed --when-green --yes    # Commits mit bestandener CI und Commits ohne Checks nach der Schonfrist (DEPLOYS_CI_GRACE, 90 s); wartet auf laufende Checks
 deploys schedule daily 17:30 --weekdays --when-green
 ```
 
-`deploys plan` zeigt dieselbe Liste mit einer Kostenschätzung. In der App: die geänderten Projekte auswählen, die Commit-Nachrichten in der Bestätigung prüfen, **Deploy** drücken.
+`deploys plan` zeigt dieselbe Liste mit einer Kostenschätzung. `--when-green` ist eine CLI-Option; brauchst du eine harte CI-Sperre, verlange zusätzlich Status-Checks im Branch-Schutz. In der App: die geänderten Projekte auswählen, die Commit-Nachrichten in der Bestätigung prüfen, **Deploy** drücken.
 
 ## 5. Sicherheitsnetze einschalten
 
-- `deploys deploy my-project && deploys verify my-project --path /health` fragt die Seite nach einem Deploy und rollt zurück, wenn sie mit 5xx antwortet ([SAFE-DEPLOY.md](SAFE-DEPLOY.md)).
+- `deploys deploy my-project && deploys verify my-project --path /health` fragt die Seite nach einem Deploy und rollt zurück, wenn sie mit 5xx oder gar nicht antwortet. Nimm deinen echten Health-Pfad: mit `--path` zählt auch ein 4xx (ein fehlendes `/health`) als Fehler ([SAFE-DEPLOY.md](SAFE-DEPLOY.md)).
 - `deploys guard schedule on` schaltet Auto-Deploy binnen 30 Minuten wieder aus, wenn jemand es einschaltet ([GUARD.de.md](GUARD.de.md)). Für ein paar Stunden Auto-Deploy mit Absicht: `deploys autodeploy allow vercel my-project 4`.
 - `deploys journal verify` prüft das Journal darüber, was gestartet wurde ([JOURNAL.de.md](JOURNAL.de.md)).
 
@@ -56,9 +56,13 @@ deploys schedule daily 17:30 --weekdays --when-green
 
 ## Zurück
 
+Zuerst `deploys guard schedule off`, sonst schaltet der Wächter Auto-Deploy wieder aus.
+
 ```bash
-deploys vercel autodeploy-on --all     # verbindet Git wieder aus den gemerkten Repos
-deploys render autodeploy-on --all     # Auto-Deploy „On Commit"
+deploys vercel autodeploy-on my-project   # verbindet Git wieder aus dem gemerkten Repo
+deploys render autodeploy-on my-service   # Auto-Deploy „On Commit“
 ```
+
+Nenne jedes Projekt einzeln. `--all` schaltet jeden Service ein, der aus ist, auch solche, die vorher manuell waren, und setzt Render-Services auf „On Commit“, auch wenn einer „After CI Checks Pass“ hatte. Bei Render-Blueprints entferne außerdem `autoDeployTrigger: off` aus `render.yaml` und synchronisiere, sonst schaltet der nächste Sync es wieder aus.
 
 Behalte `~/.config/deploys/vercel-repos.json`, bis jedes Vercel-Projekt wieder verbunden ist. Was die anderen Hosts können: [providers/README.md](providers/README.md).

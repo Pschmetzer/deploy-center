@@ -42,7 +42,7 @@ Nothing else leaves the Mac. Masking of build logs (tokens, passwords, keys) is 
 
 - Start a build, a rollback or a cancel: only a click, or a command with `--yes`. A `deploycenter://` link only shows a project or opens a settings tab.
 - Merge anything. Autofix and scans open pull requests; a person merges.
-- Deploy from an AI agent: the MCP server is read-only unless you start it with `DEPLOYS_MCP_ALLOW_DEPLOY=1`, and then it still asks you for each one ([integrations/mcp](../integrations/mcp/README.md#safety)).
+- Deploy from an AI agent: the MCP server is read-only unless you start it with `DEPLOYS_MCP_ALLOW_DEPLOY=1`, and then it asks you for each one by default (with `DEPLOYS_MCP_CONFIRM=client` the client's own approval is the only yes) ([integrations/mcp](../integrations/mcp/README.md#safety)).
 - Switch auto-deploy back on: only you can, and the [guard](GUARD.md) turns it off again.
 
 ## What to do to keep it tight

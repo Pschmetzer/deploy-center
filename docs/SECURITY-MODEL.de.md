@@ -44,7 +44,7 @@ Sonst verlässt nichts den Mac. Das Maskieren von Build-Logs (Tokens, Passwörte
 
 - Einen Build, einen Rollback oder einen Abbruch starten: nur ein Klick oder ein Befehl mit `--yes`. Ein `deploycenter://`-Link zeigt nur ein Projekt oder öffnet einen Einstellungs-Tab.
 - Etwas mergen. Autofix und Scans öffnen Pull Requests; ein Mensch mergt.
-- Von einem KI-Agenten aus deployen: Der MCP-Server ist nur lesend, es sei denn, du startest ihn mit `DEPLOYS_MCP_ALLOW_DEPLOY=1`, und selbst dann fragt er dich bei jedem ([integrations/mcp](../integrations/mcp/README.md#safety)).
+- Von einem KI-Agenten aus deployen: Der MCP-Server ist nur lesend, es sei denn, du startest ihn mit `DEPLOYS_MCP_ALLOW_DEPLOY=1`, und selbst dann fragt er dich standardmäßig bei jedem (mit `DEPLOYS_MCP_CONFIRM=client` ist die Freigabe des Clients das einzige Ja) ([integrations/mcp](../integrations/mcp/README.md#safety)).
 - Auto-Deploy wieder einschalten: Das kannst nur du, und der [Wächter](GUARD.de.md) schaltet es wieder aus.
 
 ## So bleibt es dicht

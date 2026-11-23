@@ -28,7 +28,7 @@ if len(help_cmds) < 20:
 for rel in ("docs/CLI.md",):
     text = open(os.path.join(root, rel), encoding="utf-8").read()
     mentioned = set(re.findall(r"deploys ([a-z][a-z0-9-]*)", text))
-    coded = set(re.findall(r"(?:`|^|\$\()deploys ([a-z][a-z0-9-]*)", text, flags=re.M))
+    coded = set(re.findall(r"(?:`|^|\$\(|[|&;] ?)deploys ([a-z][a-z0-9-]*)", text, flags=re.M))
     for c in sorted(help_cmds - mentioned):
         problems.append(f"{rel}: the help lists `deploys {c}`, the page never names it")
     if rel == "docs/CLI.md":
