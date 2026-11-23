@@ -1284,6 +1284,8 @@ journal_add() {  # journal_add <platform> <name> <result> <detail>
   if [ -s "$f" ]; then
     prev="$(tail -n 1 "$f" | { sha256sum 2>/dev/null || shasum -a 256 2>/dev/null; } | cut -d' ' -f1)" || prev=""
   fi
+  # A last line cut off by a crash or a full disk has no newline: end it first, or this entry would be glued to it.
+  if [ -s "$f" ] && [ -n "$(tail -c 1 "$f" 2>/dev/null | tr -d '\n')" ]; then printf '\n' >> "$f" 2>/dev/null || true; fi
   jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$4" --arg h "$prev" \
     '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d, prevHash:(if $h == "" then null else $h end)}' >> "$f" 2>/dev/null \
     || echo "Warning: could not write the history ($f): the disk may be full or the file read-only; this action is not in it" >&2
