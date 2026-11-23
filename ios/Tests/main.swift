@@ -419,5 +419,28 @@ check(Words(german: false).n(0, ("project", "Projekt"), ("projects", "Projekte")
 check(Words(DeploySnapshot.sample).german == (DeploySnapshot.localized(DeploySnapshot.sample.language, "en", "de") == "de"), "words: follows the snapshot's language")
 check(Words.staleAfter == 3 * 3600, "words: a snapshot is old after three hours")
 
+// MARK: Failure hint
+
+check(FailureHint.hint(for: "") == nil && FailureHint.hint(for: "   ") == nil, "hint: an empty text has none")
+check(FailureHint.hint(for: "Deploy window closed until 09:00")?.anchor == "deploy-window-closed", "hint: a documented topic links its section")
+check(FailureHint.hint(for: "FATAL ERROR: Reached heap limit - JavaScript heap out of memory")?.anchor == nil
+      && FailureHint.hint(for: "FATAL ERROR: JavaScript heap out of memory")?.en.contains("memory") == true, "hint: out of memory")
+check(FailureHint.hint(for: "Error: Cannot find module 'left-pad'")?.en.contains("missing") == true, "hint: a missing module")
+check(FailureHint.hint(for: "npm ERR! code ERESOLVE")?.en.contains("versions") == true, "hint: a dependency conflict")
+check(FailureHint.hint(for: "sh: 1: next: command not found")?.de.contains("Befehl") == true, "hint: a missing command, in German")
+check(FailureHint.hint(for: "Compiled successfully") == nil, "hint: a good line has none")
+check(FailureHint.hint(for: "ERROR: ignored build step")?.anchor == "skipped-or-canceled-by-vercel-ignored-build-step", "hint: ErrorHelp's phrase")
+let hintLog = ["npm warn deprecated x", "Error: ENOSPC: no space left on device", "Error: Cannot find module 'a'"]
+check(FailureHint.hint(lines: hintLog, errorAt: 2)?.en.contains("missing") == true, "hint: the error line decides")
+check(FailureHint.hint(lines: hintLog, errorAt: nil)?.en.contains("disk") == true, "hint: no error line, the first match in order")
+check(FailureHint.hint(lines: hintLog, errorAt: 9)?.en.contains("disk") == true, "hint: an error index out of range falls back")
+check(FailureHint.hint(lines: [], errorAt: 0) == nil, "hint: an empty log has none")
+let anchored = FailureHint.hint(for: "deploy window closed")!
+check(FailureHint.url(for: anchored, german: true)?.absoluteString.hasSuffix("TROUBLESHOOTING.de.md#deploy-window-closed") == true
+      && FailureHint.url(for: anchored, german: false)?.absoluteString.contains("TROUBLESHOOTING.md#") == true, "hint: the link follows the language")
+check(FailureHint.url(for: FailureHint.hint(for: "ENOSPC")!, german: false) == nil, "hint: a cause without a topic has no link")
+check(FailureHint.causes.allSatisfy { !$0.needles.isEmpty && $0.needles.allSatisfy { $0 == $0.lowercased() } && !$0.en.isEmpty && !$0.de.isEmpty },
+      "hint: every cause has lowercase phrases and both texts")
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
