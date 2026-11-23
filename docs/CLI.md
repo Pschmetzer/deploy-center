@@ -61,6 +61,7 @@ deploys window                          # is the deploy window (window.json) ope
 deploys freeze                          # the closed times of window.json, numbered, and whether deploys are closed now (--json too)
 deploys freeze add fri 15:00            # close Fridays from 15:00 (<days>: fri, fri,sat, mon-fri, weekend, weekdays, daily; <to> is 24:00 unless given)
 deploys freeze add sat,sun 0 --reason "weekend"   # a reason is shown in the refusal
+deploys freeze import holidays.ics [--dry-run]   # closed dates from a calendar file (all-day events close their days; repeating events are skipped)
 deploys freeze remove 2 | clear         # take away rule 2 (the numbers `freeze` shows), or every rule
 deploys deploy my-project --force "hotfix"   # inside a closed window; the reason is journaled
 ```
@@ -134,6 +135,7 @@ deploys ai explain|notes|ship my-project   # ask Claude with your own key, see C
 deploys scan start owner/repo           # Claude Code looks for bugs and opens one fix PR (SCAN.md)
 deploys scan status | list | log <id>   # installed and logged in, the newest scans, one report
 deploys check start owner/repo [branch] # OSV-Scanner, gitleaks and Semgrep on a fresh copy, on this Mac (SCAN.md)
+deploys nightly history [--limit N]      # the last runs: when, repos, new findings, failures (--json too)
 deploys nightly schedule on [HH:MM]     # the check on every repo each night, only new findings count; `nightly fix on`: Claude opens fix PRs (SCAN.md)
 deploys check show <id>                 # the findings, secrets redacted
 deploys config [--json] [--refresh]     # every setting in effect (shared files, this Mac) and where each came from

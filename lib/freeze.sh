@@ -4,6 +4,7 @@
 #   deploys freeze [status] [--json]            the closed times, and whether deploys are closed now
 #   deploys freeze add <days> <from> [<to>] [--reason "why"]   e.g.  freeze add fri 15:00
 #   deploys freeze remove <n>                   take away rule n (the numbers `freeze` shows)
+#   deploys freeze import <calendar.ics> [--dry-run]   closed dates from a calendar (all-day and timed events)
 #   deploys freeze clear                        no closed times at all
 #
 # <days>: mon..sun (also full names), a list (fri,sat), a range (mon-fri), weekend, weekdays or daily.
@@ -91,7 +92,52 @@ freeze_view() {
     {file:$path, configured:($w.configured // false), closedNow:($w.denied // false), reason:($w.reason // null),
      now:($w.now // null), tz:($f.tz // null),
      rules:(($f.deny // []) | to_entries | map({n:(.key + 1), days:(.value.days // null), from:(.value.from // "00:00"),
-        to:(.value.to // "24:00"), reason:(.value.reason // null)}))}'
+        to:(.value.to // "24:00"), reason:(.value.reason // null)} + (if .value.dates then {dates:.value.dates} else {} end)))}'
+}
+
+# freeze_ics_events <file>: "<start>\t<end>\t<summary>\t<repeats 0|1>" per event. Folded lines are joined, CRLF dropped.
+freeze_ics_events() {
+  awk '
+    { sub(/\r$/, "") }
+    /^[ \t]/ { if (n > 0) line[n] = line[n] substr($0, 2); next }
+    { line[++n] = $0 }
+    END {
+      for (i = 1; i <= n; i++) {
+        l = line[i]; u = toupper(l)
+        if (u == "BEGIN:VEVENT") { s = ""; e = ""; t = ""; r = 0; inev = 1; continue }
+        if (u == "END:VEVENT") { if (inev && s != "") printf "%s\t%s\t%s\t%d\n", s, e, t, r; inev = 0; continue }
+        if (!inev) continue
+        c = index(l, ":"); if (c == 0) continue
+        key = toupper(substr(l, 1, c - 1)); val = substr(l, c + 1); sub(/;.*/, "", key)
+        if (key == "DTSTART") s = val; else if (key == "DTEND") e = val
+        else if (key == "SUMMARY") { gsub(/\\[nN,;]/, " ", val); gsub(/\t/, " ", val); t = val }
+        else if (key == "RRULE" || key == "RDATE") r = 1
+      }
+    }' "$1"
+}
+
+# freeze_ics_rules <events TSV> <today YYYY-MM-DD>: deny rules (JSON array). All-day events close their days (the end is
+# exclusive); a timed event of one day closes those hours; a longer one, or one in UTC (Z), closes whole days: the
+# calendar's zone is not window.json's, so the safe side wins. Events that ended before today and repeating events are left out.
+freeze_ics_rules() {
+  jq -Rsc --arg today "$2" '
+    def iso: "\(.[0:4])-\(.[4:6])-\(.[6:8])";
+    def days($a; $b): [range(($a + "T00:00:00Z" | fromdateiso8601); ($b + "T00:00:00Z" | fromdateiso8601); 86400) | strftime("%Y-%m-%d")];
+    [split("\n")[] | select(. != "") | split("\t")
+     | select((.[3] // "0") == "0" and (.[0] | test("^[0-9]{8}(T[0-9]{6}Z?)?$")))
+     | (.[0]) as $s | (.[1] // "") as $e | (.[2] // "") as $t
+     | ($s | length > 8) as $timed | ($s | endswith("Z")) as $utc
+     | ($s[0:8] | iso) as $sd
+     | (if ($e | test("^[0-9]{8}")) then ($e[0:8] | iso) else "" end) as $ed
+     | (if $timed then
+          (if $ed == "" or $ed == $sd or ($ed > $sd and $e[9:13] == "0000" and false) then [$sd] else days($sd; $ed) + [$ed] end)
+        else (if $ed > $sd then days($sd; $ed) else [$sd] end) end) as $d
+     | ($d | .[0:366]) as $dd
+     | select(($dd | last) >= $today)
+     | {dates:$dd}
+       + (if $timed and ($utc | not) and ($dd | length) == 1 then {from:"\($s[9:11]):\($s[11:13])", to:(if $ed == $sd then "\($e[9:11]):\($e[11:13])" else "24:00" end)} else {} end)
+       + (if ($t | gsub("[\u0000-\u001f]"; "") | .[0:120]) != "" then {reason:($t | gsub("[\u0000-\u001f]"; "") | .[0:120])} else {} end)
+     | select((.from // "") != (.to // "") or .from == null)]' <<<"$1"
 }
 
 freeze_print() {  # stdin: freeze_view JSON
@@ -99,7 +145,7 @@ freeze_print() {  # stdin: freeze_view JSON
     def days: if .days == null then "every day" else (.days | join(",")) end;
     (if (.rules | length) == 0 then "No closed times set. Deploys are allowed at any time.\nClose one: deploys freeze add fri 15:00"
      else "Closed times (\(.file)):",
-          (.rules[] | "  \(.n). \(days) \(.from)-\(.to)\(if .reason then "  (\(.reason))" else "" end)"),
+          (.rules[] | "  \(.n). \(if .dates then (.dates | if length > 3 then "\(.[0]) … \(.[-1]) (\(length) days)" else join(",") end) else days end) \(.from)-\(.to)\(if .reason then "  (\(.reason))" else "" end)"),
           (if .closedNow then "Closed now: \(.reason). Deploys need --force \"why\"." else "Open now." end) end)'
 }
 
@@ -133,6 +179,24 @@ freeze_main() {
       freeze_write add "$days" "$f" "$t" "$reason"
       echo "Closed: $(jq -r 'if length == 0 then "every day" else join(",") end' <<<"$days") $f-$t${reason:+ ($reason)}"
       freeze_main status ;;
+    import)
+      local ics="${1:-}" dry=0 tsv rules before
+      [ -n "$ics" ] || die "Usage: deploys freeze import <calendar.ics> [--dry-run]"
+      shift; [ "${1:-}" != --dry-run ] || { dry=1; shift; }
+      [ "$#" -eq 0 ] || die "Usage: deploys freeze import <calendar.ics> [--dry-run]"
+      [ -f "$ics" ] && [ -r "$ics" ] || die "Usage: deploys freeze import <calendar.ics>: $ics was not found"
+      [ "$(wc -c < "$ics")" -le 5000000 ] || die "$ics is too big for a calendar of closed days (5 MB at most)"
+      grep -qi '^BEGIN:VCALENDAR' "$ics" || die "$ics is no calendar (.ics): no BEGIN:VCALENDAR. Nothing was changed."
+      tsv="$(freeze_ics_events "$ics")"
+      rules="$(freeze_ics_rules "$tsv" "$(now_parts | cut -d' ' -f3)")" || die "$ics could not be read as a calendar. Nothing was changed."
+      before="$( [ -f "$WINDOW" ] && jq -c '.deny // []' "$WINDOW" 2>/dev/null || echo '[]')"
+      rules="$(jq -c --argjson b "$before" '[.[] | select(. as $r | ($b | map(del(.reason)) | index($r | del(.reason))) == null)] | reduce .[] as $r ([]; if (map(del(.reason)) | index($r | del(.reason))) == null then . + [$r] else . end)' <<<"$rules")"
+      local nrep; nrep="$(printf '%s\n' "$tsv" | awk -F'\t' '$4 == 1' | wc -l | tr -d ' ')"
+      [ "$nrep" = 0 ] || echo "Left out: $nrep repeating event(s) (RRULE): add those days by hand with deploys freeze add."
+      echo "$(jq length <<<"$rules") new closed time(s) from $ics."
+      if [ "$dry" = 1 ] || [ "$(jq length <<<"$rules")" = 0 ]; then jq -r '.[] | "  \(.dates | join(",")) \(.from // "")-\(.to // "")  \(.reason // "")"' <<<"$rules"; return 0; fi
+      freeze_write import "$rules"
+      freeze_main status ;;
     remove|rm)
       case "${1:-}" in ''|*[!0-9]*) die "Usage: deploys freeze remove <n>  (the numbers deploys freeze shows)" ;; esac
       [ -f "$WINDOW" ] || die "No closed times set ($WINDOW)."
@@ -143,7 +207,7 @@ freeze_main() {
       if [ ! -f "$WINDOW" ]; then echo "No closed times set."; return 0; fi
       freeze_write clear
       freeze_main status ;;
-    *) die "Usage: deploys freeze [status] [--json] | add <days> <from> [<to>] [--reason \"why\"] | remove <n> | clear" ;;
+    *) die "Usage: deploys freeze [status] [--json] | add <days> <from> [<to>] [--reason \"why\"] | import <calendar.ics> [--dry-run] | remove <n> | clear" ;;
   esac
 }
 
@@ -159,6 +223,7 @@ freeze_write() {
     add) new="$(freeze_add_json "$cur" "$2" "$3" "$4" "$5" 2>/dev/null)" || new="" ;;
     remove) new="$(freeze_remove_json "$cur" "$2" 2>/dev/null)" || new="" ;;
     clear) new="$(jq -c '.deny = []' <<<"$cur" 2>/dev/null)" || new="" ;;
+    import) new="$(jq -c --argjson r "$2" '(if type == "object" then . else error("not an object") end) | .deny = ((.deny // []) + $r)' <<<"$cur" 2>/dev/null)" || new="" ;;
   esac
   if [ -z "${new:-}" ]; then
     [ -z "$locked" ] || file_unlock "$WINDOW"

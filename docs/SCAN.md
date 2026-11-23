@@ -102,6 +102,7 @@ Settings > Claude > "Nightly check", or `deploys nightly schedule on`, runs the 
 ```
 deploys nightly schedule on [HH:MM] | off     the launchd job (log: ~/Library/Logs/DeployCenter-nightly.log)
 deploys nightly fix on | off                  new findings to a Claude bug scan
+deploys nightly history [--limit N]       what the last runs did (90 are kept)
 deploys nightly review on [1-7] | off         the weekly review of the week's changes
 deploys nightly skip | unskip <owner/repo>
 deploys nightly list                          the repos a run checks

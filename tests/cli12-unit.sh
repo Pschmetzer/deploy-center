@@ -194,7 +194,7 @@ for sh in bash zsh fish; do
   c="$(cli completion "$sh")"
   expect "completion $sh: names freeze" "$([ "$(grep -c freeze <<<"$c")" -ge 1 ] && echo yes)" "yes"
   expect "completion $sh: names digest" "$([ "$(grep -c digest <<<"$c")" -ge 1 ] && echo yes)" "yes"
-  expect "completion $sh: freeze subcommands" "$(grep -c 'add remove clear' <<<"$c")" "1"
+  expect "completion $sh: freeze subcommands" "$(grep -c 'add import remove clear' <<<"$c")" "1"
   expect "completion $sh: doctor --fix" "$(grep -c -- '--fix' <<<"$c")" "1"
 done
 
@@ -235,6 +235,24 @@ echo '{"rules":[{"name":"x","enabled":false}]}' > "$RULES"; rules_on; expect "ru
 echo '{"rules":[{"name":"x"}]}' > "$RULES"; rules_on; expect "rules_on: an enabled rule" "$?" "0"
 echo '{"rules":"no"}' > "$RULES"; (rules_on) >/dev/null 2>&1; expect "rules_on: a file that cannot be read stops" "$?" "1"
 rm -f "$RULES"
+
+# --- freeze import: an ICS calendar becomes dates rules ---
+ics="$tmp/cal.ics"
+printf 'BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261224\r\nDTEND;VALUE=DATE:20261227\r\nSUMMARY:Holiday\r\n  freeze\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20261201T150000\r\nDTEND:20261201T170000\r\nSUMMARY:Launch\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART:20261202T230000Z\r\nDTEND:20261203T010000Z\r\nSUMMARY:Night\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20200101\r\nSUMMARY:Past\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nDTSTART;VALUE=DATE:20261230\r\nRRULE:FREQ=YEARLY\r\nSUMMARY:Yearly\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n' > "$ics"
+rm -f "$WINDOW"; echo '{"tz":"Europe/Berlin","deny":[]}' > "$WINDOW"
+out="$(DEPLOYS_NOW="mon 10:00 2026-11-23" freeze_main import "$ics" 2>&1)"
+expect "import: rules written, past and repeating events left out" "$(jq -c '[.deny[] | [(.dates|join(",")), (.from // ""), (.to // ""), (.reason // "")]]' "$WINDOW")" '[["2026-12-24,2026-12-25,2026-12-26","","","Holiday freeze"],["2026-12-01","15:00","17:00","Launch"],["2026-12-02,2026-12-03","","","Night"]]'
+expect "import: tz stays" "$(jq -r .tz "$WINDOW")" "Europe/Berlin"
+expect "import: says what it skipped" "$(echo "$out" | grep -c 'repeating')" "1"
+DEPLOYS_NOW="mon 10:00 2026-11-23" freeze_main import "$ics" >/dev/null 2>&1
+expect "import: a second import adds nothing" "$(jq '.deny | length' "$WINDOW")" "3"
+expect "import: a day of an imported rule is closed" "$(DEPLOYS_NOW="fri 10:00 2026-12-25" window_json | jq -r .denied)" "true"
+expect "import: a timed rule closes only its hours" "$(DEPLOYS_NOW="tue 18:00 2026-12-01" window_json | jq -r .denied):$(DEPLOYS_NOW="tue 16:00 2026-12-01" window_json | jq -r .denied)" "false:true"
+echo "no calendar" > "$tmp/bad.ics"
+expect "import: not a calendar is refused, file unchanged" "$( (freeze_main import "$tmp/bad.ics") 2>&1 | grep -c 'no calendar'):$(jq '.deny | length' "$WINDOW")" "1:3"
+expect "import: a missing file is refused" "$( (freeze_main import "$tmp/none.ics") 2>&1 | grep -c 'Usage\|not found')" "1"
+freeze_main status 2>&1 | grep -q "2026-12-24" ; expect "status: shows dates" "$?" "0"
+rm -f "$WINDOW"
 
 echo
 [ "$fails" = 0 ] && echo "All round 12 CLI tests passed." || { echo "$fails failed."; exit 1; }
