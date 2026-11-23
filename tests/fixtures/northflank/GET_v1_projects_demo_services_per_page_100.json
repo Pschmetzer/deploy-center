@@ -1,0 +1,2 @@
+{"data":{"services":[{"id":"alpha","name":"alpha","serviceType":"combined","disabledCI":false,"status":{"deployment":{"status":"COMPLETED"}}},{"id":"beta","name":"beta","serviceType":"combined","disabledCI":false},{"id":"gamma","name":"gamma","serviceType":"combined","disabledCI":true},{"id":"delta","name":"delta","serviceType":"combined"}]},"pagination":{"hasNextPage":false}}
+200

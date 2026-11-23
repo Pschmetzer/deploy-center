@@ -18,6 +18,7 @@ Vercel and Render are on by default; the others are opt-in (`deploys providers e
 | [Firebase Hosting](firebase.md) | no | no | no | yes | no | no |
 | [GitHub Pages](ghpages.md) | no | no | yes | no | no | no |
 | [Koyeb](koyeb.md) | no | no | no | no | no | no |
+| [Northflank](northflank.md) | no | yes | no | no | no | no |
 | [Deno Deploy](deno.md) | no | no | no | no | no | no |
 | [Deploy hook](hook.md) | no | no | no | no | no | no |
 

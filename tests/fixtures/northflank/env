@@ -1,0 +1,5 @@
+# Sourced by tests/providers/contract.sh before this provider is tested. Stand-in values only.
+export NORTHFLANK_TOKEN=nf_fixture
+CONTRACT_ID=demo/alpha CONTRACT_NAME=alpha CONTRACT_DEPLOY=bld-alpha-3
+# A running build turns into a finished one for the `deploys watch` check.
+CONTRACT_DONE='s/"status": *"IN_PROGRESS"/"status": "SUCCESS"/g'
