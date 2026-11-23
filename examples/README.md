@@ -33,6 +33,22 @@ accounts. Run each one by hand once and read the log; please report what you fin
 | [config/hooks.d/pre-deploy-require-sha](config/hooks.d/pre-deploy-require-sha) | `hooks.d`: refuses a start that names no commit. | `sh examples/config/validate.sh` |
 | [config/hooks.d/post-deploy-notify](config/hooks.d/post-deploy-notify) | `hooks.d`: tells a plain-text webhook (such as ntfy) what was started; does nothing without `DEPLOY_NOTIFY_URL`. | `sh examples/config/validate.sh` |
 
+| [config/hooks.d/pre-deploy-backup](config/hooks.d/pre-deploy-backup) | `hooks.d`: before a start, saves `window.json`, `rules.json`, `budget.json`, `ignored.json` and the journal as a private tar (the newest 20 are kept); no network. | `bash tests/examples-tests.sh` |
+| [config/hooks.d/post-deploy-smoke](config/hooks.d/post-deploy-smoke) | `hooks.d`: after a start, asks `DEPLOY_SMOKE_URL` (`%s` is the project) until it answers; says so on stderr when it does not. Cannot undo a deploy. | `bash tests/examples-tests.sh` |
+
+## Presets for four ways of working
+
+[presets/](presets/) has a folder per way of working. Each holds the files for your config folder (and a shared `deploy-center.json` where it helps); copy the ones you want and change the made-up names (`example-*`). None of them starts a build.
+
+| Folder | For | What is in it |
+|---|---|---|
+| [presets/solo/](presets/solo/) | one developer, a few projects | closed from 22:00 to 07:00; a `ship` label goes now, green and a day old goes too, the rest is named; $20 a month, not strict |
+| [presets/agency/](presets/agency/) | an agency with 20 client sites | `deploy-center.json` with 20 sites (one on Render) open Monday to Thursday 09:00 to 16:00; a site ships when CI is green and a commit is 4 hours old, the Render site after a day; $150 a month, strict |
+| [presets/monorepo-previews/](presets/monorepo-previews/) | a monorepo on hosts where you want previews, not production | production closed all week, every rule says `hold`, one project needs an approval |
+| [presets/student/](presets/student/) | a small budget | closed from 23:00 to 07:00; three waiting commits ship together; $5 a month, strict |
+
+`bash tests/examples-tests.sh` checks all of it (the files above, the presets, the hooks) in a throwaway folder.
+
 `sh examples/config/validate.sh` runs them all in a throwaway folder and repo: the windows at fixed times, the rules and the budget through their shape, the shared config against the schema (when Python has `jsonschema`), the hooks with the variables `deploys` sets, and the Vercel script on a few commits. It needs no account and no network. A hook goes into `hooks.d` with `chmod 700` ([CLI.md](../docs/CLI.md#hooks-scripts-around-a-start-hooksd)).
 
 ## What `deploys` needs outside a Mac

@@ -23,3 +23,4 @@ tests/app-tests.sh mac full
 ios/Tests/run.sh mac full
 ios/test.sh mac full
 integrations/tests/run.sh full
+tests/examples-tests.sh

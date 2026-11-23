@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Examples: four presets (`examples/presets/`: solo, agency with 20 client sites, monorepo with previews only, student budget), and two `hooks.d` examples: `pre-deploy-backup` (saves your settings before a start) and `post-deploy-smoke` (asks a URL after a start). `tests/examples-tests.sh` checks them all with no account.
 - `changed`, `deploy-changed` and `plan`: when no platform could be read at all, they now stop with the error (exit 1) instead of printing a stray table header, "Would deploy these .", `command not found` lines or a jq error (exit 2).
 - Budget: when Vercel billing gives no answer at all (no key, not logged in), `deploys budget` and `deploy-changed --yes` now say the spending could not be read (a warning, or a stop with `--strict`) instead of ending with a jq error.
 - Widgets: while a build runs the widgets look again every 5 minutes (instead of 30), and once the picture is out of date (the app has not run for three hours) every hour, which spares the daily reload budget.
