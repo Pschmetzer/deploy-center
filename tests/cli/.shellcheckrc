@@ -1,0 +1,2 @@
+# The files here are sourced by tests/cli-tests.sh: e2e, O, E, tmp ... come from tests/script-tests.sh.
+disable=SC2154,SC2034

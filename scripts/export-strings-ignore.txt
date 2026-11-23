@@ -1,0 +1,21 @@
+# Literals that are the same in English and German (brands, placeholders, units): not missing pairs.
+/health, /api/ping
+Autofix
+Claude
+Claude Code
+Claude Desktop
+DEMO
+Demo
+Deploy Center
+Live
+Mac
+Render
+USD
+Vercel
+\($0 == $0.rounded() ? String(Int($0)) : String($0)) h
+github.com/\(Updater.repo)
+iPhone
+owner/repo
+rnd_…
+sk-ant-…
+trig_…
