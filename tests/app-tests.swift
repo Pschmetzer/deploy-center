@@ -2177,6 +2177,41 @@ do {
     waiting.changed = true; waiting.pendingCommits = 2; waiting.headMsg = "Fix cart"; waiting.headSha = "abcdef1234"
     expect("copy: waiting commits", Row.waitingCopy(waiting)?.contains("abcdef1 Fix cart") ?? false, true)
     expect("copy: nothing waiting, nothing to copy", Row.waitingCopy(Item(id: "2", name: "calm", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil)) == nil, true)
+    for g in ShortcutCatalog.groups {
+        let keys = g.entries.map(\.keys)
+        expect("shortcuts: no key twice in \(g.name)", Set(keys).count, keys.count)
+        expect("shortcuts: every entry has words", g.entries.allSatisfy { !$0.title.isEmpty && !$0.keys.isEmpty }, true)
+    }
+    expect("shortcuts: the sheet's own key is listed", ShortcutCatalog.groups.flatMap(\.entries).contains { $0.keys == "⌘/" }, true)
+    do {
+        let d = UserDefaults(suiteName: "sel-test")!; d.removePersistentDomain(forName: "sel-test")
+        var a = Item(id: "a", name: "a", detail: "", platform: .vercel, deployable: true, auto: false, note: nil, link: nil)
+        var b = a; b = Item(id: "b", name: "b", detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil)
+        SelectionMemory.save(.vercel, rows: [], defaults: d)
+        a.selected = true
+        SelectionMemory.save(.vercel, rows: [a, b], defaults: d)
+        expect("selection memory: saved ids", SelectionMemory.load(.vercel, defaults: d), ["a"])
+        expect("selection memory: another platform is separate", SelectionMemory.load(.render, defaults: d), [])
+        SelectionMemory.save(.vercel, rows: [], defaults: d)
+        expect("selection memory: an empty list does not erase", SelectionMemory.load(.vercel, defaults: d), ["a"])
+        a.selected = false; b.selected = false
+        let r = SelectionMemory.restore([a, b], remembered: ["a", "b", "gone"])
+        expect("selection memory: restored, not for a project that cannot deploy", r.map(\.selected), [true, false])
+        d.removePersistentDomain(forName: "sel-test")
+    }
+    expect("why waiting: nothing known, no line", WaitReason.text(.init()) == nil, true)
+    expect("why waiting: key first", WaitReason.text(.init(keyMissing: true, observer: true, freezeClosed: true)), WaitReason.text(.init(keyMissing: true)))
+    expect("why waiting: freeze with reason", WaitReason.text(.init(freezeClosed: true, freezeReason: "release week"))?.contains("release week") ?? false, true)
+    expect("why waiting: freeze beats queue", WaitReason.text(.init(freezeClosed: true, queue: "place 2 of 3")), WaitReason.text(.init(freezeClosed: true)))
+    expect("why waiting: queue", WaitReason.text(.init(queue: "place 2 of 3"))?.contains("place 2 of 3") ?? false, true)
+    do {
+        var rc = RulesConfig()
+        var hold = RulesConfig.Rule(); hold.name = "Hold shop"; hold.projects = ["vercel/shop"]; hold.then = .hold
+        var off = hold; off.name = "off"; off.enabled = false; off.projects = []
+        rc.rules = [off, hold]
+        expect("why waiting: hold rule by project", WaitReason.holdRule(project: "shop", platform: .vercel, in: rc) ?? "", "Hold shop")
+        expect("why waiting: other project, other platform", WaitReason.holdRule(project: "shop", platform: .render, in: rc) == nil, true)
+    }
     expect("savings: fold key", SavingsEntry.collapsedKey, "savingsBannerCollapsed")
 }
 

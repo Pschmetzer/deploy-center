@@ -44,7 +44,8 @@ struct FreezeReply: Decodable, Equatable {
 
 /// The footer's freeze note: asks the script now and then (a menu-bar app runs for weeks).
 struct FreezeNote: View {
-    @State private var reply: FreezeReply?
+    /// Shared with the store, so the rows can say "deploys are closed" too.
+    @Binding var reply: FreezeReply?
 
     var body: some View {
         Group {

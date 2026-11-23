@@ -17,6 +17,8 @@ struct Row: View {
     var onRetry: (() -> Void)? = nil
     var usualMinutes: Int? = nil
     var queueText: String? = nil
+    /// "Why is this waiting?" (WaitReason), only for a row that waits.
+    var waitWhy: String? = nil
     var search = ""
     var autofix: RowAutofix? = nil
     var allowedUntil: Date? = nil
@@ -113,6 +115,9 @@ struct Row: View {
                     }
                 }
                 .help(moreText)
+                if let w = waitWhy, item.hasNewCommits, item.state == .idle {
+                    Text(w).font(.caption).foregroundStyle(.secondary).lineLimit(1).help(w)
+                }
                 reasonLine
             }
 

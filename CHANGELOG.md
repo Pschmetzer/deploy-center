@@ -10,6 +10,9 @@
 - iPhone app: a failed build's log starts with a "Likely cause" hint (out of memory, a missing module, a dependency conflict, a missing command and more), and a documented error (same phrases as the Mac app) links to the troubleshooting guide.
 - CLI: `deploys nightly history [--limit N] [--json]` shows what each nightly run did (when, how long, repos, new findings and leaks, failing checks, whether it notified); the last 90 runs are kept, a run with no repos counts too.
 - CLI: `deploys freeze import <calendar.ics> [--dry-run]` turns a calendar (all-day and timed events, folded lines, CRLF) into closed dates in `window.json`. Events that are over and repeating events are left out (and counted); an event in UTC or over several days closes whole days; importing twice adds nothing; a file that is no calendar changes nothing.
+- Mac app: ⌘/ lists all keyboard shortcuts, grouped per window (also under the View menu).
+- Mac app: the ticked projects of each tab are remembered between launches.
+- Mac app: a project that waits to go live says why when it knows (closed deploy times, a hold rule, the queue, a missing key, observer mode).
 - Nightly check (Settings > Claude, `deploys nightly`): OSV-Scanner, gitleaks and Semgrep on every repo once a night; the first check of a repo is its starting point, then only new findings count, one notification. Optional: Claude gets only the new findings in a bug scan that opens a PR (at most 2 a night, never merges or deploys). Leaked keys are only reported. Optional weekly review: once a week Claude reads each repo's changes since its last review and looks for bugs they brought in (shares the nightly limit with the fixes). All switches are off by default.
 
 ## 0.12.0 - 2026-11-21
