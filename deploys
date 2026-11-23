@@ -4029,7 +4029,8 @@ case "${1:-} ${2:-}" in
       echo "$held" | jq -r '.[] | "  \(.platform)  \(.name)  held by the rule \"\(.rule.name)\""'
     fi
     if [ "$n" = "0" ]; then
-      [ "$rc" = 0 ] || die "Could not tell what has changes (see above). Nothing was started."
+      # Nothing could be read: a closed window is still named first (it stops a start before a platform is asked).
+      [ "$rc" = 0 ] || { [ -z "$yes" ] || freeze_check; die "Could not tell what has changes (see above). Nothing was started."; }
       if [ "$json" = 1 ]; then echo "$held" | jq '.'; else echo "Nothing to deploy."; fi; exit 0
     fi
     if [ -z "$yes" ]; then
