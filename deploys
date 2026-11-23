@@ -2395,15 +2395,9 @@ guard_act() {  # guard_act <platform> <project> <action> [<error>] [<reason>]
   GUARD_ACTIONS="$(echo "$GUARD_ACTIONS" | jq -c --argjson t "${GUARD_NOW:-0}" --arg pl "$1" --arg p "$2" --arg a "$3" --arg e "${4:-}" --arg r "${5:-}" \
     '. + [{at:$t, platform:$pl, project:(if $p == "" then null else $p end), action:$a, error:(if $e == "" then null else $e end), reason:(if $r == "" then null else $r end)}]')"
 }
-# guard_why <platform> <name>: why auto-deploy is being switched off. An allowance that ended since the last run
-# (GUARD_EXPIRED: its keys) is told apart from auto-deploy that someone turned on again.
+# guard_why <platform> <name>: why it is switched off: an allowance that ended since the last run (GUARD_EXPIRED: its keys), or auto-deploy turned on again.
 GUARD_EXPIRED=""
-guard_why() {
-  case " $GUARD_EXPIRED " in
-    *" $1:$2 "*|*" $1:* "*|*" * "*) echo "its allowance ended" ;;
-    *) echo "auto-deploy was on and no allowance covers it" ;;
-  esac
-}
+guard_why() { case " $GUARD_EXPIRED " in *" $1:$2 "*|*" $1:* "*|*" * "*) echo "its allowance ended" ;; *) echo "auto-deploy was on and no allowance covers it" ;; esac; }
 guard_run() {
   local dry="$1" sp="${2:-all}" sn="${3:-*}" now rc=0 plat list name id err out
   now="$(date +%s)"; GUARD_ACTIONS='[]'; GUARD_NOW="$now"
@@ -2477,7 +2471,6 @@ guard_main() {
   elif [ -n "$names" ]; then af_notify "Auto-deploy guard: turned auto-deploy off for $names."
   fi
   names="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "failed" or .action == "error") | "\(.platform)\(if .project then " " + .project else "" end)"] | sort | join(", ")')"
-  # The notification says why, too (the first error, short; a token-like word is masked). Only a change is notified.
   local why; why="$(echo "$GUARD_ACTIONS" | jq -r '[.[] | select(.action == "failed" or .action == "error") | .error // empty][0] // ""' | cut -c1-80 | sed -E 's/(sk|pk|rnd|tok|ghp|glpat)[_-][A-Za-z0-9_-]{8,}/***/g')"
   [ -z "$names" ] || [ "$names" = "$before" ] || af_notify "Auto-deploy guard: could not check or switch $names${why:+ ($why)}. See: deploys guard status"
   return "$rc"
@@ -4041,8 +4034,7 @@ case "${1:-} ${2:-}" in
       echo "$held" | jq -r '.[] | "  \(.platform)  \(.name)  held by the rule \"\(.rule.name)\""'
     fi
     if [ "$n" = "0" ]; then
-      # A closed window is named first: it is the more useful refusal, and it needs no read.
-      [ "$rc" = 0 ] || { [ -z "$yes" ] || freeze_check; die "Could not tell what has changes (see above). Nothing was started."; }
+      [ "$rc" = 0 ] || { [ -z "$yes" ] || freeze_check; die "Could not tell what has changes (see above). Nothing was started."; }   # a closed window is named first
       if [ "$json" = 1 ]; then echo "$held" | jq '.'; else echo "Nothing to deploy."; fi; exit 0
     fi
     if [ -z "$yes" ]; then
