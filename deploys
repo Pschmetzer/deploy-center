@@ -300,7 +300,12 @@ par_fn with_timeout
 days_ago() { date -u -v-"$1"d +%Y-%m-%d 2>/dev/null || date -u -d "$1 days ago" +%Y-%m-%d; }
 b64d() { base64 -D 2>/dev/null || base64 -d; }
 
-die() { echo "${ERED:-}Error:${EPLAIN:-} $*" >&2; exit 1; }
+# A wrong call ("Usage: …", an unknown option or command) exits 2 and an error 1, as docs/CLI.md says.
+die() {
+  echo "${ERED:-}Error:${EPLAIN:-} $*" >&2
+  case "$*" in Usage:*|Unknown\ option*|Unknown\ command*) exit 2 ;; esac
+  exit 1
+}
 # A wrong call (a missing argument, a word that is no command): exit 2, so a script can tell it from an error (1).
 # --debug: what was decided, on stderr, masked like a log (the calls themselves are traced by lib/http.sh).
 dbg() { [ -z "${DEPLOYS_DEBUG:-}" ] || { printf 'debug: %s\n' "$*" | af_mask >&2 2>/dev/null || true; }; }
