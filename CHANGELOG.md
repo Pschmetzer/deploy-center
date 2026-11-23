@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.13.0 - 2026-11-23
+
+### Highlights
+
+- Nightly security check on every repo (OSV-Scanner, gitleaks, Semgrep), with a history view and freeze import from an ICS calendar
+- Mac app: shortcut sheet (⌘/), why-is-this-waiting line per row, error-pattern hints, cost forecast, several accounts per host, health score
+- iPhone app: timeline of recent deploys, failure-cause hint, open outages, Dynamic Type rules
+- New host Northflank (opt-in); Koyeb and Deno Deploy read every page; more reliable times and escaped keys on other hosts
+- Timeline and recovery in MCP, Raycast, Alfred, the widget and VS Code; German docs for every page, a troubleshooting page and a security model page
+
+### All changes
+
 - `changed`, `deploy-changed` and `plan`: when no platform could be read at all, they now stop with the error (exit 1) instead of printing a stray table header, "Would deploy these .", `command not found` lines or a jq error (exit 2).
 - Budget: when Vercel billing gives no answer at all (no key, not logged in), `deploys budget` and `deploy-changed --yes` now say the spending could not be read (a warning, or a stop with `--strict`) instead of ending with a jq error.
 - Widgets: while a build runs the widgets look again every 5 minutes (instead of 30), and once the picture is out of date (the app has not run for three hours) every hour, which spares the daily reload budget.
