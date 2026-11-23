@@ -491,5 +491,20 @@ do {
     check(tie.first?.items.map(\.id) == ["x/a", "x/b"], "timeline: the same time sorts by id, so the order is stable")
 }
 
+// MARK: Adaptive layout
+
+do {
+    typealias S = AdaptiveLayout.TextScale
+    check(AdaptiveLayout.summary(.large) == .row && AdaptiveLayout.summary(.xxLarge) == .row, "layout: the standard sizes show four in a row")
+    check(AdaptiveLayout.summary(.xxxLarge) == .grid, "layout: the largest standard size shows two by two")
+    check(S.allCases.filter { $0.isAccessibility }.allSatisfy { AdaptiveLayout.summary($0) == .column }, "layout: every accessibility size shows one column")
+    check(zip(S.allCases, S.allCases.dropFirst()).allSatisfy { AdaptiveLayout.summary($0) <= AdaptiveLayout.summary($1) },
+          "layout: a larger text never gets the tighter summary")
+    check(S.allCases.count == 12 && S.allCases.first == .xSmall && S.allCases.last == .accessibility5, "layout: twelve sizes, in order")
+    check(AdaptiveLayout.timeBesideName(.xxxLarge) && !AdaptiveLayout.timeBesideName(.accessibility1), "layout: the time goes under the name from the first accessibility size")
+    check(AdaptiveLayout.titleLines(.large) == 1 && AdaptiveLayout.titleLines(.xxxLarge) == 2 && AdaptiveLayout.titleLines(.accessibility3) == nil,
+          "layout: titles get more lines as the text grows, none cut at accessibility sizes")
+}
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
