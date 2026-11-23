@@ -96,6 +96,7 @@ struct CostsSheet: View {
             summary
             chart
             ranking
+            CostForecastCard(costs: costs)
             Text(L("From Vercel's billing data. Total incl. other usage, 7 days: ", "Aus Vercels Abrechnung. Gesamt inkl. sonstiger Nutzung, 7 Tage: ")
                  + last7.map(\.total).reduce(0, +).formatted(.currency(code: "USD")))
                 .font(.caption).foregroundStyle(.secondary)

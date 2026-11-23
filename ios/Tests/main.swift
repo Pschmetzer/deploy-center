@@ -506,5 +506,27 @@ do {
           "layout: titles get more lines as the text grows, none cut at accessibility sizes")
 }
 
+// Health score and open outages.
+do {
+    let now = Date()
+    func rec(_ id: String, _ state: String, _ daysAgo: Double) -> DeployRecord { DeployRecord(id: id, state: state, at: now.addingTimeInterval(-daysAgo * 86400)) }
+    let clean = PhoneHealth.score([rec("1", "READY", 1), rec("2", "READY", 2)], now: now)
+    check(clean.score == 100, "health: a clean project scores 100")
+    let open = PhoneHealth.score([rec("1", "READY", 5), rec("2", "ERROR", 2)], now: now)
+    check(open.openOutage && open.openSince != nil, "health: a failure with no good deploy after it is open")
+    check(PhoneHealth.score([rec("1", "CANCELED", 1)], now: now).score == nil, "health: canceled counts for nothing")
+    let healed = PhoneHealth.score([rec("1", "ERROR", 3), rec("2", "READY", 2.99)], now: now)
+    check(!healed.openOutage, "health: a good deploy after a failure ends the outage")
+    check(HealthFormula.lerp(0.25, best: 0, worst: 0.5, max: 40) == 20, "formula: linear between best and worst")
+    var broken = PhoneProject(provider: .vercel, id: "p1", name: "shop")
+    broken.latestState = "ERROR"
+    var fine = PhoneProject(provider: .vercel, id: "p2", name: "blog")
+    fine.latestState = "READY"
+    let out = PhoneHealth.outages([broken, fine], history: { _ in [rec("1", "READY", 4), rec("2", "ERROR", 1)] }, now: now)
+    check(out.map(\.name) == ["shop"], "outages: only the project whose newest deploy failed")
+    check(PhoneHealth.average([fine], history: { _ in nil }, now: now) == nil, "average: nothing cached, nothing said")
+    check(PhoneHealth.average([fine], history: { _ in [rec("1", "READY", 1)] }, now: now)?.score == 100, "average: one clean project")
+}
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
