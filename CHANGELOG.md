@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `deploys env-diff <project>`: environment variable names in production but not in preview (Vercel), names only, never values.
 - `deploys forecast`: this month's build cost so far, projected to month end and shared by project (an estimate), with a warning near the `budget` limit.
 ## 0.13.0 - 2026-11-23
 

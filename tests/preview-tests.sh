@@ -59,4 +59,16 @@ expect "forecast: this month only, failures left out" "$(jq -c '[.projects[] | "
 expect "forecast: render has no estimate" "$(jq -c '[.projects[] | select(.platform == "render") | .estimateUsd]' <<<"$f")" '[null]'
 expect "forecast: no journal" "$(forecast_from "$fnow" 0 null 80 </dev/null | jq -c '.projects')" '[]'
 
+# --- envdiff_from: names only, a value never shows ---
+secret="sk_test_FAKE_SECRET_VALUE_123"
+ev="[{\"key\":\"DB_URL\",\"targets\":[\"production\",\"preview\"],\"value\":\"$secret\"},{\"key\":\"API_KEY\",\"targets\":[\"production\"],\"value\":\"$secret\"},{\"key\":\"DEBUG\",\"targets\":[\"preview\",\"development\"]}]"
+e="$(envdiff_from <<<"$ev")"
+expect "env-diff: only in production" "$(jq -c .onlyProduction <<<"$e")" '["API_KEY"]'
+expect "env-diff: only in preview" "$(jq -c .onlyPreview <<<"$e")" '["DEBUG"]'
+expect "env-diff: counts" "$(jq -c '[.production,.preview,.both,.same]' <<<"$e")" '[2,2,1,false]'
+expect "env-diff: a value is not in the JSON" "$(grep -c "$secret" <<<"$e")" "0"
+expect "env-diff: a value is not in the text" "$(envdiff_print web <<<"$e" | grep -c "$secret")" "0"
+expect "env-diff: same names" "$(envdiff_from <<<'[{"key":"A","targets":["production","preview"]}]' | jq .same)" "true"
+expect "env-diff: a single string target" "$(envdiff_from <<<'[{"key":"A","targets":"production"}]' | jq -c .production)" "1"
+
 [ "$fails" = 0 ] && echo "all ok" || { echo "$fails failed"; exit 1; }

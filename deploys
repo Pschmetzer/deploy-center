@@ -46,6 +46,7 @@
 #   deploys certs [--days 14] [--json]        TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out soon
 #   deploys domains [--warn 30] [--json]      custom domains and platform addresses with the days their TLS certificate has left; exit 1 inside --warn
 #   deploys forecast [--warn 80] [--json]     the month's build cost so far and where it ends (estimate), against `budget`; exit 1 when over
+#   deploys env-diff <p> [--json]             variable NAMES in production but not in preview and the other way (never values); exit 1 when they differ
 #   deploys creds [--max-age 90] [--json]     where each platform's key comes from, if it works, how old a keychain key is
 #   deploys idle [--days 90] [--json]         projects with no deploy for N days (candidates to pause)
 #   deploys list [--platform <p>] [--auto|--manual] [--format tsv] [--json]   every project on every provider that is on, with its platform
@@ -434,7 +435,7 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion nightly preview domains forecast; do
+for _l in risk verify completion nightly preview domains forecast envdiff; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done
@@ -2857,6 +2858,7 @@ case "${1:-} ${2:-}" in
   "verify "*)      usage_if_short $# 2 "verify <project> [--path /health] [--expect 200|2xx] [--follow] [--tries 3] [--every 5] [--need 1] [--watch-timeout 30m] [--rollback-after 10] [--no-rollback]" ;;
   "secrets "*)     [ "${2:-}" = --stdin ] || usage_if_short $# 2 "secrets <project>|--stdin [--json]" ;;
   "risk "*)        usage_if_short $# 2 "risk <project> [--json]" ;;
+  "env-diff "*)    usage_if_short $# 2 "env-diff <project> [--json]" ;;
   "preview "*)     usage_if_short $# 2 "preview <project> [--json]" ;;
   "ci "*)          usage_if_short $# 2 "ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
@@ -3849,6 +3851,10 @@ case "${1:-} ${2:-}" in
     # The block "Exit codes" of the help, as it stands in the header of this script: one source.
     sed -n '/^# Exit codes: /,/^#$/p' "$SELF" | sed 's/^# \{0,1\}//'
     echo "Every command: the table is in docs/CLI.md (Exit codes)." ;;
+
+  "env-diff "*)
+    declare -F envdiff_main >/dev/null || die "lib/envdiff.sh is not next to deploys."
+    envdiff_main "${@:2}" ;;
 
   "forecast "*)
     declare -F forecast_main >/dev/null || die "lib/forecast.sh is not next to deploys."
