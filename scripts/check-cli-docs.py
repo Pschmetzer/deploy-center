@@ -5,6 +5,7 @@
 
 - every command word in the "Commands:" block of `deploys help` appears as `deploys <word>` in docs/CLI.md
 - every `deploys <word>` in a code span of docs/CLI.md is a command of the help, a provider, or a known alias
+- the table of docs/providers/README.md has one row per provider with the caps `deploys providers --json` reports
 Provider verbs (`deploys vercel list`) are not checked here; tests/contract-json.sh covers them.
 """
 import os
@@ -34,6 +35,32 @@ for rel in ("docs/CLI.md",):
     if rel == "docs/CLI.md":
         for c in sorted(coded - help_cmds - providers - {"help", "exit-codes", "completion", "deploys"}):
             problems.append(f"{rel}: names `deploys {c}`, which is not a command in `deploys help`")
+
+# docs/providers/README.md lists the caps each provider reports (`deploys providers --json`)
+try:
+    import json
+    meta = json.loads(subprocess.run(["bash", os.path.join(root, "deploys"), "providers", "--json"], capture_output=True,
+                                     text=True, env={**os.environ, "DEPLOYS_CONFIG": "/nonexistent"}).stdout)
+    caps = {m["id"]: m["caps"] for m in meta}
+except Exception as e:  # noqa: BLE001
+    caps = {}
+    problems.append(f"could not read `deploys providers --json`: {e}")
+cols = ["off", "sha", "cancel", "rollback", "logs", "preview"]
+table = open(os.path.join(root, "docs", "providers", "README.md"), encoding="utf-8").read()
+seen = set()
+for line in table.splitlines():
+    m = re.match(r"\| \[[^\]]+\]\(([a-z0-9-]+)\.md\) \|(.*)\|\s*$", line)
+    if not m or m.group(1) not in caps:
+        continue
+    pid = m.group(1)
+    seen.add(pid)
+    cells = [c.strip() for c in m.group(2).split("|")]
+    for col, cell in zip(cols, cells):
+        want = "yes" if caps[pid].get(col) else "no"
+        if cell != want:
+            problems.append(f"docs/providers/README.md: {pid} / {col} says {cell}, `deploys providers --json` says {want}")
+for pid in sorted(set(caps) - seen):
+    problems.append(f"docs/providers/README.md: no row for the provider {pid}")
 
 for line in problems:
     print(line)

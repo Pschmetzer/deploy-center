@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Docs: the website's Hosts section now has Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb and Deno Deploy and the table of what each host can do; the README host lists (also the German one) name every provider.
 - Docs: German versions of Autofix, Bug scan, Safe deploys, Team mode, GitLab, Claude in the app, Claude Code, Widgets and iPhone, Adding a host, Adding a git host and Uninstall (`docs/*.de.md`); README.de.md links them.
 - Docs: a guide for moving from auto-deploy to one deploy a day (`docs/MIGRATING.md`) and a plain-language security model page, both also in German.
 - Nightly check (Settings > Claude, `deploys nightly`): OSV-Scanner, gitleaks and Semgrep on every repo once a night; the first check of a repo is its starting point, then only new findings count, one notification. Optional: Claude gets only the new findings in a bug scan that opens a PR (at most 2 a night, never merges or deploys). Leaked keys are only reported. Optional weekly review: once a week Claude reads each repo's changes since its last review and looks for bugs they brought in (shares the nightly limit with the fixes). All switches are off by default.

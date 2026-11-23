@@ -1,7 +1,7 @@
 # FAQ
 
 ## What does it cost?
-Nothing. Deploy Center is free and open source (MIT). You pay your hosts (Vercel, Render, and the opt-in ones: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages) for the builds you start, and fewer of them.
+Nothing. Deploy Center is free and open source (MIT). You pay your hosts (Vercel, Render, and the opt-in ones: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Deno Deploy) for the builds you start, and fewer of them.
 `deploys simulate` estimates what auto-deploy would cost you a month, `deploys ledger` what turning it off saved: [SAVINGS.md](SAVINGS.md).
 
 ## Does it deploy anything by itself?
