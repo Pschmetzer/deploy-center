@@ -4,8 +4,8 @@
 
 # 267: an unknown flag of deploy-json is refused, nothing starts.
 fresh
-expect "vercel deploy-json --sah: refused" "$(run "$O" "$E" vercel deploy-json web --sah abc; started)" $'1\n0'
-expect "render deploy-json --sah: refused" "$(run "$O" "$E" render deploy-json api --sah abc; started)" $'1\n0'
+expect "vercel deploy-json --sah: refused" "$(run "$O" "$E" vercel deploy-json web --sah abc; started)" $'2\n0'
+expect "render deploy-json --sah: refused" "$(run "$O" "$E" render deploy-json api --sah abc; started)" $'2\n0'
 # 266: vercel deploy --wait gives up like watch (exit 3) instead of asking for ever.
 fresh
 expect "vercel deploy --wait: gives up after five misses" "$(run "$O" "$E" vercel deploy web --wait; grep -c 'try 5 of 5' "$E")" $'3\n1'

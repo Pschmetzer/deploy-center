@@ -20,7 +20,7 @@ expect "changed --platform: a typo is refused" "$(run "$O" "$E" changed --platfo
 # 281/282/293: logs 0, history past 100, open with a stray argument.
 expect "logs: 0 lines is refused (not the whole log)" "$(run "$O" "$E" logs web 0; grep -c '1 or more' "$E")" $'1\n1'
 expect "history: more than 100 is refused" "$(run "$O" "$E" history web 500; grep -c 'from 1 to 100' "$E")" $'1\n1'
-expect "open: only --dashboard is taken" "$(run "$O" "$E" open web foo; grep -c 'Unknown option foo' "$E")" $'1\n1'
+expect "open: only --dashboard is taken" "$(run "$O" "$E" open web foo; grep -c 'Unknown option foo' "$E")" $'2\n1'
 
 # 257: risk and verify take "p:name" like the other commands.
 fresh

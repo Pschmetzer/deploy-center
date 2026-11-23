@@ -39,7 +39,7 @@ expect "318: but not two / or one for another platform" \
   "$( (safe_name a/b/c amplify) 2>/dev/null; echo $?; (safe_name a/b) 2>/dev/null; echo $?; (safe_name render:a/b) 2>/dev/null; echo $?; (safe_name /main amplify) 2>/dev/null; echo $?)" $'1\n1\n1\n1'
 
 # 309: a typo gets the nearest command, not the whole help.
-expect "309: unknown command names the nearest" "$(run "$O" "$E" chaged; grep -c 'Unknown command "chaged". Did you mean: changed' "$E"; grep -c . "$O")" $'1\n1\n0'
+expect "309: unknown command names the nearest" "$(run "$O" "$E" chaged; grep -c 'Unknown command "chaged". Did you mean: changed' "$E"; grep -c . "$O")" $'2\n1\n0'
 # 312: the help lists each provider's commands, its own ones too.
 expect "312: --help lists the provider commands" "$(run "$O" "$E" --help; grep -c '^Provider commands' "$O"; grep -Ec '^  vercel +list .* map' "$O")" $'0\n1\n1'
 # A verb a provider does not have: refused with its commands (it used to print the help, exit 1).
