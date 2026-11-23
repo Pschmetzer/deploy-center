@@ -547,7 +547,7 @@ expect "metrics: waiting commits per project, in Prometheus text" \
   "$(run "$O" "$E" metrics; grep -c '^deploycenter_waiting_commits{platform="vercel",project="web"} 1$' "$O"; grep -c '^# TYPE deploycenter_failed gauge$' "$O")" $'0\n1\n1'
 expect "metrics --out: the file is written whole" "$(run "$O" "$E" metrics --out "$e2e/metrics.prom"; grep -c '^deploycenter_auto_deploy{' "$e2e/metrics.prom")" $'0\n2'
 expect "metrics: deploycenter_up and the time of the scrape" "$(run "$O" "$E" metrics; grep -c '^deploycenter_up 1$' "$O"; grep -c '^deploycenter_scrape_timestamp_seconds [0-9]' "$O")" $'0\n1\n1'
-expect "metrics: an unknown option is refused" "$(run "$O" "$E" metrics --nope; grep -c 'Usage: deploys metrics' "$E")" $'1\n1'
+expect "metrics: an unknown option is refused" "$(run "$O" "$E" metrics --nope; grep -c 'Usage: deploys metrics' "$E")" $'2\n1'
 fresh; rm -f "$e2e/polls"
 expect "watch --and: several at once, each line starts with its project" \
   "$(run "$O" "$E" watch web --and api; grep -c '^\[web\] Nothing is building' "$O"; grep -c '^\[api\] ' "$O" | grep -c '^[1-9]')" $'0\n1\n1'
@@ -778,7 +778,7 @@ out="$(env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" DEPLOYS_ROUTINE_TOKEN=sk
 expect "autofix --only: no routine is 5" "$rc:$(echo "$out" | grep -c 'No routine set')" "5:1"
 mv "$af/routine.off" "$DEPLOYS_CONFIG/autofix-routine"
 out="$(env -u DEPLOYS_LIB PATH="$tmp/bin:/usr/bin:/bin" /bin/bash ./deploys autofix --only heroku web 2>&1 </dev/null)"; rc=$?
-expect "autofix --only: a wrong platform is a usage error" "$rc:$(echo "$out" | grep -c 'Usage: deploys autofix --only')" "1:1"
+expect "autofix --only: a wrong platform is a usage error" "$rc:$(echo "$out" | grep -c 'Usage: deploys autofix --only')" "2:1"
 
 # PR state per fire: open, then merged; only the exact fix branch counts.
 af_reset
@@ -990,7 +990,7 @@ airun ai_run ask web --question "will the migration run?" >/dev/null
 expect "ai ask: the question, the commits and the masked log go in" \
   "$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'Question: will the migration run?'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'dark mode'):$(jq -r '.messages[0].content' "$AIBODY" | grep -c 'npm ERR! build failed'):$(grep -c 'ghp_abcdef' "$AIBODY")" "1:1:1:0"
 out="$(airun ai_run ask web)"; rc=$?
-expect "ai ask: without a question, a usage line and no call" "$rc:$(echo "$out" | grep -c 'ai ask <project> --question')" "1:1"
+expect "ai ask: without a question, a usage line and no call" "$rc:$(echo "$out" | grep -c 'ai ask <project> --question')" "2:1"
 ai_history() { printf 'WHEN (UTC)\tSTATE\tCOMMIT\tTRIGGER\tTOOK\n2026-01-01 10:00\tlive\taaaa\tapi\t9m\n'; }
 airun ai_run slow web >/dev/null
 expect "ai slow: the deploy times and the log go in" \
@@ -1081,7 +1081,7 @@ expect "vercel deploy refuses a path in the name, nothing started" "$rc:$(grep -
 rc="$(run "$O" "$E" render status srv-1 'dep-1?x')"
 expect "render status refuses a query in the deploy id" "$rc:$(wc -l < "$e2e/calls.log" | tr -d ' ')" "1:0"
 rc="$(run "$O" "$E" logs web 5x)"
-expect "logs: the line count is digits only" "$rc:$(grep -c 'Unknown option' "$E")" "1:1"
+expect "logs: the line count is digits only" "$rc:$(grep -c 'Unknown option' "$E")" "2:1"
 
 # The routine token goes to `security -i` on one line: spaces or quotes would add arguments.
 : > "$CALLS"
@@ -1433,7 +1433,7 @@ rm -f "$e2e/config/window.json"
 # CLI-032, CLI-033, CLI-034, CLI-048, CLI-050: arguments.
 # One line since the help was regrouped: "deploy <p>|<group>" covers a project and a group.
 expect "CLI-032: deploy --help shows its lines" "$(run "$O" "$E" deploy --help; grep -c '^  deploys deploy ' "$O")" $'0\n1'
-expect "CLI-033: an unknown command is named" "$(run "$O" "$E" deplyo; grep -ci 'unknown command "deplyo"' "$E")" $'1\n1'
+expect "CLI-033: an unknown command is named" "$(run "$O" "$E" deplyo; grep -ci 'unknown command "deplyo"' "$E")" $'2\n1'
 expect "CLI-034: vercel map without arguments is a usage line" "$(run "$O" "$E" vercel map; grep -c 'Usage: deploys vercel map' "$E"; grep -c 'unbound' "$E")" $'2\n1\n0'
 fresh
 expect "CLI-048: changed --platform with a typo is refused, nothing read" "$(run "$O" "$E" changed --platform verzel; grep -c 'takes one of' "$E"; wc -l < "$e2e/calls.log" | tr -d ' ')" $'1\n1\n0'
@@ -1459,7 +1459,7 @@ expect "INT-002: changed add-on with the same version is refused" "$("$ra/releas
 echo '{"version":"0.1.1"}' > "$ra/integrations/mcp/package.json"; gq commit -qam three
 expect "INT-002: with a new version it passes" "$("$ra/release.sh" --check-addons >/dev/null 2>&1; echo $?)" "0"
 # LOG-034: "--" ends the options, so a name can never become --json or --force.
-expect "LOG-034: after --, --json is an argument" "$(run "$O" "$E" ignore -- --json; grep -c 'Unknown option --json' "$E")" $'1\n1'
+expect "LOG-034: after --, --json is an argument" "$(run "$O" "$E" ignore -- --json; grep -c 'Unknown option --json' "$E")" $'2\n1'
 # LOG-082: what the app starts (DEPLOYS_CALLER=app) the app writes to the journal itself.
 fresh; echo '{"deny":[{"reason":"closed"}]}' > "$e2e/config/window.json"; : > "$DEPLOYS_JOURNAL"
 expect "LOG-082: a forced start from the app: no second journal line" \

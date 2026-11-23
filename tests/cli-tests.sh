@@ -21,7 +21,7 @@ expect "changed --platform: a typo is refused" "$(run "$O" "$E" changed --platfo
 # 281/282/293: logs 0, history past 100, open with a stray argument.
 expect "logs: 0 lines is refused (not the whole log)" "$(run "$O" "$E" logs web 0; grep -c '1 or more' "$E")" $'1\n1'
 expect "history: more than 100 is refused" "$(run "$O" "$E" history web 500; grep -c 'from 1 to 100' "$E")" $'1\n1'
-expect "open: only --dashboard is taken" "$(run "$O" "$E" open web foo; grep -c 'Unknown option foo' "$E")" $'1\n1'
+expect "open: only --dashboard is taken" "$(run "$O" "$E" open web foo; grep -c 'Unknown option foo' "$E")" $'2\n1'
 
 # 257: risk and verify take "p:name" like the other commands.
 fresh
@@ -97,8 +97,8 @@ expect "deploy group:nope is an error" "$(DEPLOYS_TEAM_LIB="$tmp/team-stub.sh" r
 
 # 267: an unknown flag of deploy-json is refused, nothing starts.
 fresh
-expect "vercel deploy-json --sah: refused" "$(run "$O" "$E" vercel deploy-json web --sah abc; started)" $'1\n0'
-expect "render deploy-json --sah: refused" "$(run "$O" "$E" render deploy-json api --sah abc; started)" $'1\n0'
+expect "vercel deploy-json --sah: refused" "$(run "$O" "$E" vercel deploy-json web --sah abc; started)" $'2\n0'
+expect "render deploy-json --sah: refused" "$(run "$O" "$E" render deploy-json api --sah abc; started)" $'2\n0'
 # 266: vercel deploy --wait gives up like watch (exit 3) instead of asking for ever.
 fresh
 expect "vercel deploy --wait: gives up after five misses" "$(run "$O" "$E" vercel deploy web --wait; grep -c 'try 5 of 5' "$E")" $'3\n1'
@@ -315,7 +315,7 @@ expect "318: but not two / or one for another platform" \
   "$( (safe_name a/b/c amplify) 2>/dev/null; echo $?; (safe_name a/b) 2>/dev/null; echo $?; (safe_name render:a/b) 2>/dev/null; echo $?; (safe_name /main amplify) 2>/dev/null; echo $?)" $'1\n1\n1\n1'
 
 # 309: a typo gets the nearest command, not the whole help.
-expect "309: unknown command names the nearest" "$(run "$O" "$E" chaged; grep -c 'Unknown command "chaged". Did you mean: changed' "$E"; grep -c . "$O")" $'1\n1\n0'
+expect "309: unknown command names the nearest" "$(run "$O" "$E" chaged; grep -c 'Unknown command "chaged". Did you mean: changed' "$E"; grep -c . "$O")" $'2\n1\n0'
 # 312: the help lists each provider's commands, its own ones too.
 expect "312: --help lists the provider commands" "$(run "$O" "$E" --help; grep -c '^Provider commands' "$O"; grep -Ec '^  vercel +list .* map' "$O")" $'0\n1\n1'
 # A verb a provider does not have: refused with its commands (it used to print the help, exit 1).
