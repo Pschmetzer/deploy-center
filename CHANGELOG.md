@@ -4,6 +4,7 @@
 
 - Budget: when Vercel billing gives no answer at all (no key, not logged in), `deploys budget` and `deploy-changed --yes` now say the spending could not be read (a warning, or a stop with `--strict`) instead of ending with a jq error.
 - iPhone app (fix): a cancel of a followed deploy that came too late (the deploy had finished) no longer hides the failure of a later canceled build of the same project.
+- Providers (security): Heroku and Railway escape the key in the curl config line like the other hosts do, and refuse a key with a line break in it without sending anything; before, a quote or line break in `HEROKU_API_KEY` or `RAILWAY_API_TOKEN` could add curl directives.
 - iPhone app (Dynamic Type): the four numbers above the list and the "Recent deploys" rows follow one set of rules, tested for every text size; at accessibility sizes the time moves under the project name and titles are no longer cut off.
 - Providers: Deno Deploy lists every project of the organization, not only the first 100 (it reads the next page while a page is full).
 - Website: a guide (English and German) for `deploys doctor` and `creds`.

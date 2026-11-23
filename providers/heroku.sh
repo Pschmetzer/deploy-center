@@ -19,6 +19,8 @@ HEROKU_KEYCHAIN="deploy-center-heroku"
 HEROKU_API="${HEROKU_API:-https://api.heroku.com}"
 
 declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
+# shellcheck source=../lib/http.sh
+declare -F curl_cfg_quote >/dev/null || { _he_h="$(dirname "${BASH_SOURCE[0]}")/../lib/http.sh"; [ ! -f "$_he_h" ] || . "$_he_h"; unset _he_h; }
 
 heroku_key() {
   local k=""
@@ -42,8 +44,11 @@ heroku_ratelimit() {
 # stdin; a body goes through a file of our own (0600). Reads are repeated after a 429, a 5xx or no
 # answer; a write only after a 429 (which means it was not taken).
 heroku_call() {
-  local method="$1" path="$2" body="${3:-}" range="${4:-}" key out code try err bodyf="" msg hint="" fix="pbpaste | deploys heroku set-key"
+  local method="$1" path="$2" body="${3:-}" range="${4:-}" key qkey out code try err bodyf="" msg hint="" fix="pbpaste | deploys heroku set-key"
   key="$(heroku_key)" || return 1
+  # The key goes into a curl config line: a quote or line break in it (a paste mistake in the environment)
+  # must not add directives, so it is escaped, and a control character is refused without a call.
+  qkey="$(curl_cfg_quote "$key")" || { echo "Heroku: the key has a line break or control character in it (a paste mistake?): set it again without" >&2; return 1; }
   [ -z "${HEROKU_API_KEY:-}" ] || fix="check HEROKU_API_KEY in the environment"
   local args=(-sS --connect-timeout 10 --max-time 60 -X "$method" -H "Accept: application/vnd.heroku+json; version=3" -K -)
   [ -z "$range" ] || args+=(-H "Range: $range")
@@ -51,7 +56,7 @@ heroku_call() {
   [ -z "${HEROKU_HEADERS:-}" ] || args+=(-D "$HEROKU_HEADERS")
   err="$(mktemp)"
   for try in 1 2 3; do
-    out="$(printf 'header = "Authorization: Bearer %s"\n' "$key" | curl "${args[@]}" -w '\n%{http_code}' "$HEROKU_API$path" 2>"$err")" || out=$'\n000'
+    out="$(printf 'header = "Authorization: Bearer %s"\n' "$qkey" | curl "${args[@]}" -w '\n%{http_code}' "$HEROKU_API$path" 2>"$err")" || out=$'\n000'
     code="${out##*$'\n'}"; out="${out%$'\n'*}"
     case "$code" in
       429) [ "$try" -lt 3 ] && { sleep $((try * 3)); continue; } ;;
