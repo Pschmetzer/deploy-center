@@ -3,7 +3,7 @@
 When AI agents push 30–50 times a day, you don't want every push to go live. Deploy Center can
 batch those pushes into one deploy, and four checks keep that deploy safe:
 
-1. **Green CI**: only commits whose checks passed go live.
+1. **Green CI**: with `deploy-changed --when-green`, only commits whose checks passed go live (commits with no checks at all also go; in the app, red CI does not hold a deploy back).
 2. **Health check with rollback**: if the site is broken after the deploy, production goes back.
 3. **Deploy window**: no deploys at times you choose (Friday afternoon, holidays), unless you give a reason.
 4. **Risk light**: a red dot when the waiting diff has migrations, a very large diff, or similar.

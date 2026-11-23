@@ -40,8 +40,9 @@ export GITLAB_HOST=git.example.com
 
 The token is sent only to `GITLAB_HOST` (gitlab.com when unset), never to another host a repo URL
 names, and it goes to curl on stdin, so it never shows in the process list. The app starts the
-script from launchd, which does not read your shell profile: put the variables where the app's
-login-shell PATH comes from (`~/.zprofile`), or use glab, whose login is stored by glab itself.
+script itself and takes only `PATH` from your login shell, so `GITLAB_HOST` and `GITLAB_TOKEN` from your shell
+profile do not reach it: in the app, use glab, whose login is stored by glab itself. `deploys` in a terminal reads
+the variables from your shell as usual.
 
 Check it:
 

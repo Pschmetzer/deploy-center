@@ -33,8 +33,8 @@ the switch is on and a key is saved.
 - The key is taken in this order: `DEPLOYS_ANTHROPIC_API_KEY`, then `ANTHROPIC_API_KEY`, then the
   keychain. `ANTHROPIC_API_KEY` is often set for another account (Claude Code, an SDK), and then
   that account pays. `deploys ai status` says so (`envHidesKeychain: true`), and Settings → Claude →
-  Claude in the app warns. Set `DEPLOYS_ANTHROPIC_API_KEY`, or unset `ANTHROPIC_API_KEY`, to use the
-  key you saved.
+  Claude in the app warns. Set `DEPLOYS_ANTHROPIC_API_KEY` to use another key, or unset both `DEPLOYS_ANTHROPIC_API_KEY` and
+  `ANTHROPIC_API_KEY` to use the key you saved (either variable wins over the keychain).
 - Everything sent goes through the same masker as Autofix first: API keys and tokens (`sk-…`,
   `ghp_…`, `github_pat_…`, `xox…`, `AKIA…`, `rnd_…`, JWTs), `token=` / `password:` style values,
   passwords in URLs, and email addresses. A help, not a guarantee: read [SECURITY.md](../SECURITY.md).

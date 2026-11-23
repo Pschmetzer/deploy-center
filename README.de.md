@@ -64,7 +64,7 @@ Homebrew 6 fragt einmal, ob du einem fremden Tap vertraust (`brew trust`). Ohne 
 | GitHub CLI `gh` | optional: was wartet (*Neue Änderungen*, Commits und PRs) | `brew install gh`, dann `gh auth login` |
 
 Die App findet `vercel` aus nvm, volta oder fnm nur, wenn deine Login-Shell sie einrichtet (`~/.zprofile`, nicht nur `~/.zshrc`).
-Siehe [Fehlerbehebung](docs/TROUBLESHOOTING.de.md).
+Siehe [Fehlerbehebung](docs/TROUBLESHOOTING.de.md#vercel-ist-installiert-nvm-volta-fnm-aber-die-app-findet-es-nicht).
 </details>
 
 ## Warum
@@ -81,13 +81,13 @@ und nichts geht aus Versehen live. Probier den [Kostenrechner](https://deploycen
 
 Neu dabei? [Sicher ausprobieren](docs/SAFE-START.de.md): erst schauen, dann ein Projekt, dann alle.
 
-Viele Pushes auf einmal (KI-Agenten)? [Sichere Deploys](docs/SAFE-DEPLOY.md) (Englisch): grüne CI in der CLI, ein Health-Check mit Rollback, Deploy-Fenster und eine Risikoampel.
+Viele Pushes auf einmal (KI-Agenten)? [Sichere Deploys](docs/SAFE-DEPLOY.de.md) (Englisch): grüne CI in der CLI, ein Health-Check mit Rollback, Deploy-Fenster und eine Risikoampel.
 
 ## Funktionen
 
 - Schaltet Auto-Deploy für alle Vercel-Projekte und Render-Services auf einmal ab, und mit `deploys vercel|render autodeploy-on` wieder ein. [Was sich ändert](docs/AUTO-DEPLOY.de.md)
-- Weitere Hosts zum Einschalten: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify und jeder Deploy-Hook (`deploys providers enable <name>`). [Provider](docs/PROVIDERS.md) (Englisch)
-- Liest, was wartet, von GitHub oder GitLab (gitlab.com oder eigene Instanz). [GitLab](docs/GITLAB.md) (Englisch)
+- Weitere Hosts zum Einschalten: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Deno Deploy und jeder Deploy-Hook (`deploys providers enable <name>`). [Provider](docs/PROVIDERS.md) (Englisch)
+- Liest, was wartet, von GitHub oder GitLab (gitlab.com oder eigene Instanz). [GitLab](docs/GITLAB.de.md) (Englisch)
 - Deployt den neuesten Commit, für ein Projekt oder viele, und verfolgt jedes Deploy, bis es live oder fehlgeschlagen ist
 - Zeigt, was wartet: Commits und gemergte PRs, die noch nicht live sind, pro Projekt und insgesamt. [Wie gezählt wird](docs/ZAHLEN.md)
 - Zeigt deine Vercel-Buildkosten
@@ -96,18 +96,18 @@ Viele Pushes auf einmal (KI-Agenten)? [Sichere Deploys](docs/SAFE-DEPLOY.md) (En
 - Preview-Deploys und Rollback auf das vorige Live-Deploy, bei den Hosts, die das können
 - Eine Bash-CLI, `deploys`, die all das ohne die App kann, auch unter Linux und in CI. [CLI-Referenz](docs/CLI.de.md)
 - Erweiterungen: eine GitHub Action, Badges, eine tägliche Zusammenfassung an einen Webhook, ein Pre-Push-Hook, ein Docker-Image, ein MCP-Server, ein Claude-Code-Plugin, Erweiterungen für VS Code und Raycast, ein Agent-Digest. [Integrationen](integrations/)
-- Autofix: Ein fehlgeschlagener Build geht an eine Claude-Code-Routine, die einen Fix-PR öffnet. [Autofix](docs/AUTOFIX.md)
-- Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE-IN-APP.md) (Englisch)
-- Sichere Deploys (CLI: nur bei grüner CI mit `--when-green`, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.md) · [Wächter](docs/GUARD.de.md) · [Team](docs/TEAM.md) (Englisch)
-- Bug-Scan: Claude Code auf deinem Mac sucht im Repo nach Bugs und öffnet einen Fix-PR. [Bug-Scan](docs/SCAN.md) (Englisch)
-- Sicherheits-Check: OSV-Scanner, gitleaks und Semgrep (kostenlos; gitleaks arbeitet offline, OSV-Scanner und Semgrep fragen `api.osv.dev` und `semgrep.dev`; kein Code verlässt Ihren Mac); Funde können an den Bug-Scan gehen. [Sicherheits-Check](docs/SCAN.md#security-check-osv-scanner-gitleaks-and-semgrep) (Englisch)
+- Autofix: Ein fehlgeschlagener Build geht an eine Claude-Code-Routine, die einen Fix-PR öffnet. [Autofix](docs/AUTOFIX.de.md)
+- Claude fragen, mit deinem eigenen Anthropic-Key: warum ein Build scheiterte, Release-Notes, ist das sicher zu deployen. [Claude in der App](docs/CLAUDE-IN-APP.de.md) (Englisch)
+- Sichere Deploys (CLI: nur bei grüner CI mit `--when-green`, Health-Check mit Rollback, Deploy-Fenster), ein Wächter, der Auto-Deploy wieder abschaltet, und ein Team-Modus ohne Server. [Sichere Deploys](docs/SAFE-DEPLOY.de.md) · [Wächter](docs/GUARD.de.md) · [Team](docs/TEAM.de.md) (Englisch)
+- Bug-Scan: Claude Code auf deinem Mac sucht im Repo nach Bugs und öffnet einen Fix-PR. [Bug-Scan](docs/SCAN.de.md) (Englisch)
+- Sicherheits-Check: OSV-Scanner, gitleaks und Semgrep (kostenlos; gitleaks arbeitet offline, OSV-Scanner und Semgrep fragen `api.osv.dev` und `semgrep.dev`; kein Code verlässt Ihren Mac); Funde können an den Bug-Scan gehen. [Sicherheits-Check](docs/SCAN.de.md#sicherheits-check-osv-scanner-gitleaks-und-semgrep) (Englisch)
 - Englisch und Deutsch: die Sprache des Macs, oder wähle eine unter Einstellungen → Allgemein → Sprache
 
 ## Deploy Center + Claude Code
 
 - **Autofix: Ein fehlgeschlagener Build repariert sich (fast) selbst.** Deploy Center gibt das maskierte Build-Log
   an eine Claude-Code-Routine, und Claude öffnet einen PR mit dem Fix. Nach deinem Merge sagt dir der nächste Lauf
-  Bescheid; du deployst den Fix mit einem Klick. Gemergt und deployt wird nie von selbst. [Autofix](docs/AUTOFIX.md) (Englisch)
+  Bescheid; du deployst den Fix mit einem Klick. Gemergt und deployt wird nie von selbst. [Autofix](docs/AUTOFIX.de.md) (Englisch)
 - **Ein Deploy für viele Pushes.** Der Agent darf pushen, so oft er will; gebaut wird erst, wenn du deployst, was sich geändert hat.
 - **Für Claude kopieren.** Im Build-Log eines fehlgeschlagenen Deploys kopiert ein Knopf den Fehler und das Log drumherum als Prompt, fertig zum Einfügen.
 - **MCP-Server.** Claude kann fragen, was wartet, und deployt nur mit deinem OK. [MCP-Server](integrations/mcp/) · [Claude-Code-Plugin](integrations/claude-code/) (Englisch)
@@ -127,7 +127,7 @@ Auto-Deploy wieder einschalten: `deploys vercel autodeploy-on <projekt>|--all` u
 Deinstallieren schaltet es nicht wieder ein. Deploy-Hooks und GitHub-Workflows, die deployen, laufen weiter;
 `deploys triggers` listet sie auf. Bei Render kann ein Blueprint mit Auto-Sync Auto-Deploy wieder einschalten:
 Trag `autoDeployTrigger: off` bei deinen Services in `render.yaml` ein.
-Details: [Auto-Deploy aus und wieder an](docs/AUTO-DEPLOY.de.md) · [Deinstallieren](docs/UNINSTALL.md) (Englisch).
+Details: [Auto-Deploy aus und wieder an](docs/AUTO-DEPLOY.de.md) · [Deinstallieren](docs/UNINSTALL.de.md) (Englisch).
 
 ## Kommandozeile
 
@@ -148,7 +148,7 @@ Einstellungen: [docs/CLI.de.md](docs/CLI.de.md), die vollständige englische Ref
 - [x] Menüleiste, Mitteilungen, Englisch und Deutsch
 - [x] `deploys`-CLI, GitHub Action, Badges, tägliche Webhook-Zusammenfassung, Pre-Push-Hook, Docker-Image
 - [x] Autofix für fehlgeschlagene Builds
-- [x] Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify (zum Einschalten)
+- [x] Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Deno Deploy (zum Einschalten)
 - [x] Allgemeiner Deploy-Hook (jede Plattform mit einer Deploy-URL)
 - [x] GitLab als Quelle neben GitHub
 - [x] MCP-Server für KI-Agenten, Claude-Code-Plugin, Agent-Digest, VS-Code-Erweiterung
@@ -185,7 +185,7 @@ auf dein Render-Konto.
 Vercel, Render und GitHub über deine eigenen Logins, mit deinen Websites für Logos und den Check nach einem
 Deploy, und einmal am Tag mit deploycenter.app/appcast.xml wegen Updates, die von GitHub geladen werden (abschaltbar in den Einstellungen). Fehler landen in `~/Library/Logs/DeployCenter.log` auf deinem Mac.
 
-**GitLab oder Bitbucket?** GitLab ja: gitlab.com und eigene Instanzen, über `glab` oder `GITLAB_TOKEN` ([GitLab](docs/GITLAB.md), Englisch). Bitbucket noch nicht.
+**GitLab oder Bitbucket?** GitLab ja: gitlab.com und eigene Instanzen, über `glab` oder `GITLAB_TOKEN` ([GitLab](docs/GITLAB.de.md), Englisch). Bitbucket noch nicht.
 
 **Windows oder Linux?** Die App braucht macOS 15. Die `deploys`-CLI ist Bash und läuft unter Linux, in WSL und in CI: `curl -fsSL https://deploycenter.app/install.sh | sh`.
 
