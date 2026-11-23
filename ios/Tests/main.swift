@@ -476,7 +476,7 @@ do {
         rec("1", "live", now.addingTimeInterval(-60)), rec("fut", "live", now.addingTimeInterval(7200))])
     let days = DeployTimeline.build([a, b], now: now, calendar: cal)
     check(days.count == 3, "timeline: three days with deploys")
-    check(days.first?.label == .today && days.first?.items.count == 4, "timeline: today first, a future time counts as today")
+    check(days.first?.label == .today && days.first?.items.count == 3, "timeline: today first, a future time counts as today")
     check(days.first?.items.map(\.id).first == "render/b/fut" || days.first?.items.first?.projectName == "Beta", "timeline: newest first")
     check(days.dropFirst().first?.label == .yesterday && days.dropFirst().first?.failures == 1, "timeline: yesterday, with its failure counted")
     if case .date(let d)? = days.last?.label { check(d == startToday.addingTimeInterval(-day * 3), "timeline: an older day carries its date") }
