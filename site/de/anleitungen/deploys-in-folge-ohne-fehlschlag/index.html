@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deploys in Folge ohne Fehlschlag: deine Serie · Deploy Center</title>
+<meta name="description" content="Zähle, wie viele Deploys in Folge ohne Fehlschlag live gingen, je Projekt, jetzt und am längsten, und sieh den letzten Fehlschlag, mit deploys streak.">
+<meta name="author" content="Deploy Center">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
+<link rel="canonical" href="https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/">
+<link rel="alternate" hreflang="en" href="https://deploycenter.app/guides/deploys-in-a-row-without-failure/">
+<link rel="alternate" hreflang="de" href="https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/">
+<link rel="alternate" hreflang="x-default" href="https://deploycenter.app/guides/deploys-in-a-row-without-failure/">
+<meta property="og:type" content="article">
+<meta property="og:site_name" content="Deploy Center">
+<meta property="og:locale" content="de_DE">
+<meta property="article:author" content="https://deploycenter.app/">
+<meta property="article:modified_time" content="2026-11-23">
+<meta property="article:published_time" content="2026-11-23">
+<meta property="og:title" content="Deploys in Folge ohne Fehlschlag: deine Serie · Deploy Center">
+<meta property="og:description" content="Zähle, wie viele Deploys in Folge ohne Fehlschlag live gingen, je Projekt, jetzt und am längsten, und sieh den letzten Fehlschlag, mit deploys streak.">
+<meta property="og:url" content="https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/">
+<meta property="og:image" content="https://deploycenter.app/img/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Deploys in Folge ohne Fehlschlag: deine Serie · Deploy Center">
+<meta name="twitter:description" content="Zähle, wie viele Deploys in Folge ohne Fehlschlag live gingen, je Projekt, jetzt und am längsten, und sieh den letzten Fehlschlag, mit deploys streak.">
+<meta name="twitter:image" content="https://deploycenter.app/img/og.png">
+<meta name="twitter:image:alt" content="Deploy Center: nicht mehr bei jedem Push für einen Build zahlen. Kostenlose Mac-App für Vercel und Render.">
+<link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
+<link rel="icon" href="/img/icon-64.png" sizes="64x64" type="image/png">
+<link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/site.css">
+<script type="application/ld+json">
+[
+ {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  "headline": "Deploys in Folge ohne Fehlschlag: deine Serie",
+  "description": "Zähle, wie viele Deploys in Folge ohne Fehlschlag live gingen, je Projekt, jetzt und am längsten, und sieh den letzten Fehlschlag, mit deploys streak.",
+  "url": "https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/",
+  "mainEntityOfPage": "https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/",
+  "datePublished": "2026-11-23",
+  "dateModified": "2026-11-23",
+  "inLanguage": "de",
+  "image": "https://deploycenter.app/img/og.png",
+  "author": {
+   "@type": "Person",
+   "name": "Patrick Schmetzer",
+   "url": "https://github.com/Pschmetzer/deploy-center"
+  },
+  "publisher": {
+   "@type": "Organization",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/",
+   "logo": {
+    "@type": "ImageObject",
+    "url": "https://deploycenter.app/img/icon-512.png"
+   }
+  },
+  "about": {
+   "@type": "SoftwareApplication",
+   "name": "Deploy Center",
+   "url": "https://deploycenter.app/"
+  }
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+   {
+    "@type": "Question",
+    "name": "Was zählt als Fehlschlag?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ein Deploy mit dem Ergebnis failed im Journal. Ein Rollback oder ein erzwungener Start ist für sich kein Fehlschlag."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Warum ist die Serie 0 bei einem Projekt, das läuft?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Der letzte Journal-Eintrag im Zeitraum ist ein Fehlschlag, oder nach dem letzten Fehlschlag gab es keinen Deploy. Deploye erneut, dann zählt es."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Ändert ein längerer Zeitraum das Ergebnis?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. --days 365 schaut weiter zurück, die längste Serie kann also größer werden. Die Serie jetzt bleibt gleich."
+    }
+   },
+   {
+    "@type": "Question",
+    "name": "Geht es ohne Netz?",
+    "acceptedAnswer": {
+     "@type": "Answer",
+     "text": "Ja. Es liest das lokale Journal."
+    }
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  "itemListElement": [
+   {
+    "@type": "ListItem",
+    "position": 1,
+    "name": "Startseite",
+    "item": "https://deploycenter.app/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 2,
+    "name": "Anleitungen",
+    "item": "https://deploycenter.app/de/anleitungen/"
+   },
+   {
+    "@type": "ListItem",
+    "position": 3,
+    "name": "Deploy-Serie",
+    "item": "https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/"
+   }
+  ]
+ },
+ {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  "name": "Deploys in Folge ohne Fehlschlag: deine Serie",
+  "description": "Zähle, wie viele Deploys in Folge ohne Fehlschlag live gingen, je Projekt, jetzt und am längsten, und sieh den letzten Fehlschlag, mit deploys streak.",
+  "step": [
+   {
+    "@type": "HowToStep",
+    "position": 1,
+    "name": "Aufrufen",
+    "url": "https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/#run"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 2,
+    "name": "Wie gezählt wird",
+    "url": "https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/#read"
+   },
+   {
+    "@type": "HowToStep",
+    "position": 3,
+    "name": "Wofür es gut ist",
+    "url": "https://deploycenter.app/de/anleitungen/deploys-in-folge-ohne-fehlschlag/#use"
+   }
+  ]
+ }
+]
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Zum Inhalt springen</a>
+<nav class="top" aria-label="Hauptmenü"><div class="wrap">
+  <a class="brand" href="/"><img src="/img/icon-64.png" width="24" height="24" alt=""><span>Deploy Center</span></a>
+  <div class="links"><a href="/docs/getting-started/" lang="en">Docs</a><a href="/de/anleitungen/">Anleitungen</a><a href="/de/vercel-build-kosten-rechner/">Rechner</a><a class="opt" href="https://github.com/Pschmetzer/deploy-center">GitHub</a><a class="dl" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download</a></div>
+</div></nav>
+
+<main id="main" class="wrap narrow"><article>
+<p class="crumbs"><a href="/">Startseite</a> › <a href="/de/anleitungen/">Anleitungen</a></p>
+<h1>Deploys in Folge ohne Fehlschlag: deine Serie</h1>
+<p class="answer"><code>deploys streak</code> zählt je Projekt, wie viele Deploys in Folge ohne Fehlschlag live gingen: die Serie jetzt und die längste. Es zeigt auch die Zahl der Deploys, die Fehlschläge und das Datum des letzten Fehlschlags. Es liest nur das Journal.</p>
+<p class="meta">Zuletzt aktualisiert am <time datetime="2026-11-23">23. November 2026</time> · von Patrick Schmetzer, Autor von Deploy Center</p>
+<p class="langnote"><a href="/guides/deploys-in-a-row-without-failure/" hreflang="en" lang="en">English version</a></p>
+
+<h2 id="run">1. Aufrufen</h2>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-bash">deploys streak                       # letzte 90 Tage
+deploys streak --days 30 --project web
+deploys streak --json</code></pre>
+<p>Ein ausgedachtes Beispiel (die Ausgabe der CLI ist englisch):</p>
+<pre tabindex="0" role="region" aria-label="Codebeispiel"><code class="language-text">Deploys in a row without a failure, last 90 days
+  web (Vercel): 2 now, longest 2 (2 deploys, 1 failed, last failure 2026-11-21)
+  api (Render): 0 now, longest 0 (0 deploys, 1 failed, last failure 2026-11-22)</code></pre>
+<h2 id="read">2. Wie gezählt wird</h2>
+<ul>
+  <li><b>now</b> (jetzt): Deploys seit dem letzten Fehlschlag dieses Projekts. Ein Fehlschlag setzt auf 0 zurück.</li>
+  <li><b>longest</b> (längste): die beste Serie im Zeitraum.</li>
+  <li>Ein Projekt mit einem Fehlschlag und keinem Deploy danach, wie <code>api</code> oben, zeigt 0.</li>
+</ul>
+<p>Eine lange Serie ist nur so gut wie die Deploys dahinter. Drei Deploys in Folge sind wenig, 40 nicht.</p>
+<h2 id="use">3. Wofür es gut ist</h2>
+<ul>
+  <li>Als schneller Check am Montag: welches Projekt ist zuletzt gescheitert?</li>
+  <li>Als Zahl für eine README, eine Statusseite oder einen Bericht. <code>--json</code> liefert sie je Projekt, siehe <a href="/de/anleitungen/deploy-statusseite-einrichten/">die Statusseiten-Anleitung</a>.</li>
+  <li>Neben der <a href="/de/anleitungen/wie-lange-dauern-fehlgeschlagene-deploys/">Erholungszeit</a>: wie oft es kaputtgeht, und wie lange das Beheben dauert.</li>
+</ul>
+<p>Jede Zahl kommt aus dem Journal auf deinem Mac. Kein Netz, kein Aufruf beim Anbieter, nichts wird gestartet.</p>
+
+<h2 id="faq">Fragen</h2>
+  <details><summary>Was zählt als Fehlschlag?</summary><p>Ein Deploy mit dem Ergebnis <code>failed</code> im Journal. Ein Rollback oder ein erzwungener Start ist für sich kein Fehlschlag.</p></details>
+  <details><summary>Warum ist die Serie 0 bei einem Projekt, das läuft?</summary><p>Der letzte Journal-Eintrag im Zeitraum ist ein Fehlschlag, oder nach dem letzten Fehlschlag gab es keinen Deploy. Deploye erneut, dann zählt es.</p></details>
+  <details><summary>Ändert ein längerer Zeitraum das Ergebnis?</summary><p>Ja. <code>--days 365</code> schaut weiter zurück, die längste Serie kann also größer werden. Die Serie <b>jetzt</b> bleibt gleich.</p></details>
+  <details><summary>Geht es ohne Netz?</summary><p>Ja. Es liest das lokale Journal.</p></details>
+
+<div class="ctabox">
+  <h2>Du nutzt Vercel oder Render?</h2>
+  <p>Deploy Center schaltet Auto-Deploy bei Vercel und Render mit einem Klick ab, Netlify und andere Hosts sind optional, und es deployt, was sich geändert hat, wenn du es entscheidest. Kostenlos und Open Source für macOS.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/Pschmetzer/deploy-center/releases/latest">Deploy Center für Mac laden</a>
+    <a class="btn" href="https://github.com/Pschmetzer/deploy-center">Quellcode ansehen</a>
+  </div>
+</div>
+
+<p class="reference"><b>Nachschlagen:</b> <a href="/docs/cli/" lang="en">CLI reference</a> · <a href="/docs/journal/" lang="en">The deploy journal</a></p>
+
+<div class="related"><h2>Verwandt</h2><ul>
+  <li><a href="/de/anleitungen/woechentlicher-deploy-bericht/">Ein wöchentlicher Bericht über deine Deploys</a></li>
+  <li><a href="/de/anleitungen/deploy-statusseite-einrichten/">Eine Statusseite für deine Deploys einrichten</a></li>
+  <li><a href="/de/anleitungen/automatischer-rollback-nach-deploy/">Automatisch zurückrollen, wenn ein Deploy die Seite kaputt macht</a></li>
+  <li><a href="/de/anleitungen/deploy-freeze-freitag/">Einen Deploy-Freeze für Freitagnachmittag einrichten</a></li>
+</ul></div>
+</article></main>
+
+<footer class="site" lang="en"><div class="wrap">
+  <div class="cols">
+    <div><h2>Guides</h2><ul>
+      <li><a href="/guides/disable-vercel-auto-deploy/">Disable Vercel auto-deploy</a></li>
+      <li><a href="/guides/stop-vercel-building-every-push/">Stop Vercel building every push</a></li>
+      <li><a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step</a></li>
+      <li><a href="/guides/render-auto-deploy-off/">Turn off Render auto-deploy</a></li>
+      <li><a href="/guides/netlify-stop-builds/">Stop Netlify builds</a></li>
+      <li><a href="/guides/vercel-build-minutes-and-build-queue/">Vercel build minutes and the build queue</a></li>
+      <li><a href="/guides/deploy-to-vercel-from-github-actions/">Deploy to Vercel from GitHub Actions</a></li>
+      <li><a href="/guides/skip-vercel-previews-for-bots-and-agents/">Skip Vercel previews for bots and agents</a></li>
+      <li><a href="/guides/ignored-build-step-or-auto-deploy-off/">Ignored Build Step or auto-deploy off</a></li>
+      <li><a href="/guides/cloudflare-pages-stop-builds/">Stop Cloudflare Pages builds</a></li>
+      <li><a href="/guides/aws-amplify-disable-auto-build/">Disable AWS Amplify auto-build</a></li>
+      <li><a href="/guides/digitalocean-app-platform-deploy-on-push/">Stop DigitalOcean App Platform builds</a></li>
+      <li><a href="/guides/coolify-auto-deploy-off/">Coolify: Auto Deploy off</a></li>
+      <li><a href="/guides/roll-back-vercel-render-deployment/">Roll back a Vercel or Render deploy</a></li>
+      <li><a href="/guides/reduce-vercel-costs/">Reduce Vercel costs</a></li>
+      <li><a href="/guides/auto-fix-failed-vercel-builds-with-claude/">Auto-fix failed builds with Claude</a></li>
+      <li><a href="/guides/deploy-hooks/">Deploy hooks for any host</a></li>
+      <li><a href="/claude-code/">Deploy Center + Claude Code</a></li>
+      <li><a href="/vercel-build-cost-calculator/">Build cost calculator</a></li>
+      <li><a href="/blog/ai-coding-agents-build-bill/">AI coding agents and your build bill</a></li>
+    </ul></div>
+    <div><h2>Deploy Center</h2><ul>
+      <li><a href="/">Home</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/releases/latest">Download for Mac</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center">GitHub</a></li>
+      <li><a href="https://github.com/Pschmetzer/deploy-center/blob/main/CHANGELOG.md">Changelog</a></li>
+      <li><a href="/llms.txt">llms.txt</a></li>
+    </ul></div>
+    <div><h2>Legal</h2><ul>
+      <li><a href="/impressum.html" lang="de">Impressum</a></li>
+      <li><a href="/datenschutz.html" lang="de">Datenschutz</a></li>
+    </ul></div>
+  </div>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+</div></footer>
+<script src="/js/site.js" defer></script>
+</body>
+</html>
