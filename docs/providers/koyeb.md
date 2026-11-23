@@ -36,7 +36,7 @@ The service is read first, then redeployed. The deploy id is the new deployment;
 
 ## Limits and rate limits
 
-The doctor reports `expiresAt` and `rateLimit` as `null`. Not checked against a live account: this provider was written from the API reference and tested with fixtures, so a field name may need a small fix on first use. The list reads the first 100 services.
+The doctor reports `expiresAt` and `rateLimit` as `null`. Not checked against a live account: this provider was written from the API reference and tested with fixtures, so a field name may need a small fix on first use. The list reads services 100 at a time (`limit` and `offset`), up to 2000.
 
 ## Undo
 

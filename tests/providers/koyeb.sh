@@ -50,6 +50,15 @@ expect "status: a finished deployment is ready" "$(koyeb_status svc-alpha dep-al
 expect "latest: the newest deployment" "$(koyeb_latest svc-alpha | cut -f1)" "dep-alpha-3"
 expect "latest: none without deployments" "$(koyeb_latest svc-delta)" "$(printf 'none\t\tnone')"
 expect "status: an odd id is refused before a call" "$(: > "$CALLS"; (koyeb_status svc-alpha '../x') >/dev/null 2>&1; echo $?:"$(grep -c '^curl' "$CALLS")")" "1:0"
+# More than 100 services: the second page is read with offset=100 and both are listed.
+pg="$tmp/pg"; mkdir -p "$pg"; cp -R "$PWD/tests/fixtures/koyeb" "$pg/koyeb"
+jq -n '{services:[range(0;100) | {id:"svc-p\(.)", name:"p\(.)", status:"HEALTHY", latest_deployment_id:"dep-x"}]}' > "$pg/p1.json"
+{ cat "$pg/p1.json"; echo; echo 200; } > "$pg/koyeb/GET_v1_services_limit_100.json"
+{ echo '{"services":[{"id":"svc-last","name":"last","status":"HEALTHY","latest_deployment_id":"dep-x"}]}'; echo 200; } > "$pg/koyeb/GET_v1_services_limit_100_offset_100.json"
+: > "$CALLS"
+expect "list: a second page past 100 services is read" "$(FIXTURES="$pg" koyeb_services | jq '.services | length')" "101"
+expect "list: the second page asked with offset=100" "$(grep -c 'services?limit=100&offset=100' "$CALLS")" "1"
+expect "has: finds a service on the second page" "$(FIXTURES="$pg" koyeb_has last)" "svc-last"
 expect "url" "$(koyeb_url svc-alpha)" "https://app.koyeb.com/services/svc-alpha"
 expect "the token is not in any logged call" "$(grep -c 'kyb_secret_token_123' "$CALLS")" "0"
 
