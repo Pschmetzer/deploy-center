@@ -92,6 +92,8 @@
   <url><loc>https://deploycenter.app/de/anleitungen/projekte-ohne-deploy-finden/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/guides/prometheus-metrics-for-deploys/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/de/anleitungen/prometheus-metriken-fuer-deploys/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/check-your-setup-deploys-doctor/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/de/anleitungen/einrichtung-pruefen-deploys-doctor/</loc><lastmod>2026-11-23</lastmod></url>
   <!-- docs: written by scripts/build-docs.py -->
   <url><loc>https://deploycenter.app/docs/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/docs/getting-started/</loc><lastmod>2026-11-23</lastmod></url>
@@ -127,13 +129,13 @@
   <url><loc>https://deploycenter.app/docs/heroku/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/docs/firebase-hosting/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/docs/github-pages/</loc><lastmod>2026-11-20</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/koyeb/</loc><lastmod>2026-11-21</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/koyeb/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/docs/deno-deploy/</loc><lastmod>2026-11-21</lastmod></url>
   <url><loc>https://deploycenter.app/docs/ci/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/docs/uninstall/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/docs/migrating/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/docs/security-model/</loc><lastmod>2026-11-23</lastmod></url>
-  <url><loc>https://deploycenter.app/docs/settings/</loc><lastmod>2026-11-20</lastmod></url>
+  <url><loc>https://deploycenter.app/docs/settings/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/docs/numbers/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/docs/glossary/</loc><lastmod>2026-11-20</lastmod></url>
   <url><loc>https://deploycenter.app/docs/faq/</loc><lastmod>2026-11-23</lastmod></url>
