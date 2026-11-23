@@ -37,7 +37,7 @@ has "where: without a key, none" "$w2" "render key   none"
 
 # --- unknown command and options ---
 u="$(cli frobnicate)"
-expect "unknown command: exit 1" "${u##*$'\n'}" 1
+expect "unknown command: exit 2 (a wrong call)" "${u##*$'\n'}" 2
 has "unknown command: points to help" "$u" "help"
 expect "--version: one line, a version number" "$(bash ./deploys --version | grep -cE '^[0-9]+\.[0-9]+\.[0-9]+$')" 1
 expect "--version matches VERSION" "$(bash ./deploys --version)" "$(tr -d '[:space:]' < VERSION)"
