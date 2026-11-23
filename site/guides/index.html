@@ -45,7 +45,7 @@
   "name": "Deploy Center guides",
   "description": "Guides to turn off auto-deploy and skip unneeded builds on Vercel, Render, Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean and Coolify.",
   "url": "https://deploycenter.app/guides/",
-  "dateModified": "2026-11-20",
+  "dateModified": "2026-11-23",
   "author": {
    "@type": "Person",
    "name": "Patrick Schmetzer",
@@ -278,6 +278,30 @@
      "position": 36,
      "url": "https://deploycenter.app/guides/weekly-deploy-digest/",
      "name": "A weekly digest of your deploys"
+    },
+    {
+     "@type": "ListItem",
+     "position": 37,
+     "url": "https://deploycenter.app/guides/tls-certificate-expiry-check/",
+     "name": "Find TLS certificates that run out soon"
+    },
+    {
+     "@type": "ListItem",
+     "position": 38,
+     "url": "https://deploycenter.app/guides/find-projects-nobody-deploys/",
+     "name": "Find projects that nobody deploys"
+    },
+    {
+     "@type": "ListItem",
+     "position": 39,
+     "url": "https://deploycenter.app/guides/prometheus-metrics-for-deploys/",
+     "name": "Deploy metrics in Grafana, without a server"
+    },
+    {
+     "@type": "ListItem",
+     "position": 40,
+     "url": "https://deploycenter.app/guides/check-your-setup-deploys-doctor/",
+     "name": "Check your setup: tools, logins and keys"
     }
    ]
   }
@@ -319,7 +343,7 @@
 <input id="site-q" type="search" data-site-search placeholder="Search guides, blog and docs" autocomplete="off" aria-controls="site-results">
 <ul id="site-results" hidden></ul>
 </div>
-<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time></p>
+<p class="meta">Last updated <time datetime="2026-11-23">23 November 2026</time></p>
 <div class="cards">
   <a href="/guides/disable-vercel-auto-deploy/"><b>Disable Vercel auto-deploy</b><span>Three ways to stop Vercel deploying on every push, and how to undo each.</span></a>
   <a href="/guides/stop-vercel-building-every-push/"><b>Stop Vercel building every push</b><span>Build less without turning Git off: previews, bots, monorepos, batching.</span></a>
@@ -354,6 +378,10 @@
   <a href="/guides/which-day-do-deploys-fail/"><b>When do your deploys fail most often?</b><span>Find out whether your deploys fail more often on a weekday or at an hour of the day, from your own history, and what to do with it, with deploys when.</span></a>
   <a href="/guides/deploys-in-a-row-without-failure/"><b>Deploys in a row without a failure: your streak</b><span>Count how many deploys in a row went live without a failure, per project, now and at best, and see when the last failure was, with deploys streak.</span></a>
   <a href="/guides/weekly-deploy-digest/"><b>A weekly digest of your deploys</b><span>Get the last week of your deploys in one block: deploys, failures, rollbacks, the busiest day, the projects and the estimated saving, with deploys digest.</span></a>
+  <a href="/guides/tls-certificate-expiry-check/"><b>Find TLS certificates that run out soon</b><span>Check the TLS certificate of every project&#x27;s address in one command, get an exit code for a scheduler or CI, and see who is unreachable, with deploys certs.</span></a>
+  <a href="/guides/find-projects-nobody-deploys/"><b>Find projects that nobody deploys</b><span>List every project with no deploy for 90 days or any number you choose, so you can pause or delete what you no longer need, with the deploys idle command.</span></a>
+  <a href="/guides/prometheus-metrics-for-deploys/"><b>Deploy metrics in Grafana, without a server</b><span>Write waiting commits, their age, failed deploys and auto-deploy state as a Prometheus text file for node_exporter and Grafana, with deploys metrics.</span></a>
+  <a href="/guides/check-your-setup-deploys-doctor/"><b>Check your setup: tools, logins and keys</b><span>See what is missing before a deploy fails: tools, GitHub login, platform keys and how old they are, one line each with the fix, using deploys doctor and creds.</span></a>
 </div>
 <h2>Tools and reading</h2>
 <div class="cards">

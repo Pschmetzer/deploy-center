@@ -46,7 +46,7 @@ koyeb_call() {
 koyeb_valid() { case "$1" in ''|-*|*[!A-Za-z0-9-]*) return 1 ;; esac; }
 
 KOYEB_JQ='
-  def t: (. // null) | if . then (sub("\\.[0-9]+Z";"Z") | try fromdateiso8601 catch null) else null end;
+  def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   def phase: if . == null then null
     elif test("^(PENDING|PROVISIONING|SCHEDULED|ALLOCATING|STARTING|HEALTHY_PENDING)$") then "building"
     elif . == "STASHED" or . == "ERRORING" or . == "ERROR" or . == "UNHEALTHY" or . == "DEGRADED" then "failed"
@@ -61,11 +61,20 @@ koyeb_meta() {
 
 koyeb_ready() { command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && koyeb_key >/dev/null 2>&1; }
 
+# koyeb_services: every service as {"services":[...]}, 100 per page (limit/offset), at most 20 pages.
 koyeb_services() {
-  local out
-  out="$(koyeb_call GET "/services?limit=100")" || return 1
-  printf '%s' "$out" | jq -e '.services | type == "array"' >/dev/null 2>&1 || { echo "Koyeb answered without a service list" >&2; return 1; }
-  printf '%s' "$out"
+  local out all='{"services":[]}' off=0 n page=0 q
+  while :; do
+    q="limit=100"; [ "$off" = 0 ] || q="$q&offset=$off"
+    out="$(koyeb_call GET "/services?$q")" || return 1
+    printf '%s' "$out" | jq -e '.services | type == "array"' >/dev/null 2>&1 || { echo "Koyeb answered without a service list" >&2; return 1; }
+    n="$(printf '%s' "$out" | jq '.services | length')"
+    all="$(printf '%s' "$out" | jq -c --argjson a "$all" '{services: ($a.services + .services)}')"
+    [ "$n" -ge 100 ] || break
+    page=$((page + 1)); [ "$page" -lt 20 ] || { echo "Koyeb: more than 2000 services, stopped reading" >&2; return 1; }
+    off=$((off + n))
+  done
+  printf '%s' "$all"
 }
 
 koyeb_has() {

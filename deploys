@@ -2584,7 +2584,9 @@ ai_add_usage() {  # ai_add_usage <tokens>
   local t l=""; t="$(mktemp "$CONFIG_DIR/.ai-usage.XXXXXX")"
   # Two runs at once would both read the old count, and one would be lost.
   file_lock "$AI_USAGE" && l=1
-  { [ -s "$AI_USAGE" ] && cat "$AI_USAGE" || echo '{}'; } | jq --arg m "$(ai_month)" --argjson n "$1" '.[$m] = ((.[$m] // 0) + $n)' > "$t" && mv "$t" "$AI_USAGE"
+  # A file that is no JSON object (cut off by a crash) starts again at {}: otherwise nothing was ever counted and the cap never held.
+  { jq -e 'type == "object"' "$AI_USAGE" >/dev/null 2>&1 && cat "$AI_USAGE" || echo '{}'; } \
+    | jq --arg m "$(ai_month)" --argjson n "$1" '.[$m] = ((.[$m] // 0) + $n)' > "$t" && mv "$t" "$AI_USAGE" || rm -f "$t"
   [ -z "$l" ] || file_unlock "$AI_USAGE"
 }
 
@@ -3548,6 +3550,8 @@ case "${1:-} ${2:-}" in
   "ignore "*)
     # Leave a project out of `changed` and `deploy-changed` (again with: ignore <p> --undo).
     f="$CONFIG_DIR/ignored.json"; [ -f "$f" ] || echo '[]' 2>/dev/null > "$f" || true
+    # A list cut off by a crash is named, not changed: jq would fail in the middle (exit 5) with a lock and a temp file left.
+    jq -e 'type == "array"' "$f" >/dev/null 2>&1 || die "$f is damaged (no JSON list): fix it or move it away; nothing was changed."
     if [ "${2:-}" = "--list" ] || [ -z "${2:-}" ]; then
       if [ "$json" = 1 ]; then jq -c . "$f"; else jq -r '.[]' "$f"; fi; exit 0
     fi

@@ -36,7 +36,7 @@ The window Settings has the tabs General, Platforms, Projects, Deploy, Costs, Cl
 | Warn when commits wait longer than | 7 days: a project with a week-old merge is flagged. |
 | Watch the site after going live | 15 minutes: the site is checked every minute; two failures in a row warn, or roll back where the project does that itself. |
 | Neutral notifications | On: a notification says "A deploy ended" without the project name, safe on a locked screen. |
-| Ask for Touch ID before risky steps | On: deploying several projects at once, a rollback by hand and allowing auto-deploy ask for your fingerprint or password. The automatic rollback after a failed check does not wait. |
+| Ask for Touch ID or the password before risky steps | On: deploying several projects at once, a rollback by hand and allowing auto-deploy ask for your fingerprint or password. The automatic rollback after a failed check does not wait. |
 
 ## Costs: goals and idle projects
 

@@ -42,4 +42,32 @@ for c in "freeze add" "freeze remove" "freeze remove x" "journal" "journal bogus
 done
 expect "exit code: an error that is no wrong call stays 1 (a date that is none)" "$(cli journal export --since x >/dev/null 2>&1; echo $?)" "1"
 
+# --- ai_add_usage: a damaged ai-usage.json must not make the monthly cap count nothing for ever ---
+printf '{"%s": 5' "$(ai_month)" > "$AI_USAGE"
+ai_add_usage 100 2>/dev/null
+expect "ai_add_usage: a damaged usage file starts again instead of dropping the count" "$(ai_used)" "100"
+expect "ai_add_usage: no temp file is left behind" "$(find "$CONFIG_DIR" -maxdepth 1 -name '.ai-usage.*' | wc -l | tr -d ' ')" "0"
+ai_add_usage 20 2>/dev/null
+expect "ai_add_usage: and it keeps adding" "$(ai_used)" "120"
+
+# --- ignore: a damaged ignored.json is named, nothing is changed, no lock or temp file stays ---
+printf '["a"' > "$DEPLOYS_CONFIG/ignored.json"
+out="$(cli ignore web 2>&1)"; rc=$?
+expect "ignore: a damaged list is an error (1) that names the file" "$rc:$(grep -c 'ignored.json' <<<"$out")" "1:1"
+expect "ignore: the damaged file is left as it is" "$(cat "$DEPLOYS_CONFIG/ignored.json")" '["a"'
+expect "ignore: no lock and no temp file are left" "$(find "$DEPLOYS_CONFIG" -maxdepth 1 \( -name 'ignored.json.lock' -o -name '.ignore.*' \) | wc -l | tr -d ' ')" "0"
+expect "ignore --list: a damaged list is named too" "$(cli ignore --list 2>&1 | grep -c 'ignored.json')" "1"
+rm -f "$DEPLOYS_CONFIG/ignored.json"
+
+# --- budget: no answer from `deploys costs` is "could not be read" (warn, or stop with --strict), not a jq crash ---
+printf '#!/bin/bash\nexit 1\n' > "$tmp/nocosts"; chmod +x "$tmp/nocosts"
+printf '#!/bin/bash\nexit 0\n' > "$tmp/emptycosts"; chmod +x "$tmp/emptycosts"
+echo '{"monthlyUsd":8,"strict":false}' > "$DEPLOYS_CONFIG/budget.json"
+load_savings
+for stub in nocosts emptycosts; do
+  b="$(SELF="$tmp/$stub" budget_json 0 2>&1)"; rc=$?
+  expect "budget ($stub): the spending is unknown, not a crash" "$rc:$(jq -r '.spentUsd == null and (.why | length > 0)' <<<"$b" 2>/dev/null)" "0:true"
+done
+rm -f "$DEPLOYS_CONFIG/budget.json"
+
 [ "$fails" = 0 ] && echo "all ok" || { echo "$fails failed"; exit 1; }

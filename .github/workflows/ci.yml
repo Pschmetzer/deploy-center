@@ -73,6 +73,14 @@ jobs:
         run: |
           plutil -lint scripts/*.plist.example
           swiftc -typecheck scripts/make-icon.swift
+      - name: swift-format (advice only, never fails the run)
+        # .swift-format holds the config. The count by rule goes to the run's summary; the code keeps its aligned columns
+        # on purpose, so this is a hint for new code, not a gate.
+        continue-on-error: true
+        run: |
+          xcrun swift-format lint --configuration .swift-format -r app shared 2> fmt.txt || true
+          { echo "### swift-format"; echo; grep -o '\[[A-Za-z]*\]' fmt.txt | sort | uniq -c | sort -rn | head -15 | sed 's/^/    /'; } >> "$GITHUB_STEP_SUMMARY"
+          echo "$(grep -c 'warning:' fmt.txt) swift-format hints (see the run summary)"
       - name: Script tests
         run: bash tests/script-tests.sh
       - name: Team mode tests
@@ -378,6 +386,8 @@ jobs:
         run: python3 scripts/check-site.py
       - name: Every L(English, Deutsch) has both texts with the same values
         run: python3 -I scripts/check-strings.py
+      - name: No visible text without an L(English, Deutsch) pair (brands are in scripts/export-strings-ignore.txt)
+        run: python3 -I scripts/export-strings.py --check --strict
       - name: Release gate (VERSION, home page and appcast name the same release)
         run: python3 -I scripts/check-release.py
       - name: Docs agree (every page in docs/README.md, README.md and README.de.md alike, one h1, the man page is current)

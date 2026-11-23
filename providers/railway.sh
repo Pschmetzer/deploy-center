@@ -17,6 +17,8 @@ RAILWAY_KEYCHAIN="deploy-center-railway"
 RAILWAY_API="${RAILWAY_API:-https://backboard.railway.com/graphql/v2}"
 
 declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
+# shellcheck source=../lib/http.sh
+declare -F curl_cfg_quote >/dev/null || { _ra_h="$(dirname "${BASH_SOURCE[0]}")/../lib/http.sh"; [ ! -f "$_ra_h" ] || . "$_ra_h"; unset _ra_h; }
 
 railway_key() {
   local k=""
@@ -33,13 +35,15 @@ railway_key() {
 # http_call, which asks again after a 429. The token goes to curl on stdin. A GraphQL error comes
 # with HTTP 200, so it is checked here: the first message goes to stderr and the rc is 1.
 railway_gql() {
-  local q="$1" v="${2:-}" k body bf err out code hint="" fix="pbpaste | deploys railway set-key"
+  local q="$1" v="${2:-}" k qk body bf err out code hint="" fix="pbpaste | deploys railway set-key"
   k="$(railway_key)" || return 1
+  # Escaped for curl's config line; a control character is refused without a call (see heroku_call).
+  qk="$(curl_cfg_quote "$k")" || { echo "Railway: the token has a line break or control character in it (a paste mistake?): set it again without" >&2; return 1; }
   [ -n "$v" ] || v='{}'
   [ -z "${RAILWAY_API_TOKEN:-}" ] || fix="check RAILWAY_API_TOKEN in the environment"
   body="$(jq -nc --arg q "$q" --argjson v "$v" '{query:$q, variables:$v}')" || return 1
   bf="$(mktemp)"; err="$(mktemp)"; printf '%s' "$body" > "$bf"
-  out="$(printf 'header = "Authorization: Bearer %s"\n' "$k" | curl -sS --connect-timeout 10 --max-time 60 -X POST \
+  out="$(printf 'header = "Authorization: Bearer %s"\n' "$qk" | curl -sS --connect-timeout 10 --max-time 60 -X POST \
     -H "Content-Type: application/json" -H "Accept: application/json" -K - --data-binary "@$bf" -w '\n%{http_code}' "$RAILWAY_API" 2>"$err")" || out=$'\n000'
   code="${out##*$'\n'}"; out="${out%$'\n'*}"
   [ "$code" != 000 ] || out="$(tail -n 1 "$err")"
@@ -68,7 +72,7 @@ RAILWAY_DEPLOYS_Q='query($s: String!, $e: String!) { deployments(first: 20, inpu
 # jq helpers. The timestamps end in Z (with or without fractions).
 # shellcheck disable=SC2016
 RAILWAY_JQ='
-  def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | try fromdateiso8601 catch null) else null end;
+  def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   def phase: if . == null then null
     elif test("^(INITIALIZING|QUEUED|WAITING|NEEDS_APPROVAL)$") then "queued"
     elif test("^(BUILDING|DEPLOYING)$") then "building"

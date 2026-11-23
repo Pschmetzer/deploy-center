@@ -2,10 +2,23 @@
 
 ## Unreleased
 
-- Fix: `deploys exit-codes` printed the rest of the script after its table; it now prints only the table.
-- Docs: `DEPLOYS_ANTHROPIC_API` (the address `deploys ai` talks to) is in the CLI reference and the man page; CI now fails when a `DEPLOYS_*` variable the scripts read is named in no docs page.
 - CLI: per-project overrides in `rules.json`: `"overrides": {"vercel/docs": {"minAgeHours": 1, "skip": ["api waits a day"]}}` changes a number or flag a rule already has for that project (a pattern like `vercel/*` works too) and `skip` switches named rules off for it; `rules check` says "the rule is switched off for ...". Overrides add no new conditions.
 - CLI: `freeze import` closes only the evening of an event that ends at midnight of the next day (it used to close both days).
+- Budget: when Vercel billing gives no answer at all (no key, not logged in), `deploys budget` and `deploy-changed --yes` now say the spending could not be read (a warning, or a stop with `--strict`) instead of ending with a jq error.
+- Widgets: while a build runs the widgets look again every 5 minutes (instead of 30), and once the picture is out of date (the app has not run for three hours) every hour, which spares the daily reload budget.
+- iPhone app (fix): a cancel of a followed deploy that came too late (the deploy had finished) no longer hides the failure of a later canceled build of the same project.
+- Providers (security): Heroku and Railway escape the key in the curl config line like the other hosts do, and refuse a key with a line break in it without sending anything; before, a quote or line break in `HEROKU_API_KEY` or `RAILWAY_API_TOKEN` could add curl directives.
+- iPhone app (Dynamic Type): the four numbers above the list and the "Recent deploys" rows follow one set of rules, tested for every text size; at accessibility sizes the time moves under the project name and titles are no longer cut off.
+- Providers: Deno Deploy lists every project of the organization, not only the first 100 (it reads the next page while a page is full).
+- Website: a guide (English and German) for `deploys doctor` and `creds`.
+- `deploys ignore`: a damaged `ignored.json` is named and left alone (exit 1) instead of ending with a jq error, a stale lock and a temp file.
+- Providers: Koyeb lists every service, not only the first 100 (it reads the next page while a page is full).
+- AI usage: a damaged `ai-usage.json` no longer makes the monthly token cap count nothing for ever (it starts again), and no temp file is left behind.
+- Fix: `deploys exit-codes` printed the rest of the script after its table; it now prints only the table.
+- Docs: `DEPLOYS_ANTHROPIC_API` (the address `deploys ai` talks to) is in the CLI reference and the man page; CI now fails when a `DEPLOYS_*` variable the scripts read is named in no docs page.
+- Providers: Deno Deploy, Firebase Hosting, Fly.io, GitHub Pages, Heroku, Koyeb and Railway read a time written with an offset (`2026-11-05T12:00:00+02:00`) correctly; before, the row had no "last deploy" time. Z times, with or without fractions, are unchanged.
+- iPhone app: "Recent deploys" (clock button above the list): the deploys of all projects in one timeline, newest first, grouped by day (today, yesterday, then the date) for the last 7 days, with the failures of each day counted. Read only; works offline from the last history read.
+- Website: guides (English and German) for `deploys certs`, `idle` and `metrics`.
 - Fix: `DEPLOYS_CI_IGNORE` now leaves out check runs by name (GitHub Actions jobs), not only commit statuses, so an optional check that is always red no longer blocks `deploy-changed --when-green`.
 - Docs: the website's Hosts section now has Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb and Deno Deploy and the table of what each host can do; the README host lists (also the German one) name every provider.
 - Docs: German versions of Autofix, Bug scan, Safe deploys, Team mode, GitLab, Claude in the app, Claude Code, Widgets and iPhone, Adding a host, Adding a git host and Uninstall (`docs/*.de.md`); README.de.md links them.
@@ -23,6 +36,10 @@
 - Platform calls: a `Retry-After` that is huge or has a leading zero (`08`) no longer breaks the wait check; a wait over a minute is now reported as such.
 - Exit codes: a wrong call (`Usage: …`, an unknown option or command) now ends with 2 in every command, as docs/CLI.md says; it was 1 in many.
 - Journal: an entry written after a crash that cut the last line short is no longer glued onto that broken line (it was lost with it).
+- Known build failures (out of memory, lockfile out of date, wrong Node version, missing environment variable, 401/403) get a hint with the usual fix and a copy button under the log; failed builds with the same cause across projects are grouped in Settings > Platforms.
+- Costs sheet: a forecast for the month per project with a warning when a project's budget will be passed, and what a project would cost on the other host (your prices per build minute, `deploys price`).
+- Several accounts per host (Settings > Platforms): keys only in the keychain, one click to switch.
+- Health score per project (0-100, the formula of `deploys health`) in Settings > Platforms; the weekly report compares this week with the week before; the iPhone app shows open outages and the average health.
 - Nightly check (Settings > Claude, `deploys nightly`): OSV-Scanner, gitleaks and Semgrep on every repo once a night; the first check of a repo is its starting point, then only new findings count, one notification. Optional: Claude gets only the new findings in a bug scan that opens a PR (at most 2 a night, never merges or deploys). Leaked keys are only reported. Optional weekly review: once a week Claude reads each repo's changes since its last review and looks for bugs they brought in (shares the nightly limit with the fixes). All switches are off by default.
 
 ## 0.12.0 - 2026-11-21

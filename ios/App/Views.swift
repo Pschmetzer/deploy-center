@@ -15,6 +15,7 @@ struct RootView: View {
     @SceneStorage("selection") private var selection: String?
     @State private var settings = false
     @State private var connect = false
+    @State private var recent = false
     @State private var captured = UIScreen.main.isCaptured
     /// A widget link that came before the list was read: name and platform.
     @State private var pendingOpen: [String]?
@@ -32,6 +33,11 @@ struct RootView: View {
             }
             .navigationTitle("Deploy Center")
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { recent = true } label: { Image(systemName: "clock.arrow.circlepath") }
+                        .accessibilityLabel(L("Recent deploys", "Letzte Deploys"))
+                        .accessibilityInputLabels([L("Recent deploys", "Letzte Deploys"), L("Timeline", "Zeitleiste")])
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { settings = true } label: { Image(systemName: "gearshape") }
                         .accessibilityLabel(L("Settings", "Einstellungen"))
@@ -52,6 +58,7 @@ struct RootView: View {
             deploy: selected.flatMap { p in asks.canDeploy(p, store) ? { asks.deploy = p } : nil }))
         .deployQuestions(store: store, asks: asks)
         .sheet(isPresented: $settings) { SettingsView(store: store) }
+        .sheet(isPresented: $recent) { RecentDeploysView(store: store) }
         // Our own sentence first, then the system's question (IDEEN-12 C12).
         .alert(L("Report the end of deploys?", "Das Ende von Deploys melden?"), isPresented: $store.askNotes) {
             Button(L("Allow", "Erlauben")) { Task { await Notes.askOnce() } }
@@ -168,7 +175,7 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIScreen.capturedDidChangeNotification)) { _ in captured = UIScreen.main.isCaptured }
         .onChange(of: phase) { _, p in if p == .active && store.locked { Task { await store.unlock() } } }
         // Sheets lie above the cover: close them when locking (the settings sheet takes its own QR sheet along).
-        .onChange(of: store.locked) { _, on in if on { settings = false; connect = false } }
+        .onChange(of: store.locked) { _, on in if on { settings = false; connect = false; recent = false } }
     }
 
     private func open(name: String, platform: String?) {

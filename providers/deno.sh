@@ -61,7 +61,7 @@ deno_valid_id() { case "$1" in ''|*[!A-Za-z0-9_-]*) return 1 ;; esac; }
 
 # shellcheck disable=SC2016
 DENO_JQ='
-  def t: (. // null) | if . then (sub("\\.[0-9]+Z$";"Z") | try fromdateiso8601 catch null) else null end;
+  def t: (. // null) | if . then ((try (capture("^(?<d>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:?[0-9]{2})?$") | (.d + "Z" | fromdateiso8601) - (if (.z // "Z") == "Z" then 0 else (.z | (if startswith("-") then -1 else 1 end) * ((.[1:3] | tonumber) * 3600 + (.[-2:] | tonumber) * 60)) end)) catch null) // null) else null end;
   def phase: if . == null then null
     elif . == "failed" then "failed"
     elif . == "success" then "ready"
@@ -76,12 +76,23 @@ deno_meta() {
 
 deno_ready() { command -v curl >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && deno_key >/dev/null 2>&1 && deno_org >/dev/null 2>&1; }
 
+# deno_projects: every project as one array, 100 per page (limit/page), at most 20 pages. A page that
+# repeats the first project of the one before (an API that ignores page) ends the read.
 deno_projects() {
-  local org out
+  local org out all="[]" page=1 n first prev=""
   org="$(deno_org)" || return 1
-  out="$(deno_call GET "/organizations/$org/projects?limit=100")" || return 1
-  printf '%s' "$out" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "Deno Deploy answered without a project list" >&2; return 1; }
-  printf '%s' "$out"
+  while :; do
+    out="$(deno_call GET "/organizations/$org/projects?limit=100$([ "$page" = 1 ] || printf '&page=%s' "$page")")" || return 1
+    printf '%s' "$out" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "Deno Deploy answered without a project list" >&2; return 1; }
+    n="$(printf '%s' "$out" | jq 'length')"
+    first="$(printf '%s' "$out" | jq -r '.[0].name // ""')"
+    [ -z "$prev" ] || [ "$first" != "$prev" ] || break
+    all="$(printf '%s' "$out" | jq -c --argjson a "$all" '$a + .')"
+    [ "$n" -ge 100 ] || break
+    [ "$page" -lt 20 ] || { echo "Deno Deploy: more than 2000 projects, stopped reading" >&2; return 1; }
+    prev="$first"; page=$((page + 1))
+  done
+  printf '%s' "$all"
 }
 
 deno_deployments() {  # deno_deployments <project id>: newest first

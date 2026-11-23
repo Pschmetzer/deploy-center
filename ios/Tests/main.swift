@@ -460,5 +460,89 @@ do {
           && NotePlan.identifier(id: nil, project: nil) == "deploy-", "note plan: the same news has the same identifier")
 }
 
+// MARK: Timeline
+
+do {
+    var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC")!
+    let now = Date(timeIntervalSince1970: 1_800_000_000)             // a fixed moment
+    let day: TimeInterval = 86400
+    let startToday = cal.startOfDay(for: now)
+    func rec(_ id: String, _ state: String, _ at: Date?) -> DeployRecord { DeployRecord(id: id, state: state, at: at) }
+    let a = DeployTimeline.Source(key: "vercel/a", name: "Alpha", records: [
+        rec("1", "READY", now.addingTimeInterval(-3600)), rec("2", "ERROR", startToday.addingTimeInterval(-3600)),
+        rec("3", "READY", startToday.addingTimeInterval(-day * 3)), rec("old", "READY", startToday.addingTimeInterval(-day * 9)),
+        rec("none", "READY", nil)])
+    let b = DeployTimeline.Source(key: "render/b", name: "Beta", records: [
+        rec("1", "live", now.addingTimeInterval(-60)), rec("fut", "live", now.addingTimeInterval(7200))])
+    let days = DeployTimeline.build([a, b], now: now, calendar: cal)
+    check(days.count == 3, "timeline: three days with deploys")
+    check(days.first?.label == .today && days.first?.items.count == 3, "timeline: today first, a future time counts as today")
+    check(days.first?.items.map(\.id).first == "render/b/fut" || days.first?.items.first?.projectName == "Beta", "timeline: newest first")
+    check(days.dropFirst().first?.label == .yesterday && days.dropFirst().first?.failures == 1, "timeline: yesterday, with its failure counted")
+    if case .date(let d)? = days.last?.label { check(d == startToday.addingTimeInterval(-day * 3), "timeline: an older day carries its date") }
+    else { check(false, "timeline: an older day carries its date") }
+    let ids = days.flatMap(\.items).map(\.id)
+    check(!ids.contains("vercel/a/old") && !ids.contains("vercel/a/none"), "timeline: older than the window and undated are left out")
+    check(Set(ids).count == ids.count && ids.contains("vercel/a/1") && ids.contains("render/b/1"), "timeline: the same deploy id in two projects stays two items")
+    check(DeployTimeline.build([a, b], now: now, calendar: cal, days: 7, limit: 2).flatMap(\.items).count == 2, "timeline: the limit keeps the newest")
+    check(DeployTimeline.build([a, b], now: now, calendar: cal, days: 1).count == 1, "timeline: one day is today only")
+    check(DeployTimeline.build([], now: now, calendar: cal).isEmpty && DeployTimeline.build([a], now: now, calendar: cal, days: 0).isEmpty, "timeline: nothing in, nothing out")
+    let tie = DeployTimeline.build([DeployTimeline.Source(key: "x", name: "X", records: [rec("b", "READY", now), rec("a", "READY", now)])], now: now, calendar: cal)
+    check(tie.first?.items.map(\.id) == ["x/a", "x/b"], "timeline: the same time sorts by id, so the order is stable")
+}
+
+// MARK: Adaptive layout
+
+do {
+    typealias S = AdaptiveLayout.TextScale
+    check(AdaptiveLayout.summary(.large) == .row && AdaptiveLayout.summary(.xxLarge) == .row, "layout: the standard sizes show four in a row")
+    check(AdaptiveLayout.summary(.xxxLarge) == .grid, "layout: the largest standard size shows two by two")
+    check(S.allCases.filter { $0.isAccessibility }.allSatisfy { AdaptiveLayout.summary($0) == .column }, "layout: every accessibility size shows one column")
+    check(zip(S.allCases, S.allCases.dropFirst()).allSatisfy { AdaptiveLayout.summary($0) <= AdaptiveLayout.summary($1) },
+          "layout: a larger text never gets the tighter summary")
+    check(S.allCases.count == 12 && S.allCases.first == .xSmall && S.allCases.last == .accessibility5, "layout: twelve sizes, in order")
+    check(AdaptiveLayout.timeBesideName(.xxxLarge) && !AdaptiveLayout.timeBesideName(.accessibility1), "layout: the time goes under the name from the first accessibility size")
+    check(AdaptiveLayout.titleLines(.large) == 1 && AdaptiveLayout.titleLines(.xxxLarge) == 2 && AdaptiveLayout.titleLines(.accessibility3) == nil,
+          "layout: titles get more lines as the text grows, none cut at accessibility sizes")
+}
+
+// Health score and open outages.
+do {
+    let now = Date()
+    func rec(_ id: String, _ state: String, _ daysAgo: Double) -> DeployRecord { DeployRecord(id: id, state: state, at: now.addingTimeInterval(-daysAgo * 86400)) }
+    let clean = PhoneHealth.score([rec("1", "READY", 1), rec("2", "READY", 2)], now: now)
+    check(clean.score == 100, "health: a clean project scores 100")
+    let open = PhoneHealth.score([rec("1", "READY", 5), rec("2", "ERROR", 2)], now: now)
+    check(open.openOutage && open.openSince != nil, "health: a failure with no good deploy after it is open")
+    check(PhoneHealth.score([rec("1", "CANCELED", 1)], now: now).score == nil, "health: canceled counts for nothing")
+    let healed = PhoneHealth.score([rec("1", "ERROR", 3), rec("2", "READY", 2.99)], now: now)
+    check(!healed.openOutage, "health: a good deploy after a failure ends the outage")
+    check(HealthFormula.lerp(0.25, best: 0, worst: 0.5, max: 40) == 20, "formula: linear between best and worst")
+    var broken = PhoneProject(provider: .vercel, id: "p1", name: "shop")
+    broken.latestState = "ERROR"
+    var fine = PhoneProject(provider: .vercel, id: "p2", name: "blog")
+    fine.latestState = "READY"
+    let out = PhoneHealth.outages([broken, fine], history: { _ in [rec("1", "READY", 4), rec("2", "ERROR", 1)] }, now: now)
+    check(out.map(\.name) == ["shop"], "outages: only the project whose newest deploy failed")
+    check(PhoneHealth.average([fine], history: { _ in nil }, now: now) == nil, "average: nothing cached, nothing said")
+    check(PhoneHealth.average([fine], history: { _ in [rec("1", "READY", 1)] }, now: now)?.score == 100, "average: one clean project")
+}
+
+// MARK: Widget refresh
+
+do {
+    let now = Date(timeIntervalSince1970: 1_800_000_000)
+    func ago(_ s: TimeInterval) -> Date { now.addingTimeInterval(-s) }
+    check(WidgetRefresh.interval(snapshotAt: ago(60), building: 0, now: now) == 30 * 60, "refresh: nothing moves, every 30 minutes")
+    check(WidgetRefresh.interval(snapshotAt: ago(60), building: 2, now: now) == 5 * 60, "refresh: a build runs, every 5 minutes")
+    check(WidgetRefresh.interval(snapshotAt: ago(Words.staleAfter + 1), building: 2, now: now) == 60 * 60, "refresh: an out-of-date snapshot waits longer, even with a build in it")
+    check(WidgetRefresh.interval(snapshotAt: ago(Words.staleAfter), building: 1, now: now) == 5 * 60, "refresh: exactly three hours old is not yet out of date")
+    check(WidgetRefresh.interval(snapshotAt: nil, building: 0, now: now) == 30 * 60, "refresh: no snapshot, every 30 minutes")
+    check(WidgetRefresh.nextReload(snapshotAt: ago(60), building: 1, now: now) == now.addingTimeInterval(300), "refresh: the next reload is now plus the interval")
+    check(WidgetRefresh.staleEntryDate(snapshotAt: ago(3600), now: now) == ago(3600).addingTimeInterval(Words.staleAfter), "refresh: the out-of-date entry sits three hours after the snapshot")
+    check(WidgetRefresh.staleEntryDate(snapshotAt: ago(Words.staleAfter), now: now) == nil && WidgetRefresh.staleEntryDate(snapshotAt: nil, now: now) == nil,
+          "refresh: no out-of-date entry when it is already past or there is no snapshot")
+}
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)

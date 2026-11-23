@@ -97,7 +97,7 @@ struct SettingsView: View {
     var body: some View {
         TabView(selection: tab) {
             page(.general) { _ in generalSection; notificationsSection; updatesSection; CommandPaletteSettings() }
-            page(.platforms) { _ in platformsSection; HealthCard(store: store) }
+            page(.platforms) { _ in platformsSection; HealthCard(store: store); HealthScoreCard(); AccountsCard(store: store); FailureGroupsCard(store: store) }
             page(.projects) { _ in projectsSection }
             page(.deploy) { _ in deploySection; DeployWindowSettings(); RulesSettings(); GuardSettings(store: store) }
             page(.costs) { _ in costsSection }
