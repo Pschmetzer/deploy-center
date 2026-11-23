@@ -38,7 +38,7 @@ Das Fenster Einstellungen hat die Reiter Allgemein, Plattformen, Projekte, Deplo
 | Warnen, wenn Commits länger warten als | 7 Tage: ein Projekt mit einer Woche altem Merge wird markiert. |
 | Seite nach dem Live-Gang beobachten | 15 Minuten: jede Minute eine Prüfung; zwei Fehler hintereinander warnen, oder rollen zurück, wo das Projekt das selbst tut. |
 | Neutrale Mitteilungen | An: „Ein Deploy ist fertig“ ohne Projektnamen, sicher auf dem gesperrten Bildschirm. |
-| Vor riskanten Schritten nach Touch ID fragen | An: mehrere Projekte auf einmal deployen, ein Rollback von Hand und Auto-Deploy erlauben fragen nach Fingerabdruck oder Passwort. Das automatische Zurückrollen nach einem fehlgeschlagenen Check wartet nicht. |
+| Vor riskanten Schritten nach Touch ID oder dem Passwort fragen | An: mehrere Projekte auf einmal deployen, ein Rollback von Hand und Auto-Deploy erlauben fragen nach Fingerabdruck oder Passwort. Das automatische Zurückrollen nach einem fehlgeschlagenen Check wartet nicht. |
 
 ## Kosten: Ziele und ruhende Projekte
 
