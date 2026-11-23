@@ -455,7 +455,6 @@ if [ -f "$LIB_DIR/fixes.sh" ]; then . "$LIB_DIR/fixes.sh"; fi
 # timeline, recovery and when (lib/insights.sh): read-only views of the journal.
 # shellcheck source=lib/insights.sh
 if [ -f "$LIB_DIR/insights.sh" ]; then . "$LIB_DIR/insights.sh"; fi
-# health and weeks (lib/health.sh) and export (lib/export.sh): read-only, from the journal.
 # shellcheck source=lib/health.sh
 if [ -f "$LIB_DIR/health.sh" ]; then . "$LIB_DIR/health.sh"; fi
 # shellcheck source=lib/export.sh
@@ -3866,17 +3865,9 @@ case "${1:-} ${2:-}" in
     declare -F when_main >/dev/null || die "lib/insights.sh is not next to deploys."
     when_main "${@:2}" ;;
 
-  "health "*)
-    declare -F health_main >/dev/null || die "lib/health.sh is not next to deploys."
-    health_main "${@:2}" ;;
-
-  "weeks "*)
-    declare -F weeks_main >/dev/null || die "lib/health.sh is not next to deploys."
-    weeks_main "${@:2}" ;;
-
-  "export "*)
-    declare -F export_main >/dev/null || die "lib/export.sh is not next to deploys."
-    export_main "${@:2}" ;;
+  "health "*|"weeks "*|"export "*)
+    declare -F "${1}_main" >/dev/null || die "lib/health.sh and lib/export.sh must be next to deploys."
+    "${1}_main" "${@:2}" ;;
 
   "streak "*)
     declare -F streak_main >/dev/null || die "lib/notes.sh is not next to deploys."

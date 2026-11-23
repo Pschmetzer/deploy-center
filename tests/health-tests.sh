@@ -35,6 +35,8 @@ not json
 J
 )"
 
+mode_of() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
+
 # --- health ---
 hj="$(health_from "$now" 30 "" '[{"platform":"Vercel","name":"web","state":"green"}]' <<<"$journal")"
 expect "health: worst first, the stale project is listed" "$(jq -c '[.projects[].name]' <<<"$hj")" '["api","old","web"]'
@@ -80,10 +82,10 @@ expect "export: a key in a detail is masked" "$(grep -c 'sk-abcdefghij' <<<"$csv
 expect "export: --project narrows" "$(cli export --project web | wc -l | tr -d ' ')" "2"
 cli export --format json --out "$tmp/out.json" >/dev/null
 expect "export: --out writes valid JSON with the schema" "$(jq -c '{kind, schema, n:(.journal | length)}' "$tmp/out.json")" '{"kind":"deploys-export","schema":1,"n":2}'
-mode="$(stat -f %Lp "$tmp/out.json" 2>/dev/null || stat -c %a "$tmp/out.json")"
+mode="$(mode_of "$tmp/out.json")"
 expect "export: the file is 0600" "$mode" "600"
 cli export --what all --out "$tmp/dir" >/dev/null
-expect "export: csv all writes two files, both 0600" "$(ls "$tmp/dir" | paste -sd' ' -):$(stat -f %Lp "$tmp/dir/journal.csv" 2>/dev/null || stat -c %a "$tmp/dir/journal.csv")" "costs.csv journal.csv:600"
+expect "export: csv all writes two files, both 0600" "$(ls "$tmp/dir" | paste -sd' ' -):$(mode_of "$tmp/dir/journal.csv")" "costs.csv journal.csv:600"
 expect "export: costs csv without Vercel has just the header" "$(cat "$tmp/dir/costs.csv")" "day,total_usd,build_usd"
 expect "export: csv all needs a folder" "$(cli export --what all 2>&1 | grep -c 'give a folder')" "1"
 expect "export: a wrong format is refused" "$(cli export --format xml 2>&1 | grep -c 'csv or json')" "1"
