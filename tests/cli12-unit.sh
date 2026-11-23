@@ -68,9 +68,22 @@ DEPLOYS_NOW="fri 14:59 2026-11-13" cli window >/dev/null 2>&1; expect "window: o
 expect "freeze: says closed now" "$(DEPLOYS_NOW="fri 16:00 2026-11-13" cli freeze | grep -c '^Closed now')" "1"
 expect "freeze --json: closedNow" "$(DEPLOYS_NOW="fri 16:00 2026-11-13" cli freeze --json | jq -c '{closedNow, reason}')" '{"closedNow":true,"reason":"no Friday deploys"}'
 # A closed window stops a deploy before anything is asked of a platform (no --force).
-echo '{"enabled":[]}' > "$DEPLOYS_CONFIG/providers.json"
-out="$(DEPLOYS_NOW="fri 16:00 2026-11-13" cli deploy-changed --yes 2>&1)"
+# One made-up platform with one project that has a commit waiting (a fake gh answers for the branch head): with nothing to
+# deploy the command says so before it looks at the window, so the window test needs something that would start.
+mkdir -p "$tmp/fz/providers" "$tmp/fzbin"
+cp deploys "$tmp/fz/deploys"; cp -R lib "$tmp/fz/lib"
+cat > "$tmp/fz/providers/fake.sh" <<'PROV'
+fake_meta() { printf '{"id":"fake","label":"Fake","noun":"project","defaultOn":true,"keyEnv":["FAKE_KEY"],"keychain":"deploy-center-fake","caps":{"off":false,"sha":false,"cancel":false,"rollback":false,"logs":false,"preview":false}}\n'; }
+fake_ready() { return 0; }
+fake_json() { echo '[{"name":"shop","id":"p1","auto":false,"deployable":true,"paused":false,"repo":"acme/shop","ref":"main","lastAt":1700000000,"lastSha":"aaaa","lastState":"ready","fetchError":null,"phase":"ready"}]'; }
+fake_deploy_json() { echo "STARTED" >> "$tmp/started"; echo '{"id":"d1","url":null,"state":"queued","phase":"queued"}'; }
+PROV
+printf '#!/bin/bash\ncase "$*" in *rate_limit*) echo "{\\"remaining\\":4000}" ;; *commits/main*) echo "{\\"sha\\":\\"bbbb\\",\\"commit\\":{\\"message\\":\\"head\\",\\"committer\\":{\\"date\\":\\"2026-01-02T00:00:00Z\\"}}}" ;; *compare*) echo "{\\"ahead_by\\":1,\\"status\\":\\"ahead\\",\\"commits\\":[{\\"sha\\":\\"bbbb\\",\\"commit\\":{\\"message\\":\\"x (#1)\\",\\"committer\\":{\\"date\\":\\"2026-01-02T00:00:00Z\\"}}}]}" ;; *) echo "[]" ;; esac\n' > "$tmp/fzbin/gh"; chmod +x "$tmp/fzbin/gh"
+echo '{"enabled":["fake"]}' > "$DEPLOYS_CONFIG/providers.json"
+out="$(PATH="$tmp/fzbin:$PATH" DEPLOYS_DIR="$tmp/fz" DEPLOYS_NOW="fri 16:00 2026-11-13" env -u DEPLOYS_LIB bash "$tmp/fz/deploys" deploy-changed --yes 2>&1)"
+expect "freeze: nothing was started in the window" "$([ -e "$tmp/started" ] && echo started || echo none)" "none"
 expect "freeze: deploy-changed --yes is refused in the window" "$(grep -c 'No deploys now\|deploy window is closed' <<<"$out")" "1"
+echo '{"enabled":[]}' > "$DEPLOYS_CONFIG/providers.json"
 cli freeze add sat,sun 0 >/dev/null; cli freeze add mon-wed 9:30 12 --reason='standup' >/dev/null
 expect "freeze add: three rules" "$(cli freeze --json | jq -c '[.rules[] | "\(.n) \(.from)-\(.to)"]')" '["1 15:00-24:00","2 00:00-24:00","3 09:30-12:00"]'
 cli freeze remove 2 >/dev/null; expect "freeze remove: rule 2 gone, the rest renumbered" "$(cli freeze --json | jq -c '[.rules[] | "\(.n) \(.from)"]')" '["1 15:00","2 09:30"]'
