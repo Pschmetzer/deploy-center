@@ -53,6 +53,8 @@
 - Costs sheet: a forecast for the month per project with a warning when a project's budget will be passed, and what a project would cost on the other host (your prices per build minute, `deploys price`).
 - Several accounts per host (Settings > Platforms): keys only in the keychain, one click to switch.
 - Health score per project (0-100, the formula of `deploys health`) in Settings > Platforms; the weekly report compares this week with the week before; the iPhone app shows open outages and the average health.
+- `deploys domains [--warn 30]`: custom domains apart from the platform's own addresses, with the days their certificate has left; exit 1 inside the threshold.
+- `deploys preview <project>`: what a production deploy would do (waiting commits, files, risk check, matching rule, deploy window, budget, verdict) in one view; it starts nothing.
 - Nightly check (Settings > Claude, `deploys nightly`): OSV-Scanner, gitleaks and Semgrep on every repo once a night; the first check of a repo is its starting point, then only new findings count, one notification. Optional: Claude gets only the new findings in a bug scan that opens a PR (at most 2 a night, never merges or deploys). Leaked keys are only reported. Optional weekly review: once a week Claude reads each repo's changes since its last review and looks for bugs they brought in (shares the nightly limit with the fixes). All switches are off by default.
 
 ## 0.12.0 - 2026-11-21

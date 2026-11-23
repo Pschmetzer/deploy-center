@@ -15,10 +15,12 @@ are refused before anything is asked; only Amplify ids have one `/` (`amplify:<a
 ```bash
 deploys doctor                          # what is connected (JSON)
 deploys certs [--days 14] [--json]      # TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out within N days. A host that cannot be reached is "unknown", not a failure.
+deploys domains [--warn 30] [--json]    # custom domains apart from the platform's own addresses, with the days their TLS certificate has left; exit 1 inside --warn (certificate only, no registration lookup)
 deploys creds [--max-age 90] [--json]   # per platform: where its key comes from (environment, keychain, login), if it works, how old a keychain key is. Reads only; never shows a key.
 deploys doctor --text                   # one line each (ok or the problem), with the fix
 deploys doctor --fix [--json]           # what to do about each problem, as commands for you to type; shows only, runs and changes nothing
 deploys digest [--days 7] [--json] [--no-savings]   # the last week from the journal: deploys, failures, rollbacks, busiest day, projects, and the saving of `ledger` (an estimate; --no-savings skips it, it needs the network)
+deploys preview <project> [--json]       # what a production deploy would do: commits, files, risk, rule, deploy window, budget, verdict. Starts nothing
 deploys timeline [--days 3] [--project <name>] [--limit 50] [--json]   # what happened, newest day first: deploys, failures, rollbacks, forced starts (from the journal, UTC; reads only)
 deploys recovery [--days 30] [--project <name>] [--json]   # how long a failure lasted until the next deploy of that project; an outage without a later deploy is "open"
 deploys streak [--days 90] [--project <name>] [--json]   # deploys in a row without a failure per project: now and longest (from the journal; reads only)

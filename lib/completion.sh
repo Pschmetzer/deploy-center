@@ -28,6 +28,7 @@ journal:verify export report
 idle:--days --json
 creds:--max-age --json
 certs:--days --json
+domains:--warn --json
 secrets:--stdin --json
 plan:--when-green --since --json
 list:--platform --auto --manual --format --json
@@ -37,6 +38,7 @@ config:--refresh export import
 doctor:--text --fix --json
 freeze:status add import remove clear --json
 digest:--days --json --no-savings --format
+preview:--json
 timeline:--days --project --limit --json
 recovery:--days --project --json
 streak:--days --project --json
