@@ -282,5 +282,28 @@ expect "rules overrides: a wrong shape is ignored" "$(chk)" '"vercel/web:true,ve
 rm -f "$RULES"; unset -f rules_facts
 . ./lib/rules.sh
 
+# --- guard: the notification and the record say why ---
+ad_platforms() { printf 'vercel\nrender\n'; }
+ad_list_vercel() { echo "$VLIST"; }
+ad_list_render() { echo "$RLIST"; }
+ad_off() { [ "$2" = "$GFAIL" ] && { echo "Error: Vercel: could not disconnect $2 with token sk_live_abcdef0123456789" >&2; exit 1; }; echo "$1: $2 no longer deploys on push"; }
+GN="$tmp/guard-notes"; af_notify() { echo "$1" >> "$GN"; }
+GFAIL=""; gnow="$(date +%s)"
+VLIST='[{"name":"web","id":"web","auto":true},{"name":"blog","id":"blog","auto":true}]'; RLIST='[{"name":"api","id":"srv-1","auto":true}]'
+rm -f "$GUARD_STATE" "$ALLOW_FILE" "$GN"; : > "$GN"
+jq -n --argjson t "$gnow" '{"vercel:web":($t-60)}' > "$ALLOW_FILE"
+guard_main "" >/dev/null 2>&1; : > "$GN"   # the first run is a dry run
+jq -n --argjson t "$gnow" '{"vercel:web":($t-60)}' > "$ALLOW_FILE"
+guard_main "" >/dev/null 2>&1
+expect "guard reason: an ended allowance and a plain switch-on are told apart" \
+  "$(jq -c '[.lastActions[] | [.project, .reason]]' "$GUARD_STATE")" \
+  '[["web","its allowance ended"],["blog","auto-deploy was on and no allowance covers it"],["api","auto-deploy was on and no allowance covers it"]]'
+expect "guard reason: the notification carries them" "$(grep -c 'vercel web (its allowance ended), vercel blog (auto-deploy was on and no allowance covers it)' "$GN")" "1"
+VLIST='[{"name":"web","id":"web","auto":true}]'; RLIST='[]'; GFAIL=web; : > "$GN"; rm -f "$ALLOW_FILE"
+guard_main "" >/dev/null 2>&1
+expect "guard reason: a failure names the error, without a secret" "$(grep -c 'could not check or switch vercel web (Vercel: could not disconnect web' "$GN"):$(grep -c 'sk_live' "$GN")" "1:0"
+rm -f "$GUARD_STATE" "$ALLOW_FILE"; unset -f ad_platforms ad_list_vercel ad_list_render ad_off af_notify; unset GFAIL
+. ./deploys 2>/dev/null || true
+
 echo
 [ "$fails" = 0 ] && echo "All round 12 CLI tests passed." || { echo "$fails failed."; exit 1; }

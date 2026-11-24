@@ -45,6 +45,8 @@ all, for 1, 4 or 24 hours.
 - The guard reads every Vercel project and Render service. Where auto-deploy is on and no running
   allowance covers it, it turns it off: on Vercel the repo is remembered first (as with
   `autodeploy-off`), on Render the trigger goes to `off`. Then it sends a notification (macOS; on Linux set `DEPLOYS_NOTIFY_CMD`, see [CLI.md](CLI.md#environment-variables)).
+  The notification says why: `turned auto-deploy off for vercel web (its allowance ended), render api (auto-deploy was on and no allowance covers it)`.
+  A failure names the first error too (short, token-like words masked), and is notified only when the set of failing projects changes.
 - Right before each switch the guard takes a lock shared with `allow` and `revoke`, and reads the
   allowances again. An allowance given a moment ago wins.
 - Expired allowances are removed at the start of each run (not in a dry run).
@@ -95,7 +97,7 @@ there a teammate or a dashboard click can turn automatic builds back on without 
   "lastDry": false,
   "firstRunPending": false,
   "lastActions": [
-    { "at": 1794290000, "platform": "render", "project": "api", "action": "off", "error": null },
+    { "at": 1794290000, "platform": "render", "project": "api", "action": "off", "error": null, "reason": "auto-deploy was on and no allowance covers it" },
     { "at": 1794290000, "platform": "vercel", "project": null, "action": "error", "error": "vercel: not logged in" }
   ],
   "allowances": [ { "platform": "vercel", "project": "my-project", "expiresAt": 1794300000 } ]
@@ -103,7 +105,7 @@ there a teammate or a dashboard click can turn automatic builds back on without 
 ```
 
 `action`: `off` (turned off), `wouldOff` (dry run), `failed` (could not switch; `error` says why),
-`error` (the platform could not be read; `project` is null). `lastRun` is null before the first run.
+`error` (the platform could not be read; `project` is null). `reason` (for `off` and `wouldOff`, otherwise null): `its allowance ended` or `auto-deploy was on and no allowance covers it`. `lastRun` is null before the first run.
 
 ## Exit codes
 
