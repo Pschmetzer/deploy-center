@@ -11,6 +11,7 @@
 - `deploys self-update --check [--json]`: says whether a newer CLI release is out and prints the command that updates this copy (install script, Homebrew or Docker). It only checks: nothing is downloaded or installed. Exit 10 means an update exists, 1 means the release list could not be read (offline, proxy).
 - Fix: `deploy-changed --yes` in a closed deploy window says "No deploys now" again before it reads any platform; a run with no platform on ended with "Could not tell what has changes" instead.
 - Examples: four presets (`examples/presets/`: solo, agency with 20 client sites, monorepo with previews only, student budget), and two `hooks.d` examples: `pre-deploy-backup` (saves your settings before a start) and `post-deploy-smoke` (asks a URL after a start). `tests/examples-tests.sh` checks them all with no account.
+- Mac app: the menu bar says "5 waiting, 2 failed" and lists the failed projects; the "Claude found" hint says what connecting gives and never comes back after you close it.
 
 ## 0.13.0 - 2026-11-23
 

@@ -880,7 +880,7 @@ struct ContentView: View {
         if store.doctor.map({ $0.githubCli && $0.githubLoggedIn == false }) == true || (store.githubBudget?.remaining ?? .max) < 300 { out.append(.github) }
         if !(store.doctor?.missingTools.isEmpty ?? true) { out.append(.tools) }
         if !store.providerIssues.isEmpty && !providerIssuesClosed { out.append(.provider) }
-        if claudeNudge && !claudeNudgeDismissed { out.append(.claude) }
+        if ClaudeNudge.visible(wanted: claudeNudge, dismissed: claudeNudgeDismissed) { out.append(.claude) }
         return out
     }
 
