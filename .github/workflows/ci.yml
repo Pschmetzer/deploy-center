@@ -125,6 +125,11 @@ jobs:
         run: bash tests/health-tests.sh
       - name: Preview tests (deploys preview)
         run: bash tests/preview-tests.sh
+      - name: Speed tests (the list is printed as before the speed changes)
+        run: bash tests/perf-tests.sh
+      - name: Benchmark, 200 projects (reports only, never fails the build)
+        continue-on-error: true
+        run: bash scripts/bench.sh
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .node-version
@@ -240,6 +245,8 @@ jobs:
         run: bash tests/health-tests.sh
       - name: Preview tests
         run: bash tests/preview-tests.sh
+      - name: Speed tests
+        run: bash tests/perf-tests.sh
 
   integrations:
     # integrations/tests/run.sh: Action, digest, statuspage, badge, notify, hooks, the Claude Code

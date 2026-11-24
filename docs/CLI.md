@@ -285,7 +285,7 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_JOURNAL` | the deploy journal file (default: the app's, on Linux in the config folder) |
 | `DEPLOYS_NOTIFY` | `0`: no macOS notifications from autofix and guard |
 | `DEPLOYS_TEAM_TTL` | seconds a shared `deploy-center.json` is cached (default 600) |
-| `DEPLOYS_AUTOFIX_PER_DAY`, `DEPLOYS_AUTOFIX_PER_PROJECT` | autofix caps per 24 h (default 6 and 2) |
+| `DEPLOYS_AUTOFIX_PER_DAY`, `DEPLOYS_AUTOFIX_PER_PROJECT` | autofix caps per 24 h (default 6 and 2; `0` = no cap); also `~/.config/deploys/autofix-limits.json` with `perDay` and `perProject`, the variables win |
 | `DEPLOYS_GITLAB_HOSTS` | self-managed GitLab hosts (docs/GITLAB.md) |
 | `DEPLOYS_HTTP_TRACE` | `1`: one line per call to a platform on stderr (method, path without query, status, time; no header, no body); `--debug` sets it |
 | `DEPLOYS_QUIET`, `DEPLOYS_DEBUG` | what the global `--quiet` and `--debug` set: only the result; the trace of the calls |
