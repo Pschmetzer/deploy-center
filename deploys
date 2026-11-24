@@ -21,6 +21,7 @@
 #   deploys schedule daily [HH:MM] [--weekdays] [--when-green] [--by-rules] [--strict] [--only <p>] [--exclude <p>] [--platform <p>] [--max <n>] | off | status [--json]
 #                                             deploy-changed --yes once a day (launchd; else the cron line)
 #   deploys rules check [--json]              which rule of rules.json matches which waiting project, and why not
+#   deploys preview <p> [--json]              what a production deploy of <p> would do (commits, files, risk, rule, window, budget); starts nothing
 #   deploys deploy <p>|<group> [--preview] [--sha <c>] [--wait [--timeout 30m]] [--dry-run] [--force "reason"]
 #                                             deploy one project, or a group in its order (docs/TEAM.md);
 #                                             --dry-run says what would start and starts nothing
@@ -43,6 +44,11 @@
 #   deploys open <project> [--dashboard] [--print]   the site, or its page at the platform (--print: only the address)
 #   deploys ignore <p> [--undo] | --list      leave a project out of changed and deploy-changed
 #   deploys certs [--days 14] [--json]        TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out soon
+#   deploys domains [--warn 30] [--json]      custom domains and platform addresses with the days their TLS certificate has left; exit 1 inside --warn
+#   deploys forecast [--warn 80] [--json]     the month's build cost so far and where it ends (estimate), against `budget`; exit 1 when over
+#   deploys env-diff <p> [--json]             variable NAMES in production but not in preview and the other way (never values); exit 1 when they differ
+#   deploys group list|add <name> <p>...|remove <name>|run <name> [--yes]   your own ordered groups; run waits for each member, stops at the first failure, starts only with --yes or "y"
+#   deploys prepare on [HH:MM] [--when-green] [--no-freeze] [--yes] | off | status | show | run   a morning job that gets a deploy ready; it starts only with --yes stored
 #   deploys creds [--max-age 90] [--json]     where each platform's key comes from, if it works, how old a keychain key is
 #   deploys idle [--days 90] [--json]         projects with no deploy for N days (candidates to pause)
 #   deploys list [--platform <p>] [--auto|--manual] [--format tsv] [--json]   every project on every provider that is on, with its platform
@@ -279,8 +285,9 @@ par_fn mtime   # team_fetch_one runs under xargs
 # a "_" of its own also gets its checksum, so a_b/c and a/b_c no longer meet in one file (one
 # answer was lost when they did).
 cache_name() {
-  local n; n="$(printf '%s' "$1" | tr '/@' '__')"
-  case "$1" in *_*) n="$n-$(printf '%s' "$1" | cksum | cut -d' ' -f1)" ;; esac
+  # No tr and no subshell: this runs once per repo (and again for each compare), in every parallel reader.
+  local n="${1//[\/@]/_}" ck
+  case "$1" in *_*) ck="$(printf '%s' "$1" | cksum)"; n="$n-${ck%% *}" ;; esac
   printf '%s' "$n"
 }
 par_fn cache_name
@@ -436,7 +443,7 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion nightly selfupdate; do
+for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done
@@ -801,17 +808,18 @@ pending_of() {
           # GitHub lists 250 commits at most; past that the PR count is a floor.
           partial:(.ahead_by > (.commits | length)),
           oldestAt:(.commits[0].commit.committer.date // null | if . then fromdateiso8601 else null end),
-          bare:([$c[] | select(.n == null) | .sha]), risk:$risk}}' > "$f" 2>/dev/null || return 0
+          bare:([$c[] | select(.n == null) | .sha]), risk:$risk}}
+      # Kept only when a few commits need asking about (below); else dropped here, not by a second jq per repo.
+      | if (.value.bare | length) == 0 or (.value.bare | length) > 10 then del(.value.bare, .value.nums) else . end' > "$f" 2>/dev/null || return 0
   # A rebase merge leaves no number in the message. For a few such commits, ask which PR they came
   # from, four at a time; a PR already named in another message is counted once.
   local bare n
-  bare="$(jq -r '.value.bare | if length <= 10 then .[] else empty end' "$f")"
-  if [ -n "$bare" ]; then
+  # The filter above left "bare" only for 1 to 10 commits without a number: no jq to find out.
+  if grep -q '"bare":' "$f"; then
+    bare="$(jq -r '.value.bare[]' "$f")"
     n="$(printf '%s\n' $bare | xargs -P 4 -I{} gh api --cache 24h "repos/$repo/commits/{}/pulls" --jq '.[].number' 2>/dev/null \
       | jq -R -s -c 'split("\n") | map(select(length > 0))')" || n='[]'
     jq -c --argjson n "${n:-[]}" '.value.prs = ((.value.nums + $n) | unique | length) | del(.value.bare, .value.nums)' "$f" > "$f.t" && mv "$f.t" "$f"
-  else
-    jq -c 'del(.value.bare, .value.nums)' "$f" > "$f.t" && mv "$f.t" "$f"
   fi
 }
 par_fn pending_of
@@ -872,12 +880,13 @@ CHANGED_RULE='map(. + {building: (.phase == "queued" or .phase == "building")})
 # deploys cannot read (Bitbucket). noRepo says why; null for every other project. Such a project
 # has no branch head, so it is never "changed", and it is not "state unknown" either (UNKNOWN_RULE).
 with_norepo() {
-  local bad="[]" r
+  local bad="" r
+  # One jq for the whole list (it was one per repo with a host that is not supported). The unsupported repos go in a file.
   while IFS= read -r r; do
     [ -n "$r" ] || continue
-    [ "$(githost_of "$r")" != unknown ] || bad="$(jq -c --arg r "$r" '. + [$r]' <<<"$bad")"
+    [ "$(githost_of "$r")" != unknown ] || bad="$bad$r"$'\n'
   done < <(echo "$1" | jq -r '.[] | .repo // empty' | sort -u)
-  echo "$1" | jq --argjson bad "$bad" 'map(. + {noRepo:(
+  echo "$1" | jq --argjson bad "$(printf '%s' "$bad" | jq -R -s -c 'split("\n") | map(select(. != ""))')" 'map(. + {noRepo:(
       if (.repo // null) == null then "no git repo"
       elif (.repo as $r | $bad | index($r)) then "the git host of \(.repo) is not supported"
       elif (.ref // null) == null then "no branch"
@@ -1487,8 +1496,16 @@ AUTOFIX_API="${DEPLOYS_ROUTINE_API:-https://api.anthropic.com/v1/claude_code/rou
 # The token goes to this address: https only (plain http for this machine and the .test names of the tests).
 api_url_ok() { case "$1" in https://*|http://localhost|http://localhost[:/]*|http://127.0.0.1[:/]*|http://[[]::1[]][:/]*|http://*.test|http://*.test[:/]*) return 0;; esac; return 1; }
 api_url_ok "$AUTOFIX_API" || die "DEPLOYS_ROUTINE_API must be an https address (it receives your token)."
-AUTOFIX_PER_PROJECT="${DEPLOYS_AUTOFIX_PER_PROJECT:-2}"   # fires per project per 24 h
-AUTOFIX_PER_DAY="${DEPLOYS_AUTOFIX_PER_DAY:-6}"           # fires per account per 24 h
+# Caps: DEPLOYS_AUTOFIX_PER_* wins, then $CONFIG_DIR/autofix-limits.json ({"perDay":N,"perProject":N}),
+# then the default. 0 means no cap. A value that is not a whole number falls back to the default.
+af_limit() { # <env value> <json key> <default>
+  local v="$1"
+  [ -n "$v" ] || v="$(jq -r --arg k "$2" '.[$k] // empty' "$CONFIG_DIR/autofix-limits.json" 2>/dev/null || true)"
+  case "$v" in ''|*[!0-9]*) v="$3" ;; esac
+  echo "$v"
+}
+AUTOFIX_PER_PROJECT="$(af_limit "${DEPLOYS_AUTOFIX_PER_PROJECT:-}" perProject 2)"   # fires per project per 24 h (0 = no cap)
+AUTOFIX_PER_DAY="$(af_limit "${DEPLOYS_AUTOFIX_PER_DAY:-}" perDay 6)"              # fires per account per 24 h (0 = no cap)
 
 # Only a build that failed can be fixed from its build log. Runtime and health-check failures
 # (Render update_failed, pre_deploy_failed) are reported, cancelled deploys never count.
@@ -1962,8 +1979,8 @@ autofix_run() {  # autofix_run [dry] [<platform> <project> [again]]  (the two: -
       [ -z "$oname" ] || out="$AF_BUSY"; continue
     fi
     proj_count="$(echo "$st" | jq --arg p "$p" --argjson t "$now" '[.fires[] | select(.project == $p and (.status == "fired" or .status == "failed") and .at > ($t - 86400))] | length')"
-    if [ "$proj_count" -ge "$AUTOFIX_PER_PROJECT" ]; then echo "autofix: $p already had $proj_count fixes today; skipped."; [ -z "$oname" ] || out="$AF_CAP"; continue; fi
-    if [ "$day_count" -ge "$AUTOFIX_PER_DAY" ]; then echo "autofix: the daily cap ($AUTOFIX_PER_DAY) is reached."; [ -z "$oname" ] || out="$AF_CAP"; break; fi
+    if [ "$AUTOFIX_PER_PROJECT" -gt 0 ] && [ "$proj_count" -ge "$AUTOFIX_PER_PROJECT" ]; then echo "autofix: $p already had $proj_count fixes today; skipped."; [ -z "$oname" ] || out="$AF_CAP"; continue; fi
+    if [ "$AUTOFIX_PER_DAY" -gt 0 ] && [ "$day_count" -ge "$AUTOFIX_PER_DAY" ]; then echo "autofix: the daily cap ($AUTOFIX_PER_DAY) is reached."; [ -z "$oname" ] || out="$AF_CAP"; break; fi
     local open; open="$(af_prs "$repo" "$p" open 2>/dev/null)" || { echo "autofix: could not ask GitHub about $p; not firing" >&2; rc=1; continue; }
     if [ "$(echo "$open" | jq length)" != 0 ]; then echo "autofix: $p has an open autofix PR (#$(echo "$open" | jq '.[0].number')); waiting for it."; [ -z "$oname" ] || out="$AF_BUSY"; continue; fi
     if [ -n "$dry" ]; then echo "autofix (dry run): would hand $plat $p (deploy $did, ${sha:0:7}) to the routine"; break; fi
@@ -2868,6 +2885,7 @@ case "${1:-} ${2:-}" in
   "verify "*)      usage_if_short $# 2 "verify <project> [--path /health] [--expect 200|2xx] [--follow] [--tries 3] [--every 5] [--need 1] [--watch-timeout 30m] [--rollback-after 10] [--no-rollback]" ;;
   "secrets "*)     [ "${2:-}" = --stdin ] || usage_if_short $# 2 "secrets <project>|--stdin [--json]" ;;
   "risk "*)        usage_if_short $# 2 "risk <project> [--json]" ;;
+  "env-diff "*|"preview "*) usage_if_short $# 2 "$1 <project> [--json]" ;;
   "ci "*)          usage_if_short $# 2 "ci <owner/repo> [<sha or branch>] [--wait 30m] [--json]" ;;
   "details "*)     usage_if_short $# 2 "details <owner/repo> [<live sha>] [<branch>]" ;;
   "deploy "*)      usage_if_short $# 2 "deploy <project>|<group> [--preview] [--sha <commit>] [--wait] [--dry-run] [--force \"reason\"]" ;;
@@ -3864,6 +3882,10 @@ case "${1:-} ${2:-}" in
     sed -n '/^# Exit codes: /,/^#$/p' "$SELF" | sed 's/^# \{0,1\}//'
     echo "Every command: the table is in docs/CLI.md (Exit codes)." ;;
 
+  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*)
+    case "$1" in env-diff) _f=envdiff_main ;; group) _f=groups_main ;; *) _f="${1}_main" ;; esac
+    declare -F "$_f" >/dev/null || die "$1 needs its file in lib/ next to deploys."
+    "$_f" "${@:2}" ;;
   "timeline "*)
     declare -F timeline_main >/dev/null || die "lib/insights.sh is not next to deploys."
     timeline_main "${@:2}" ;;

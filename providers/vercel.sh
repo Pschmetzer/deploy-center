@@ -416,6 +416,13 @@ vercel_has() {
   cat "$e" >&2; rm -f "$e"; return 2
 }
 
+# vercel_env_names <project id>: [{key, targets}] of the project's variables. The answer may carry values: only key and
+# target are taken, in the same pipe, so nothing else is kept (lib/envdiff.sh). Optional function of the provider contract.
+vercel_env_names() {
+  vercel_call "/v10/projects/${1:?project}/env" | jq -c '[(.envs // [])[] | {key:.key, targets:((.target // []) | if type == "array" then . else [.] end)}]' \
+    || return 1
+}
+
 # deployId<TAB>phase<TAB>raw state of one deployment.
 vercel_status() {
   vercel_call "/v13/deployments/${2:?deployment id}" \

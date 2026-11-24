@@ -702,6 +702,19 @@ now="$(date +%s)"
 jq -n --argjson t "$now" '{fires:[{deployId:"o1",project:"web",status:"fired",at:($t-100)},{deployId:"o2",project:"web",status:"failed",at:($t-200)}]}' > "$AUTOFIX_STATE"
 expect "autofix: two fires today stop a third" "$(afrun | grep -c 'already had 2'):$(fired)" "1:0"
 
+# Caps from the config file: env wins, 0 = no cap, junk falls back to the default.
+printf '{"perDay":0,"perProject":7}' > "$DEPLOYS_CONFIG/autofix-limits.json"
+expect "autofix limits: the file sets them (0 = no cap)" "$(af_limit "" perDay 6):$(af_limit "" perProject 2)" "0:7"
+expect "autofix limits: the environment wins over the file" "$(af_limit 3 perProject 2)" "3"
+printf '{"perDay":"lots"}' > "$DEPLOYS_CONFIG/autofix-limits.json"
+expect "autofix limits: junk falls back to the default" "$(af_limit "" perDay 6)" "6"
+rm -f "$DEPLOYS_CONFIG/autofix-limits.json"
+expect "autofix limits: no file, the default" "$(af_limit "" perDay 6)" "6"
+af_reset
+jq -n --argjson t "$now" '{fires:[{deployId:"o1",project:"web",status:"fired",at:($t-100)},{deployId:"o2",project:"web",status:"failed",at:($t-200)}]}' > "$AUTOFIX_STATE"
+( AUTOFIX_PER_PROJECT=0; AUTOFIX_PER_DAY=0; afrun | grep -c 'already had' ) > "$af/nocap.out"
+expect "autofix: cap 0 never stops a fire" "$(cat "$af/nocap.out")" "0"
+
 # Merged fix: never deployed, only recorded and announced; its own failure does not fire again.
 af_reset
 jq -n --argjson t "$((now - 600))" '{fires:[{deployId:"d1",project:"web",platform:"vercel",repo:"me/web",sha:"aaaa111",status:"fired",at:$t}]}' > "$AUTOFIX_STATE"

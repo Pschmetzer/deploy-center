@@ -15,7 +15,7 @@ you merge ──> deploys autofix: notifies you; you deploy with a click
 
 - **Es feuert bei** Vercel-Produktions-Deploys mit `ERROR` und Render-Deploys mit `build_failed`. Nur diese zwei Plattformen: Ein fehlgeschlagener Build bei Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean oder Coolify wird noch nicht übergeben.
 - **Es meldet nur** Render `update_failed` und `pre_deploy_failed`. Das sind Laufzeit- oder Health-Check-Fehler, und das Build-Log zeigt ihre Ursache nicht. Abgebrochene Deploys zählen nie.
-- **Ein Feuern pro Lauf.** Jedes Projekt bekommt höchstens 2 Fires in 24 Stunden (`DEPLOYS_AUTOFIX_PER_PROJECT`), das Konto höchstens 6 (`DEPLOYS_AUTOFIX_PER_DAY`).
+- **Ein Feuern pro Lauf.** Jedes Projekt bekommt höchstens 2 Fires in 24 Stunden (`DEPLOYS_AUTOFIX_PER_PROJECT`), das Konto höchstens 6 (`DEPLOYS_AUTOFIX_PER_DAY`). Dauerhaft ändern: `~/.config/deploys/autofix-limits.json`, z. B. `{"perDay": 20, "perProject": 5}`; `0` heißt kein Limit. Die Umgebungsvariablen gehen der Datei vor.
 - **Keine Duplikate.** Derselbe fehlgeschlagene Deploy wird nie zweimal übergeben. Solange ein Autofix-PR für ein Projekt noch offen ist, wird das Projekt nicht erneut übergeben.
 - **Ein Versuch pro Fix.** Schlägt der Fix, nachdem du ihn deployt hast, ebenfalls beim Build fehl, wird er nicht erneut übergeben. Stattdessen bekommst du eine Mitteilung.
 - **Es mergt nie.** Ein Mensch mergt, oder das GitHub-Auto-Merge des Repos. Es deployt auch nie; der Merge wird nur gemeldet.

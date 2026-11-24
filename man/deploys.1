@@ -27,6 +27,7 @@ No key is ever printed.
   deploys schedule daily [HH:MM] [\-\-weekdays] [\-\-when\-green] [\-\-by\-rules] [\-\-strict] [\-\-only <p>] [\-\-exclude <p>] [\-\-platform <p>] [\-\-max <n>] | off | status [\-\-json]
                                             deploy\-changed \-\-yes once a day (launchd; else the cron line)
   deploys rules check [\-\-json]              which rule of rules.json matches which waiting project, and why not
+  deploys preview <p> [\-\-json]              what a production deploy of <p> would do (commits, files, risk, rule, window, budget); starts nothing
   deploys deploy <p>|<group> [\-\-preview] [\-\-sha <c>] [\-\-wait [\-\-timeout 30m]] [\-\-dry\-run] [\-\-force "reason"]
                                             deploy one project, or a group in its order (docs/TEAM.md);
                                             \-\-dry\-run says what would start and starts nothing
@@ -49,6 +50,11 @@ No key is ever printed.
   deploys open <project> [\-\-dashboard] [\-\-print]   the site, or its page at the platform (\-\-print: only the address)
   deploys ignore <p> [\-\-undo] | \-\-list      leave a project out of changed and deploy\-changed
   deploys certs [\-\-days 14] [\-\-json]        TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out soon
+  deploys domains [\-\-warn 30] [\-\-json]      custom domains and platform addresses with the days their TLS certificate has left; exit 1 inside \-\-warn
+  deploys forecast [\-\-warn 80] [\-\-json]     the month's build cost so far and where it ends (estimate), against `budget`; exit 1 when over
+  deploys env\-diff <p> [\-\-json]             variable NAMES in production but not in preview and the other way (never values); exit 1 when they differ
+  deploys group list|add <name> <p>...|remove <name>|run <name> [\-\-yes]   your own ordered groups; run waits for each member, stops at the first failure, starts only with \-\-yes or "y"
+  deploys prepare on [HH:MM] [\-\-when\-green] [\-\-no\-freeze] [\-\-yes] | off | status | show | run   a morning job that gets a deploy ready; it starts only with \-\-yes stored
   deploys creds [\-\-max\-age 90] [\-\-json]     where each platform's key comes from, if it works, how old a keychain key is
   deploys idle [\-\-days 90] [\-\-json]         projects with no deploy for N days (candidates to pause)
   deploys list [\-\-platform <p>] [\-\-auto|\-\-manual] [\-\-format tsv] [\-\-json]   every project on every provider that is on, with its platform

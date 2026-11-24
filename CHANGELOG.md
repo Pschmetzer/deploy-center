@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Autofix: the hand-over caps (default 6 a day, 2 per project) can be set for good in `~/.config/deploys/autofix-limits.json` (`{"perDay": 20, "perProject": 5}`); `0` means no cap. The environment variables still win.
 - Guard: the notification says why auto-deploy was turned off ("its allowance ended", or "auto-deploy was on and no allowance covers it") and what went wrong when a switch failed (the first error, short, tokens masked); `guard status --json` has a `reason` per action.
 - Fix: `deploy-changed --yes` that could not read anything names a closed deploy window first again (it said "Could not tell" before the window was checked).
 - Mac app: "Link repo …" on a project without a Git source names its repo (stays on this Mac) so its commits show; hovering a waiting project shows who pushed, when and how many files changed. The two figures of the savings banner open popovers that show where they come from.
@@ -12,6 +13,13 @@
 - Fix: `deploy-changed --yes` in a closed deploy window says "No deploys now" again before it reads any platform; a run with no platform on ended with "Could not tell what has changes" instead.
 - Examples: four presets (`examples/presets/`: solo, agency with 20 client sites, monorepo with previews only, student budget), and two `hooks.d` examples: `pre-deploy-backup` (saves your settings before a start) and `post-deploy-smoke` (asks a URL after a start). `tests/examples-tests.sh` checks them all with no account.
 - Mac app: the menu bar says "5 waiting, 2 failed" and lists the failed projects; the "Claude found" hint says what connecting gives and never comes back after you close it.
+- `deploys prepare on 08:30 --when-green --no-freeze`: a conditional morning job that gets a deploy ready and starts nothing, unless `--yes` is stored in the entry (and never through a closed deploy window).
+- `deploys group`: your own ordered groups ("first api, then web"); a run waits for each member and stops at the first failure, and never starts without `--yes` or a "y" on a terminal.
+- `deploys env-diff <project>`: environment variable names in production but not in preview (Vercel), names only, never values.
+- `deploys forecast`: this month's build cost so far, projected to month end and shared by project (an estimate), with a warning near the `budget` limit.
+- `deploys domains [--warn 30]`: custom domains apart from the platform's own addresses, with the days their certificate has left; exit 1 inside the threshold.
+- `deploys preview <project>`: what a production deploy would do (waiting commits, files, risk check, matching rule, deploy window, budget, verdict) in one view; it starts nothing.
+- Speed: reading a list of 200 projects with their GitHub state starts about half as many `jq` and `tr` processes (the repo name, the cache name and the pull request count are worked out without them), 4.1 s to 3.0 s in `scripts/bench.sh` on a Linux container; the output is unchanged (`tests/perf-tests.sh`). `scripts/bench.sh` times the CLI against a made-up platform with 200 projects.
 
 ## 0.13.0 - 2026-11-23
 

@@ -15,10 +15,16 @@ are refused before anything is asked; only Amplify ids have one `/` (`amplify:<a
 ```bash
 deploys doctor                          # what is connected (JSON)
 deploys certs [--days 14] [--json]      # TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out within N days. A host that cannot be reached is "unknown", not a failure.
+deploys domains [--warn 30] [--json]    # custom domains apart from the platform's own addresses, with the days their TLS certificate has left; exit 1 inside --warn (certificate only, no registration lookup)
+deploys forecast [--warn 80] [--json]   # this month's build cost so far, projected to the end of the month (an estimate: Vercel billing, shared by the journal's deploys; Render has no billing API), with a warning near the `budget` limit; exit 1 when over
+deploys env-diff <project> [--json]    # variable NAMES that exist in production but not in preview and the other way round (Vercel; values are never read into output). Exit 1 when they differ; hosts without a preview/production split say so
+deploys group list | add <name> <p>... | remove <name> | run <name> [--preview] [--yes]   # your own ordered groups (groups.json in the config folder): `run` deploys one member after the other, waits until each is live and stops at the first failure. Without --yes it asks on a terminal and otherwise only shows the order. Team groups: `deploys deploy group:<name>`
+deploys prepare on [HH:MM] [--weekdays] [--when-green] [--no-freeze] [--yes] [--only <p>]... | off | status | show | run   # a conditional morning job: it checks its conditions (CI green, no closed deploy window), saves what would go live (`prepare show`) and starts NOTHING, unless --yes is stored in the entry; then it runs `deploy-changed --yes`. It never uses --force through a closed window
 deploys creds [--max-age 90] [--json]   # per platform: where its key comes from (environment, keychain, login), if it works, how old a keychain key is. Reads only; never shows a key.
 deploys doctor --text                   # one line each (ok or the problem), with the fix
 deploys doctor --fix [--json]           # what to do about each problem, as commands for you to type; shows only, runs and changes nothing
 deploys digest [--days 7] [--json] [--no-savings]   # the last week from the journal: deploys, failures, rollbacks, busiest day, projects, and the saving of `ledger` (an estimate; --no-savings skips it, it needs the network)
+deploys preview <project> [--json]       # what a production deploy would do: commits, files, risk, rule, deploy window, budget, verdict. Starts nothing
 deploys timeline [--days 3] [--project <name>] [--limit 50] [--json]   # what happened, newest day first: deploys, failures, rollbacks, forced starts (from the journal, UTC; reads only)
 deploys recovery [--days 30] [--project <name>] [--json]   # how long a failure lasted until the next deploy of that project; an outage without a later deploy is "open"
 deploys health [--days 30] [--project <name>] [--no-ci] [--json]   # 0-100 per project, worst first (formula below); CI is read from GitHub/GitLab, --no-ci stays offline
@@ -279,7 +285,7 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_JOURNAL` | the deploy journal file (default: the app's, on Linux in the config folder) |
 | `DEPLOYS_NOTIFY` | `0`: no macOS notifications from autofix and guard |
 | `DEPLOYS_TEAM_TTL` | seconds a shared `deploy-center.json` is cached (default 600) |
-| `DEPLOYS_AUTOFIX_PER_DAY`, `DEPLOYS_AUTOFIX_PER_PROJECT` | autofix caps per 24 h (default 6 and 2) |
+| `DEPLOYS_AUTOFIX_PER_DAY`, `DEPLOYS_AUTOFIX_PER_PROJECT` | autofix caps per 24 h (default 6 and 2; `0` = no cap); also `~/.config/deploys/autofix-limits.json` with `perDay` and `perProject`, the variables win |
 | `DEPLOYS_GITLAB_HOSTS` | self-managed GitLab hosts (docs/GITLAB.md) |
 | `DEPLOYS_HTTP_TRACE` | `1`: one line per call to a platform on stderr (method, path without query, status, time; no header, no body); `--debug` sets it |
 | `DEPLOYS_QUIET`, `DEPLOYS_DEBUG` | what the global `--quiet` and `--debug` set: only the result; the trace of the calls |
