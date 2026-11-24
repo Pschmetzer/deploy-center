@@ -118,7 +118,7 @@ contains "check-a11y: names the missing main" "$out" "0 <main>"
 mkdir -p "$tmp/a11y/css"; cp "$repo/site/css/tokens.css" "$tmp/a11y/css/"
 printf '<!doctype html><html lang="en"><body><a class="skip" href="#main">Skip</a><main id="main"><h1>T</h1><h2>S</h2></main><footer>f</footer></body></html>\n' > "$tmp/a11y/index.html"
 out="$(python3 -I "$repo/scripts/check-a11y.py" "$tmp/a11y" 2>&1)"; expect "check-a11y: a page with skip link and landmarks passes" "$?" 0
-sed -i 's/--muted:#a3abbd/--muted:#555a66/' "$tmp/a11y/css/tokens.css"
+sed 's/--muted:#a3abbd/--muted:#555a66/' "$tmp/a11y/css/tokens.css" > "$tmp/a11y/css/t.new" && mv "$tmp/a11y/css/t.new" "$tmp/a11y/css/tokens.css"   # portable: BSD sed -i needs an argument
 out="$(python3 -I "$repo/scripts/check-a11y.py" "$tmp/a11y" 2>&1)"; expect "check-a11y: low contrast in the tokens fails" "$?" 1
 contains "check-a11y: names the pair" "$out" "--muted on --bg"
 
