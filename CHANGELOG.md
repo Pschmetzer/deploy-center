@@ -11,6 +11,12 @@
 - `deploys self-update --check [--json]`: says whether a newer CLI release is out and prints the command that updates this copy (install script, Homebrew or Docker). It only checks: nothing is downloaded or installed. Exit 10 means an update exists, 1 means the release list could not be read (offline, proxy).
 - Fix: `deploy-changed --yes` in a closed deploy window says "No deploys now" again before it reads any platform; a run with no platform on ended with "Could not tell what has changes" instead.
 - Examples: four presets (`examples/presets/`: solo, agency with 20 client sites, monorepo with previews only, student budget), and two `hooks.d` examples: `pre-deploy-backup` (saves your settings before a start) and `post-deploy-smoke` (asks a URL after a start). `tests/examples-tests.sh` checks them all with no account.
+- `deploys prepare on 08:30 --when-green --no-freeze`: a conditional morning job that gets a deploy ready and starts nothing, unless `--yes` is stored in the entry (and never through a closed deploy window).
+- `deploys group`: your own ordered groups ("first api, then web"); a run waits for each member and stops at the first failure, and never starts without `--yes` or a "y" on a terminal.
+- `deploys env-diff <project>`: environment variable names in production but not in preview (Vercel), names only, never values.
+- `deploys forecast`: this month's build cost so far, projected to month end and shared by project (an estimate), with a warning near the `budget` limit.
+- `deploys domains [--warn 30]`: custom domains apart from the platform's own addresses, with the days their certificate has left; exit 1 inside the threshold.
+- `deploys preview <project>`: what a production deploy would do (waiting commits, files, risk check, matching rule, deploy window, budget, verdict) in one view; it starts nothing.
 
 ## 0.13.0 - 2026-11-23
 
