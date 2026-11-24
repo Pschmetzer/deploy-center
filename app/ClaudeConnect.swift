@@ -656,6 +656,14 @@ enum ClaudeNudge {
     static let wantedKey = "claudeNudgeWanted"
     static let dismissedKey = "claudeNudgeDismissed"
 
+    /// What connecting gives, in one line: said before the person is asked to click.
+    static var message: String {
+        L("Claude is on this Mac. Connect it and Claude can read what's waiting, the release notes and build logs (read only).",
+          "Claude ist auf diesem Mac. Verbinde es, dann kann Claude lesen, was wartet, dazu Release Notes und Build-Logs (nur lesend).")
+    }
+    /// Shown while Claude is found and not connected, and only until the X was clicked: never again after that.
+    static func visible(wanted: Bool, dismissed: Bool) -> Bool { wanted && !dismissed }
+
     static func store(wanted: Bool) {
         if UserDefaults.standard.bool(forKey: wantedKey) != wanted { UserDefaults.standard.set(wanted, forKey: wantedKey) }
     }
@@ -695,7 +703,7 @@ struct ClaudeNudgeLine: View {
     var body: some View {
         HStack {
             Image(systemName: "sparkles").foregroundStyle(.purple).accessibilityHidden(true)
-            Text(L("Claude found. Connect it so Claude can see what's waiting.", "Claude gefunden. Verbinde es, damit Claude sieht, was wartet."))
+            Text(ClaudeNudge.message)
                 .font(.callout)
             // Straight to the Claude tab, not to whichever tab was open last.
             Button(L("Connect …", "Verbinden …")) { SettingsNav.prepare(.claude); openSettings() }.buttonStyle(.link)

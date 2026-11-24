@@ -17,6 +17,7 @@ MainActor.assumeIsolated {
     suite_ci_lane_contract()
     suite_rounds_cost_quiet()
     suite_ux2()
+    suite_ux()
     insightsAppTests(expect); insightsAppTests2(expect)
 }
 

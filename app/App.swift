@@ -691,7 +691,7 @@ struct DeployCenterApp: App {
                 .accessibilityLabel("Deploy Center")
                 .accessibilityValue(active ? L("deploying", "deployt gerade")
                     : failed ? L("a deploy failed", "ein Deploy ist fehlgeschlagen")
-                    : n > 0 ? L("\(n) waiting", "\(n) warten") : L("everything is live", "alles ist live"))
+                    : MenuBarSummary.text(waiting: n, failed: store.allItems.filter { Row.keyFigure($0) == .failed && !store.isHidden($0) }.count) ?? L("everything is live", "alles ist live"))
             if n > 0 { Text("\(n)") }
         }
     }
@@ -719,6 +719,7 @@ struct MenuBarContent: View {
             guard let d = store.doctor else { return false }
             return p == .vercel ? d.vercelLoggedIn : d.renderKey
         }
+        let failedRows = MenuBarSummary.failed(store.allItems, hidden: { store.isHidden($0) })
         let failed = connected.filter { store.lastLoadError[$0] != nil }
         let unread = connected.filter { store.listState($0) == .notLoaded }
         if store.doctor == nil, store.doctorError != nil {
@@ -748,6 +749,7 @@ struct MenuBarContent: View {
         } else {
             Text(L(plural(w.projects, "project", "projects") + " · " + plural(w.prs, "PR", "PRs") + " waiting",
                    plural(w.projects, "Projekt", "Projekte") + " · " + plural(w.prs, "PR", "PRs") + (w.projects == 1 ? " wartet" : " warten")))
+            if let line = MenuBarSummary.text(waiting: w.projects, failed: failedRows.count) { Text(line).font(.caption).foregroundStyle(.secondary) }
             Divider()
             ForEach(changed.prefix(12)) { i in
                 Button("\(Demo.mask(i.name))  –  \(Row.waitingText(i))") {
@@ -761,6 +763,21 @@ struct MenuBarContent: View {
                     showAll = true; onlyChanged = true; openMain()
                 }
             }
+        }
+        if !failedRows.isEmpty {
+            Divider()
+            Text(L("Failed", "Fehlgeschlagen"))
+            ForEach(failedRows.prefix(8)) { i in
+                Button { store.show(i); openMain() } label: {
+                    Label(Demo.mask(i.name), systemImage: "xmark.octagon")
+                }
+            }
+            if failedRows.count > 8 {
+                Button(L("and \(failedRows.count - 8) more …", "und \(failedRows.count - 8) weitere …")) {
+                    showAll = true; onlyChanged = false; openMain()
+                }
+            }
+            Divider()
         }
         if w.openPRs > 0 {
             Text(L("\(plural(w.openPRs, "PR", "PRs")) still open", "\(plural(w.openPRs, "PR", "PRs")) noch offen"))
