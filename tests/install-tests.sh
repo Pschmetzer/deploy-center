@@ -269,6 +269,39 @@ pin="$tmp/pinned-0.6.9.sh"; sed 's/^PINNED_VERSION=""$/PINNED_VERSION="0.6.9"/' 
 expect "pinned copy: installs its own release by default" "$("$tmp/p-pin/bin/deploys" --version 2>/dev/null)" "0.6.9"
 "$sh_" "$pin" --version latest --prefix "$tmp/p-pin2" >/dev/null 2>&1
 expect "pinned copy: --version latest still asks for the newest" "$("$tmp/p-pin2/bin/deploys" --version 2>/dev/null)" "$version"
+# --- deploys self-update --check: reads the release list, installs nothing ---
+su() { env -u DEPLOYS_LIB bash "$repo/deploys" self-update "$@" 2>&1; }
+su_rel() {  # su_rel <version>: a release folder whose latest is <version>
+  d="$tmp/su-$1"; mkdir -p "$d/latest/download"
+  printf 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  deploys-cli-%s.tar.gz\n' "$1" > "$d/latest/download/checksums.txt"
+  echo "file://$d"
+}
+before="$(cd "$repo" && git status --porcelain | md5sum 2>/dev/null | cut -d' ' -f1)"
+out="$(DEPLOYS_UPDATE_BASE="$(su_rel "$version")" su --check)"; rc=$?
+expect "self-update --check: current is up to date (exit 0)" "$rc" 0
+contains "self-update --check: says up to date" "$out" "up to date"
+out="$(DEPLOYS_UPDATE_BASE="$(su_rel 99.0.0)" su --check)"; rc=$?
+expect "self-update --check: newer release: exit 10" "$rc" 10
+contains "self-update --check: names both versions" "$out" "$version -> 99.0.0"
+contains "self-update --check: prints the update command" "$out" "install.sh"
+out="$(DEPLOYS_UPDATE_BASE="$(su_rel 99.0.0)" su --check --json)"
+expect "self-update --check --json: update true and the latest" "$(jq -r '"\(.update) \(.latest)"' <<<"$out")" "true 99.0.0"
+out="$(DEPLOYS_UPDATE_BASE="$(su_rel 0.0.1)" su --check --json)"; rc=$?
+expect "self-update --check: an older release feed is not an update" "$rc:$(jq -r .update <<<"$out")" "0:false"
+out="$(DEPLOYS_UPDATE_BASE="file://$tmp/nowhere" su --check)"; rc=$?
+expect "self-update --check: offline fails with exit 1" "$rc" 1
+contains "self-update --check: offline says why" "$out" "could not read the latest release"
+out="$(DEPLOYS_UPDATE_BASE="file://$tmp/nowhere" su --check --json)"
+expect "self-update --check --json: offline has an error and no update" "$(jq -r '"\(.update) \(.error != null)"' <<<"$out")" "null true"
+out="$(su)"; rc=$?
+expect "self-update without --check: a wrong call (exit 2), installs nothing" "$rc" 2
+out="$(DEPLOYS_UPDATE_BASE="$(su_rel 99.0.0)" su --check --bogus)"; rc=$?
+expect "self-update --bogus: exit 2" "$rc" 2
+expect "self-update --check: changes no file in the checkout" "$(cd "$repo" && git status --porcelain | md5sum 2>/dev/null | cut -d' ' -f1)" "$before"
+# the proxy variables are curl's own: a dead proxy is the "could not read" path, not a hang
+out="$(HTTPS_PROXY=http://127.0.0.1:9 DEPLOYS_UPDATE_BASE="https://example.invalid/releases" su --check)"; rc=$?
+expect "self-update --check: a dead proxy fails with exit 1" "$rc" 1
+
 # ===== end CLI track =====
 
 echo
