@@ -1,0 +1,6 @@
+{
+  "tz": "Europe/Berlin",
+  "deny": [
+    { "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"], "reason": "production is started by hand, previews are free" }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "rules": [
+    {
+      "name": "a ship label goes now",
+      "when": { "projects": ["*/example-*"], "labels": ["ship"], "ciGreen": true },
+      "then": "deploy"
+    },
+    {
+      "name": "green and a day old ships",
+      "when": { "projects": ["*/example-*"], "minAgeHours": 24, "ciGreen": true },
+      "then": "deploy"
+    },
+    {
+      "name": "tell me about the rest",
+      "when": { "projects": ["*/example-*"] },
+      "then": "notify"
+    }
+  ]
+}

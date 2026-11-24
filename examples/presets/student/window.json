@@ -1,0 +1,6 @@
+{
+  "tz": "Europe/Berlin",
+  "deny": [
+    { "from": "23:00", "to": "07:00", "reason": "late-night deploys are how a bill starts" }
+  ]
+}
