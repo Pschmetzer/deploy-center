@@ -123,6 +123,8 @@ jobs:
         run: bash tests/bughunt-tests.sh
       - name: Health, weeks and export tests
         run: bash tests/health-tests.sh
+      - name: Preview tests (deploys preview)
+        run: bash tests/preview-tests.sh
       - name: Speed tests (the list is printed as before the speed changes)
         run: bash tests/perf-tests.sh
       - name: Benchmark, 200 projects (reports only, never fails the build)
@@ -241,6 +243,8 @@ jobs:
         run: bash tests/bughunt-tests.sh
       - name: Health, weeks and export tests
         run: bash tests/health-tests.sh
+      - name: Preview tests
+        run: bash tests/preview-tests.sh
       - name: Speed tests
         run: bash tests/perf-tests.sh
 
