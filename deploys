@@ -279,8 +279,9 @@ par_fn mtime   # team_fetch_one runs under xargs
 # a "_" of its own also gets its checksum, so a_b/c and a/b_c no longer meet in one file (one
 # answer was lost when they did).
 cache_name() {
-  local n; n="$(printf '%s' "$1" | tr '/@' '__')"
-  case "$1" in *_*) n="$n-$(printf '%s' "$1" | cksum | cut -d' ' -f1)" ;; esac
+  # No tr and no subshell: this runs once per repo (and again for each compare), in every parallel reader.
+  local n="${1//[\/@]/_}" ck
+  case "$1" in *_*) ck="$(printf '%s' "$1" | cksum)"; n="$n-${ck%% *}" ;; esac
   printf '%s' "$n"
 }
 par_fn cache_name
@@ -801,17 +802,18 @@ pending_of() {
           # GitHub lists 250 commits at most; past that the PR count is a floor.
           partial:(.ahead_by > (.commits | length)),
           oldestAt:(.commits[0].commit.committer.date // null | if . then fromdateiso8601 else null end),
-          bare:([$c[] | select(.n == null) | .sha]), risk:$risk}}' > "$f" 2>/dev/null || return 0
+          bare:([$c[] | select(.n == null) | .sha]), risk:$risk}}
+      # Kept only when a few commits need asking about (below); else dropped here, not by a second jq per repo.
+      | if (.value.bare | length) == 0 or (.value.bare | length) > 10 then del(.value.bare, .value.nums) else . end' > "$f" 2>/dev/null || return 0
   # A rebase merge leaves no number in the message. For a few such commits, ask which PR they came
   # from, four at a time; a PR already named in another message is counted once.
   local bare n
-  bare="$(jq -r '.value.bare | if length <= 10 then .[] else empty end' "$f")"
-  if [ -n "$bare" ]; then
+  # The filter above left "bare" only for 1 to 10 commits without a number: no jq to find out.
+  if grep -q '"bare":' "$f"; then
+    bare="$(jq -r '.value.bare[]' "$f")"
     n="$(printf '%s\n' $bare | xargs -P 4 -I{} gh api --cache 24h "repos/$repo/commits/{}/pulls" --jq '.[].number' 2>/dev/null \
       | jq -R -s -c 'split("\n") | map(select(length > 0))')" || n='[]'
     jq -c --argjson n "${n:-[]}" '.value.prs = ((.value.nums + $n) | unique | length) | del(.value.bare, .value.nums)' "$f" > "$f.t" && mv "$f.t" "$f"
-  else
-    jq -c 'del(.value.bare, .value.nums)' "$f" > "$f.t" && mv "$f.t" "$f"
   fi
 }
 par_fn pending_of
@@ -872,12 +874,13 @@ CHANGED_RULE='map(. + {building: (.phase == "queued" or .phase == "building")})
 # deploys cannot read (Bitbucket). noRepo says why; null for every other project. Such a project
 # has no branch head, so it is never "changed", and it is not "state unknown" either (UNKNOWN_RULE).
 with_norepo() {
-  local bad="[]" r
+  local bad="" r
+  # One jq for the whole list (it was one per repo with a host that is not supported). The unsupported repos go in a file.
   while IFS= read -r r; do
     [ -n "$r" ] || continue
-    [ "$(githost_of "$r")" != unknown ] || bad="$(jq -c --arg r "$r" '. + [$r]' <<<"$bad")"
+    [ "$(githost_of "$r")" != unknown ] || bad="$bad$r"$'\n'
   done < <(echo "$1" | jq -r '.[] | .repo // empty' | sort -u)
-  echo "$1" | jq --argjson bad "$bad" 'map(. + {noRepo:(
+  echo "$1" | jq --argjson bad "$(printf '%s' "$bad" | jq -R -s -c 'split("\n") | map(select(. != ""))')" 'map(. + {noRepo:(
       if (.repo // null) == null then "no git repo"
       elif (.repo as $r | $bad | index($r)) then "the git host of \(.repo) is not supported"
       elif (.ref // null) == null then "no branch"

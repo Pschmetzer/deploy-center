@@ -21,6 +21,11 @@ gitlab_host() { local h="${GITLAB_HOST:-gitlab.com}"; h="${h#*://}"; echo "${h%/
 # A bare owner/name is GitHub. A port stays with the host (git.example.com:8443): the API is
 # asked there. Only an ssh:// port is dropped, since that is the SSH port, not the web one.
 githost_split() {
+  githost_split_v "${1:-}"
+  printf '%s %s\n' "$GITHOST_HOST" "$GITHOST_PATH"
+}
+# The same, into GITHOST_HOST and GITHOST_PATH: no subshell, no tr (a list of hundreds of repos asks once per repo).
+githost_split_v() {
   local r="${1:-}" ssh=""
   r="${r%/}"; r="${r%.git}"
   case "$r" in
@@ -31,8 +36,11 @@ githost_split() {
   local first="${r%%/*}"
   [ -z "$ssh" ] || first="${first%%:*}"
   case "$first" in
-    *.*|*:*) printf '%s %s\n' "$(echo "$first" | tr '[:upper:]' '[:lower:]')" "${r#*/}" ;;
-    *) printf 'github.com %s\n' "$r" ;;
+    *.*|*:*)
+      # tr only for a host with capitals (rare): bash 3.2 has no ${first,,}.
+      case "$first" in *[A-Z]*) first="$(printf '%s' "$first" | tr '[:upper:]' '[:lower:]')" ;; esac
+      GITHOST_HOST="$first"; GITHOST_PATH="${r#*/}" ;;
+    *) GITHOST_HOST="github.com"; GITHOST_PATH="$r" ;;
   esac
 }
 
@@ -47,7 +55,7 @@ glab_knows_host() {  # glab_knows_host <host>
 }
 githost_of() {
   local host path h
-  read -r host path < <(githost_split "${1:-}")
+  githost_split_v "${1:-}"; host="$GITHOST_HOST"; path="$GITHOST_PATH"
   [ -n "$path" ] && [ "$path" != "$host" ] || { echo unknown; return; }
   case "$host" in
     github.com|www.github.com) echo github; return ;;
@@ -370,6 +378,6 @@ gitlab_logged_in() {
 # The GitLab user, for `deploys where`.
 gitlab_user() { gitlab_api "$(gitlab_host)" user 2>/dev/null | jq -r '.username // empty' 2>/dev/null; }
 
-par_fn gitlab_host githost_cache_name githost_split githost_of githost_head_of githost_pending_of githost_open_prs_of \
+par_fn gitlab_host githost_cache_name githost_split githost_split_v githost_of githost_head_of githost_pending_of githost_open_prs_of \
   gitlab_api gitlab_enc gitlab_project gitlab_head_of gitlab_pending_of gitlab_open_prs_of gitlab_mrs_of gitlab_token
 export GITLAB_KEYCHAIN
