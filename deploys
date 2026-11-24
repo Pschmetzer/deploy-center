@@ -1490,8 +1490,16 @@ AUTOFIX_API="${DEPLOYS_ROUTINE_API:-https://api.anthropic.com/v1/claude_code/rou
 # The token goes to this address: https only (plain http for this machine and the .test names of the tests).
 api_url_ok() { case "$1" in https://*|http://localhost|http://localhost[:/]*|http://127.0.0.1[:/]*|http://[[]::1[]][:/]*|http://*.test|http://*.test[:/]*) return 0;; esac; return 1; }
 api_url_ok "$AUTOFIX_API" || die "DEPLOYS_ROUTINE_API must be an https address (it receives your token)."
-AUTOFIX_PER_PROJECT="${DEPLOYS_AUTOFIX_PER_PROJECT:-2}"   # fires per project per 24 h
-AUTOFIX_PER_DAY="${DEPLOYS_AUTOFIX_PER_DAY:-6}"           # fires per account per 24 h
+# Caps: DEPLOYS_AUTOFIX_PER_* wins, then $CONFIG_DIR/autofix-limits.json ({"perDay":N,"perProject":N}),
+# then the default. 0 means no cap. A value that is not a whole number falls back to the default.
+af_limit() { # <env value> <json key> <default>
+  local v="$1"
+  [ -n "$v" ] || v="$(jq -r --arg k "$2" '.[$k] // empty' "$CONFIG_DIR/autofix-limits.json" 2>/dev/null || true)"
+  case "$v" in ''|*[!0-9]*) v="$3" ;; esac
+  echo "$v"
+}
+AUTOFIX_PER_PROJECT="$(af_limit "${DEPLOYS_AUTOFIX_PER_PROJECT:-}" perProject 2)"   # fires per project per 24 h (0 = no cap)
+AUTOFIX_PER_DAY="$(af_limit "${DEPLOYS_AUTOFIX_PER_DAY:-}" perDay 6)"              # fires per account per 24 h (0 = no cap)
 
 # Only a build that failed can be fixed from its build log. Runtime and health-check failures
 # (Render update_failed, pre_deploy_failed) are reported, cancelled deploys never count.
@@ -1965,8 +1973,8 @@ autofix_run() {  # autofix_run [dry] [<platform> <project> [again]]  (the two: -
       [ -z "$oname" ] || out="$AF_BUSY"; continue
     fi
     proj_count="$(echo "$st" | jq --arg p "$p" --argjson t "$now" '[.fires[] | select(.project == $p and (.status == "fired" or .status == "failed") and .at > ($t - 86400))] | length')"
-    if [ "$proj_count" -ge "$AUTOFIX_PER_PROJECT" ]; then echo "autofix: $p already had $proj_count fixes today; skipped."; [ -z "$oname" ] || out="$AF_CAP"; continue; fi
-    if [ "$day_count" -ge "$AUTOFIX_PER_DAY" ]; then echo "autofix: the daily cap ($AUTOFIX_PER_DAY) is reached."; [ -z "$oname" ] || out="$AF_CAP"; break; fi
+    if [ "$AUTOFIX_PER_PROJECT" -gt 0 ] && [ "$proj_count" -ge "$AUTOFIX_PER_PROJECT" ]; then echo "autofix: $p already had $proj_count fixes today; skipped."; [ -z "$oname" ] || out="$AF_CAP"; continue; fi
+    if [ "$AUTOFIX_PER_DAY" -gt 0 ] && [ "$day_count" -ge "$AUTOFIX_PER_DAY" ]; then echo "autofix: the daily cap ($AUTOFIX_PER_DAY) is reached."; [ -z "$oname" ] || out="$AF_CAP"; break; fi
     local open; open="$(af_prs "$repo" "$p" open 2>/dev/null)" || { echo "autofix: could not ask GitHub about $p; not firing" >&2; rc=1; continue; }
     if [ "$(echo "$open" | jq length)" != 0 ]; then echo "autofix: $p has an open autofix PR (#$(echo "$open" | jq '.[0].number')); waiting for it."; [ -z "$oname" ] || out="$AF_BUSY"; continue; fi
     if [ -n "$dry" ]; then echo "autofix (dry run): would hand $plat $p (deploy $did, ${sha:0:7}) to the routine"; break; fi
