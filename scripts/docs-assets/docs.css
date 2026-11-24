@@ -109,7 +109,8 @@ code{font:.88em/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;background:var(-
 .tablewrap{overflow-x:auto;margin:0 0 18px;border:1px solid var(--line);border-radius:var(--radius)}
 table{width:100%;border-collapse:collapse;font-size:15px;line-height:1.5}
 th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
-tr:last-child td{border-bottom:0}
+tr:last-child td,tr:last-child th{border-bottom:0}
+tbody th[scope=row]{color:inherit;font-size:inherit;font-weight:inherit;background:none}
 th{color:var(--muted);font-weight:600;font-size:13.5px;background:var(--bg2)}
 td code{white-space:nowrap}
 td:first-child code{white-space:normal}
