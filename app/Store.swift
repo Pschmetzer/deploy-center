@@ -16,6 +16,18 @@ final class Store: ObservableObject {
     @Published var loading: Set<Platform> = []
     @Published var loadError: [Platform: String] = [:]
     @Published var doctor: Doctor?
+    /// Repos the person linked by hand, by `Store.key`; used where the platform names none.
+    private(set) var repoLinks: [String: String] = RepoLink.load()
+    /// Links a project to a repo. Returns a message when the text is no repo, nil when it worked; empty text removes the link.
+    func linkRepo(_ i: Item, _ text: String) -> String? {
+        let k = Self.key(i)
+        if text.trimmingCharacters(in: .whitespaces).isEmpty { repoLinks[k] = nil }
+        else if let r = RepoLink.normalize(text) { repoLinks[k] = r }
+        else { return L("That is not a repo. Use owner/name or the repo's address.", "Das ist kein Repo. Nimm owner/name oder die Adresse des Repos.") }
+        RepoLink.save(repoLinks)
+        if let j = items[i.platform]?.firstIndex(where: { $0.id == i.id }) { items[i.platform]![j].repo = items[i.platform]![j].repo ?? repoLinks[k] }
+        return nil
+    }
     /// The deploy window as `deploys freeze` last said (FreezeNote polls it), for the rows' "why waiting" line.
     @Published var freezeReply: FreezeReply?
     private var rulesCache: (at: Date, rules: RulesConfig)?
@@ -878,6 +890,7 @@ final class Store: ObservableObject {
         let fresh = had.isEmpty ? SelectionMemory.restore(fresh, remembered: SelectionMemory.load(p)) : fresh
         items[p] = fresh.map { n in
             var n = n
+            if n.repo == nil, let linked = repoLinks[Self.key(n)] { n.repo = linked }
             if let o = old[n.id] {
                 n.selected = o.selected && n.deployable
                 if Self.keepsState(old: o, fresh: n) {
