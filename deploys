@@ -124,6 +124,7 @@
 #   deploys budget [set <usd a month> [--strict] | off]     deploy-changed --yes stops before going over it
 #
 #   deploys where                             config folder, version, key source, logins
+#   deploys self-update --check [--json]      is a newer release out? only checks and prints (exit 10: yes)
 #   deploys completion zsh|bash|fish          tab completion (eval "$(deploys completion zsh)";
 #                                             fish: deploys completion fish | source)
 #   deploys <command> --help                  the help lines of one command
@@ -134,6 +135,7 @@
 # start, or the state of some project could not be read (it is named and left out, never counted as current),
 # 2 a wrong call (a missing argument: Usage: ...). `deploys exit-codes` prints this block.
 # Per command (docs/CLI.md has the table):
+#   self-update --check  0 up to date, 10 a newer release exists, 1 the release list could not be read
 #   watch            0 live, 1 failed or canceled (--json: phase says which), 3 the platform could not be asked or refused the key, 4 --timeout
 #   verify           0 healthy, 1 failed and rolled back, 2 failed and not rolled back, 3 nothing checked
 #   ci               0 green or no checks, 1 red, 2 still pending or GitHub not reachable (--json: always 0, unless --exit-code)
@@ -434,7 +436,7 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion nightly; do
+for _l in risk verify completion nightly selfupdate; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done
@@ -3633,6 +3635,10 @@ case "${1:-} ${2:-}" in
       echo "$d" | jq -r '(.commits | .[] | "\(.sha)  \(.msg)  (\(.author // "?"))"), "", "\(.commits | length) commits, \(.files) files, +\(.additions) -\(.deletions)", (if (.risky | length) > 0 then "Check before shipping: " + (.risky | join(", ")) else empty end)'
     fi ;;
 
+  "self-update"*)
+    declare -F selfupdate_main >/dev/null || die "lib/selfupdate.sh is not next to deploys."
+    selfupdate_main "$@" ;;
+
   "completion "*)
     declare -F completion_main >/dev/null || die "lib/completion.sh is not next to deploys."
     completion_main "$@" ;;
@@ -4025,6 +4031,7 @@ case "${1:-} ${2:-}" in
     done
     [ -z "$dryc" ] || [ -z "$yes" ] || die "--dry-run and --yes are opposites: --dry-run only shows what --yes would start."
     [ -z "$byrules" ] || rules_on || die "--by-rules needs rules.json with a rule that is on (see docs/CLI.md, Rules)."
+    [ -z "$yes" ] || [ -n "$wfw" ] || freeze_check   # a closed window stops --yes before any platform is asked
     rc=0; list="$(changed_json)" || rc=$?
     [ -n "${list//[[:space:]]/}" ] || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
     apply_rules "$byrules"

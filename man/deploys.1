@@ -130,6 +130,7 @@ No key is ever printed.
   deploys budget [set <usd a month> [\-\-strict] | off]     deploy\-changed \-\-yes stops before going over it
 
   deploys where                             config folder, version, key source, logins
+  deploys self\-update \-\-check [\-\-json]      is a newer release out? only checks and prints (exit 10: yes)
   deploys completion zsh|bash|fish          tab completion (eval "$(deploys completion zsh)";
                                             fish: deploys completion fish | source)
   deploys <command> \-\-help                  the help lines of one command
@@ -142,6 +143,7 @@ No key is ever printed.
 start, or the state of some project could not be read (it is named and left out, never counted as current),
 2 a wrong call (a missing argument: Usage: ...). `deploys exit\-codes` prints this block.
 Per command (docs/CLI.md has the table):
+  self\-update \-\-check  0 up to date, 10 a newer release exists, 1 the release list could not be read
   watch            0 live, 1 failed or canceled (\-\-json: phase says which), 3 the platform could not be asked or refused the key, 4 \-\-timeout
   verify           0 healthy, 1 failed and rolled back, 2 failed and not rolled back, 3 nothing checked
   ci               0 green or no checks, 1 red, 2 still pending or GitHub not reachable (\-\-json: always 0, unless \-\-exit\-code)

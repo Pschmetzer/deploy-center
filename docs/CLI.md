@@ -151,6 +151,7 @@ deploys schedule daily 09:00 --weekdays   # Monday to Friday only
 deploys schedule off | status [--json]
 deploys hooks install [<repo>] [--hook pre-commit] [--yes]   # before each push: which builds it would start (integrations/hooks); --hook pre-commit stops a commit that adds a key
 deploys hooks uninstall | status [<repo>]
+deploys self-update --check              # is a newer release out? (DEPLOYS_UPDATE_BASE: another release folder or mirror) prints the command to update, installs nothing
 eval "$(deploys completion zsh)"        # tab completion (also: bash; fish: deploys completion fish | source)
 deploys deploy --help                   # the help lines of one command
 ```
@@ -253,6 +254,7 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `deploy --wait`, `deploy <group>` | as `watch` for the member that stopped: `1` it failed, `3` it could not be followed, also when the platform accepted the start but named no deploy id (a group stops there) |
 | `verify` | `0` healthy, `1` failed and rolled back, `2` failed and not rolled back, `3` nothing was checked |
 | `ci` | `0` green (or no checks), `1` red, `2` still pending or GitHub not reachable; with `--json` always `0`, unless `--exit-code` is given |
+| `self-update --check` | `0` up to date, `10` a newer release exists, `1` the release list could not be read (offline, proxy); it only checks and prints, it installs nothing |
 | `certs` | `1` a certificate ends soon |
 | `creds` | `1` a key is not accepted |
 | `secrets` | `1` something that looks like a secret was found |

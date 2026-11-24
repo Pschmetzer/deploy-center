@@ -5,6 +5,8 @@
 - Guard: the notification says why auto-deploy was turned off ("its allowance ended", or "auto-deploy was on and no allowance covers it") and what went wrong when a switch failed (the first error, short, tokens masked); `guard status --json` has a `reason` per action.
 - Fix: `deploy-changed --yes` that could not read anything names a closed deploy window first again (it said "Could not tell" before the window was checked).
 - Mac app: "Link repo …" on a project without a Git source names its repo (stays on this Mac) so its commits show; hovering a waiting project shows who pushed, when and how many files changed. The two figures of the savings banner open popovers that show where they come from.
+- `deploy-changed --yes`: a closed deploy window now stops it before any platform is asked (it said "could not tell" first when nothing could be read).
+- `deploys self-update --check [--json]`: says whether a newer CLI release is out and prints the command that updates this copy (install script, Homebrew or Docker). It only checks: nothing is downloaded or installed. Exit 10 means an update exists, 1 means the release list could not be read (offline, proxy).
 
 ## 0.13.0 - 2026-11-23
 
