@@ -1,0 +1,9 @@
+{
+  "rules": [
+    {
+      "name": "nothing goes to production by itself",
+      "when": { "projects": ["*/example-*"] },
+      "then": "hold"
+    }
+  ]
+}

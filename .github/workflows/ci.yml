@@ -91,6 +91,8 @@ jobs:
         run: bash tests/release-tests.sh
       - name: Check script tests (bash 3.2 and secrets checks)
         run: bash tests/checks-tests.sh
+      - name: Examples tests (config presets and hooks)
+        run: bash tests/examples-tests.sh
       - name: Small CLI command tests (where, help, unknown command)
         run: bash tests/cli-misc-tests.sh
       - name: App tests (English and German, with the deploys JSON contract)
@@ -208,6 +210,8 @@ jobs:
         run: bash tests/release-tests.sh
       - name: Check script tests
         run: bash tests/checks-tests.sh
+      - name: Examples tests
+        run: bash tests/examples-tests.sh
       - name: Small CLI command tests
         run: bash tests/cli-misc-tests.sh
       - name: The script's "waiting" rule against the shared cases

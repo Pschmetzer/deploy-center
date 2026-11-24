@@ -5,6 +5,8 @@
 - Guard: the notification says why auto-deploy was turned off ("its allowance ended", or "auto-deploy was on and no allowance covers it") and what went wrong when a switch failed (the first error, short, tokens masked); `guard status --json` has a `reason` per action.
 - Fix: `deploy-changed --yes` that could not read anything names a closed deploy window first again (it said "Could not tell" before the window was checked).
 - Mac app: "Link repo …" on a project without a Git source names its repo (stays on this Mac) so its commits show; hovering a waiting project shows who pushed, when and how many files changed. The two figures of the savings banner open popovers that show where they come from.
+- Fix: `deploy-changed --yes` in a closed deploy window says "No deploys now" again before it reads any platform; a run with no platform on ended with "Could not tell what has changes" instead.
+- Examples: four presets (`examples/presets/`: solo, agency with 20 client sites, monorepo with previews only, student budget), and two `hooks.d` examples: `pre-deploy-backup` (saves your settings before a start) and `post-deploy-smoke` (asks a URL after a start). `tests/examples-tests.sh` checks them all with no account.
 
 ## 0.13.0 - 2026-11-23
 

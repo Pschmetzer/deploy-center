@@ -1,0 +1,17 @@
+{
+  "rules": [
+    {
+      "name": "a client site ships when CI is green and a commit is 4 hours old",
+      "when": { "projects": ["*/example-client-*"], "ciGreen": true, "minAgeHours": 4 },
+      "then": "deploy"
+    },
+    {
+      "name": "everything else waits",
+      "when": { "projects": ["*/example-client-*"] },
+      "then": "hold"
+    }
+  ],
+  "overrides": {
+    "render/example-client-20": { "minAgeHours": 24 }
+  }
+}

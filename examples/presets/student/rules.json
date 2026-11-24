@@ -1,0 +1,14 @@
+{
+  "rules": [
+    {
+      "name": "three waiting commits ship together",
+      "when": { "projects": ["*/example-*"], "minCommits": 3, "ciGreen": true },
+      "then": "deploy"
+    },
+    {
+      "name": "one commit waits, collect more",
+      "when": { "projects": ["*/example-*"] },
+      "then": "hold"
+    }
+  ]
+}
