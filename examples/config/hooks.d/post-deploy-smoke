@@ -1,0 +1,19 @@
+#!/bin/sh
+# Install: cp post-deploy-smoke ~/.config/deploys/hooks.d/ && chmod 700 ~/.config/deploys/hooks.d/post-deploy-smoke
+# After a start, asks one URL until it answers with success. DEPLOY_SMOKE_URL is the address (use the one of
+# your own site; "%s" is replaced by the project name, for example https://%s.example.test/health).
+# DEPLOY_SMOKE_TRIES (default 5) and DEPLOY_SMOKE_WAIT seconds between tries (DEPLOY_SMOKE_WAIT) (default 10). Does nothing without
+# DEPLOY_SMOKE_URL. A post-deploy hook cannot stop or undo a deploy: it only says it, with exit 1 and a line on stderr.
+[ -n "${DEPLOY_SMOKE_URL:-}" ] || exit 0
+# shellcheck disable=SC2059  # the URL is the format on purpose
+url="$(printf "$DEPLOY_SMOKE_URL" "$DEPLOYS_PROJECT")"
+tries="${DEPLOY_SMOKE_TRIES:-5}"; pause="${DEPLOY_SMOKE_WAIT:-10}"; i=0
+while [ "$i" -lt "$tries" ]; do
+  i=$((i+1))
+  if curl -fsS --max-time 15 -o /dev/null "$url" 2>/dev/null; then
+    echo "post-deploy: $DEPLOYS_PLATFORM/$DEPLOYS_PROJECT answers ($url)" >&2; exit 0
+  fi
+  [ "$i" -lt "$tries" ] && sleep "$pause"
+done
+echo "post-deploy: $DEPLOYS_PLATFORM/$DEPLOYS_PROJECT did NOT answer after $tries tries ($url)" >&2
+exit 1

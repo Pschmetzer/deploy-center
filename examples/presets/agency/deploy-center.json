@@ -1,0 +1,122 @@
+{
+  "$schema": "https://deploycenter.app/schema/deploy-center.schema.json",
+  "version": 1,
+  "approvals": 0,
+  "window": {
+    "days": [
+      "mon",
+      "tue",
+      "wed",
+      "thu"
+    ],
+    "from": "09:00",
+    "to": "16:00",
+    "tz": "Europe/Berlin"
+  },
+  "projects": {
+    "example-client-01": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-02": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-03": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-04": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-05": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-06": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-07": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-08": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-09": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-10": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-11": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-12": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-13": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-14": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-15": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-16": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-17": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-18": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-19": {
+      "platform": "vercel",
+      "branch": "main",
+      "health": "/"
+    },
+    "example-client-20": {
+      "platform": "render",
+      "branch": "main",
+      "health": "/health",
+      "approvals": 1
+    }
+  },
+  "ignored": [
+    "example-client-00-archive"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://deploycenter.app/schema/deploy-center.schema.json",
+  "version": 1,
+  "projects": {
+    "example-web": { "platform": "vercel", "branch": "main", "health": "/" },
+    "example-docs": { "platform": "vercel", "branch": "main" },
+    "example-admin": { "platform": "vercel", "branch": "main", "approvals": 1 }
+  },
+  "ignored": ["example-playground"]
+}

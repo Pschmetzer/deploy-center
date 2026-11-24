@@ -1,0 +1,25 @@
+#!/bin/sh
+# Install: cp pre-deploy-backup ~/.config/deploys/hooks.d/ && chmod 700 ~/.config/deploys/hooks.d/pre-deploy-backup
+# Before a start, copies your settings (window.json, rules.json, budget.json, ignored.json, journal.jsonl) into a
+# tar file under DEPLOY_BACKUP_DIR (default: <config folder>/backups) and keeps the newest DEPLOY_BACKUP_KEEP (default 20).
+# No network. If the backup fails, the start is stopped (a pre-deploy hook that exits non-zero stops it).
+cfg="${DEPLOYS_CONFIG:-$HOME/.config/deploys}"
+dir="${DEPLOY_BACKUP_DIR:-$cfg/backups}"
+keep="${DEPLOY_BACKUP_KEEP:-20}"
+files=""
+for f in window.json rules.json budget.json ignored.json journal.jsonl; do [ -f "$cfg/$f" ] && files="$files $f"; done
+[ -n "$files" ] || exit 0
+mkdir -p "$dir" && chmod 700 "$dir" || { echo "pre-deploy: cannot make $dir (start stopped)" >&2; exit 1; }
+out="$dir/deploys-$(date -u +%Y%m%dT%H%M%S)-$$.tar"
+# shellcheck disable=SC2086  # $files is a list of plain names without spaces
+if ! tar -C "$cfg" -cf "$out" $files 2>/dev/null; then
+  rm -f "$out"; echo "pre-deploy: the backup failed (start stopped)" >&2; exit 1
+fi
+chmod 600 "$out"
+# keep the newest $keep (the names sort by time)
+n=0
+for old in $(ls -1r "$dir"/deploys-*.tar 2>/dev/null); do
+  n=$((n+1)); [ "$n" -le "$keep" ] || rm -f "$old"
+done
+echo "pre-deploy: settings saved to $out" >&2
+exit 0
