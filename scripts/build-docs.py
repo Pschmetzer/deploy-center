@@ -361,8 +361,12 @@ class Converter:
         head = [c.replace("\\|", "|") for c in head]
         body = [[c.replace("\\|", "|") for c in r] for r in body]
         h = "".join(f"<th>{self.inline(c)}</th>" for c in head)
-        b = "".join("<tr>" + "".join(f"<td>{self.inline(c)}</td>" for c in r) + "</tr>" for r in body)
-        thead = f"<thead><tr>{h}</tr></thead>" if any(head) else ""  # | | | has no header to show
+        # | | | has no header to show: then the first cell of a row is its header (WCAG 1.3.1)
+        rowth = not any(head)
+        b = "".join("<tr>" + "".join(
+            f'<th scope="row">{self.inline(c)}</th>' if rowth and n == 0 else f"<td>{self.inline(c)}</td>"
+            for n, c in enumerate(r)) + "</tr>" for r in body)
+        thead = f"<thead><tr>{h}</tr></thead>" if not rowth else ""
         return f'<div class="tablewrap" role="region" aria-label="Table" tabindex="0"><table>{thead}<tbody>{b}</tbody></table></div>'
 
     def list_(self, lines, i):
