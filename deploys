@@ -1496,7 +1496,7 @@ AUTOFIX_API="${DEPLOYS_ROUTINE_API:-https://api.anthropic.com/v1/claude_code/rou
 # The token goes to this address: https only (plain http for this machine and the .test names of the tests).
 api_url_ok() { case "$1" in https://*|http://localhost|http://localhost[:/]*|http://127.0.0.1[:/]*|http://[[]::1[]][:/]*|http://*.test|http://*.test[:/]*) return 0;; esac; return 1; }
 api_url_ok "$AUTOFIX_API" || die "DEPLOYS_ROUTINE_API must be an https address (it receives your token)."
-# Caps: DEPLOYS_AUTOFIX_PER_* wins, then $CONFIG_DIR/autofix-limits.json ({"perDay":N,"perProject":N}),
+# Caps: the DEPLOYS_AUTOFIX_PER variables wins, then $CONFIG_DIR/autofix-limits.json ({"perDay":N,"perProject":N}),
 # then the default. 0 means no cap. A value that is not a whole number falls back to the default.
 af_limit() { # <env value> <json key> <default>
   local v="$1"
