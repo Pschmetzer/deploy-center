@@ -217,7 +217,7 @@ the deploy journal file (default: the app's, on Linux in the config folder)
 seconds a shared deploy\-center.json is cached (default 600)
 .TP
 .B DEPLOYS_AUTOFIX_PER_DAY, DEPLOYS_AUTOFIX_PER_PROJECT
-autofix caps per 24 h (default 6 and 2)
+autofix caps per 24 h (default 6 and 2; 0 = no cap); also ~/.config/deploys/autofix\-limits.json with perDay and perProject, the variables win
 .TP
 .B DEPLOYS_GITLAB_HOSTS
 self\-managed GitLab hosts (docs/GITLAB.md)
