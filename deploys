@@ -86,6 +86,7 @@
 #   deploys vercel map <p> <owner/repo> [br] [--no-check]   say where a project deploys from
 #                                             (GitLab: gitlab.com/group/name, see docs/GITLAB.md)
 #   deploys vercel team [<id>] [--no-check]   show or set the Vercel team
+#   deploys vercel set-key                    a Vercel token in the keychain, used instead of the CLI login (reads stdin)
 #   deploys render list                       services and their auto-deploy setting
 #   deploys render autodeploy-off <s>|--all
 #   deploys render autodeploy-on <s>|--all    auto-deploy "On Commit" again
@@ -1459,7 +1460,7 @@ SECRETS_JQ='def kinds: [
 cost_day() {
   local from="$1" to="$2" team="$3" out="$4" raw
   # A day that could not be read writes no file: it is missing (costs: missingDays), not $0.
-  raw="$(vercel api "/v1/billing/charges?from=${from}T00:00:00.000Z&to=${to}T00:00:00.000Z${team:+&teamId=$team}" 2>/dev/null)" || return 0
+  raw="$(vercel_cli api "/v1/billing/charges?from=${from}T00:00:00.000Z&to=${to}T00:00:00.000Z${team:+&teamId=$team}" 2>/dev/null)" || return 0
   printf '%s' "$raw" | jq -sc --arg d "$from" '{day:$d,
         total:(map(.BilledCost) | add // 0),
         build:(map(select(.ServiceCategory=="Build & Deploy" or (.ServiceName|test("Build")))) | map(.BilledCost) | add // 0),

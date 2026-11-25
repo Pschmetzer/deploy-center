@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Vercel: `deploys vercel set-key` keeps a Vercel token in the keychain (`deploy-center-vercel`), and every `vercel` call of deploys gets it in its environment (never as an argument). The CLI login renews itself on each run; several runs at once could lose that race and open a browser "Authorize Device" page nobody asked for. Without a token the CLI login is used as before.
 - MCP: four more read-only tools over the journal commands: `deploys_health`, `deploys_weeks`, `deploys_streak` and `deploys_when`.
 - Fix: `deploys changed`, `plan` and `ai` hung for minutes with a few hundred projects on the macOS bash 3.2: a whitespace check on the whole list was quadratic. It is a glob match now (`nonblank`).
 - Tooling: `scripts/bench.sh` closes stdin and stops a run after `BENCH_TIMEOUT` seconds (default 120), and the CI step has a 10 minute limit; a hanging benchmark no longer cancels the whole test job.
