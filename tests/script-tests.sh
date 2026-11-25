@@ -1572,8 +1572,9 @@ printf '#!/bin/bash\necho "gh $*" >> "%s/calls"\ncase "$*" in "repo view"*) echo
 for c in xcrun npm ditto codesign; do printf '#!/bin/bash\necho "%s $*" >> "%s/calls"\n' "$c" "$rd" > "$rd/bin/$c"; done
 chmod +x "$rd/bin"/*
 ( cd "$rd/repo" && git init -q -b main && git add -A && git -c user.email=t@t -c user.name=t commit -qm one )
+# The signing settings of a real release run (release.sh sources .release.env and runs these tests) stay out.
 expect "CLI-107: --publish --dry-run prints the plan and exits 0" \
-  "$(cd "$rd/repo" && PATH="$rd/bin:$PATH" ./release.sh --publish --dry-run 2>&1 | grep -c -e '^Dry run' -e 'is new: created' -e 'would upload' -e 'not checked'; echo "rc=${PIPESTATUS[0]}")" $'4\nrc=0'
+  "$(cd "$rd/repo" && PATH="$rd/bin:$PATH" env -u DEVELOPER_ID -u NOTARY_PROFILE -u RELEASE_REPO -u TAP_DIR ./release.sh --publish --dry-run 2>&1 | grep -c -e '^Dry run' -e 'is new: created' -e 'would upload' -e 'not checked'; echo "rc=${PIPESTATUS[0]}")" $'4\nrc=0'
 expect "CLI-107: only reads were made: no release, tag, build, notarization or upload" \
   "$(grep -v -e '^gh repo view' -e '^gh api' "$rd/calls" | wc -l | tr -d ' '; git -C "$rd/repo" tag | wc -l | tr -d ' '; [ -e "$rd/repo/dist" ] && echo dist || echo no-dist)" $'0\n0\nno-dist'
 # A release never takes the Sparkle feed or key from the environment (local update tests only).
