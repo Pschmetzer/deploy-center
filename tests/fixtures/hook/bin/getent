@@ -1,0 +1,3 @@
+#!/bin/bash
+# Stand-in lookup: every name has one public address (no network in tests).
+echo "93.184.216.34 STREAM ${2:-x}"

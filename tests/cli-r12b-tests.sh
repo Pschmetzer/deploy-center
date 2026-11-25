@@ -66,7 +66,7 @@ expect "http_call: no temp file is left behind" "$(ls "$tmp/tt" | wc -l | tr -d 
 # --- hook: userinfo, DNS, the lock after a failed trigger ---
 expect "hook_check_url: https://evil.com@127.0.0.1/x is refused (user@host)" "$( ( hook_check_url 'https://evil.com@127.0.0.1/x' ) 2>&1 | grep -c 'user name')" "1"
 expect "hook_check_url: https://user:pw@example.com/x is refused" "$( ( hook_check_url 'https://user:pw@example.com/x' ) >/dev/null 2>&1; echo $?)" "1"
-hook_resolve() { case "$1" in rebind.example.com) echo 127.0.0.1 ;; ok.example.com) printf '2001:db8::1\n93.184.216.34\n' ;; esac; }
+hook_resolve() { case "$1" in rebind.example.com) echo 127.0.0.1 ;; ok.example.com) printf '2606:4700::1\n93.184.216.34\n' ;; esac; }
 expect "hook_check_url: a name that resolves to 127.0.0.1 is refused" "$( ( hook_check_url 'https://rebind.example.com/x' ) 2>&1 | grep -c 'private or local')" "1"
 expect "hook_check_url: --allow-private lets it through" "$( ( HOOK_ALLOW_PRIVATE=1 hook_check_url 'https://rebind.example.com/x' ) >/dev/null 2>&1; echo $?)" "0"
 expect "hook_pin: pins the address that was checked (IPv4 first)" "$(hook_pin 'https://ok.example.com:8443/x')" 'resolve = "ok.example.com:8443:93.184.216.34"'
