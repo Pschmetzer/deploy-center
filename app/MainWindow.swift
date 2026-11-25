@@ -833,7 +833,7 @@ struct ContentView: View {
     private var reloadStamps: String {
         scopes.compactMap { p in
             store.loadedAt[p].map {
-                (showsAll ? p.rawValue + ": " : "") + L("updated ", "aktualisiert ") + $0.formatted(date: .omitted, time: .shortened)
+                (showsAll ? p.rawValue + ": " : "") + L("updated ", "aktualisiert ") + uiTime($0)
                     + (store.fromCache.contains(p) ? L(" (saved copy, not current)", " (gespeicherte Kopie, nicht aktuell)") : "")
             }
         }.joined(separator: "\n")
@@ -1137,7 +1137,7 @@ struct ContentView: View {
                     let mins = max(0, Int(ceil(reset.timeIntervalSince(ctx.date) / 60)))
                     Text(L("GitHub's hourly budget is nearly spent (\(b.remaining) of \(b.limit) left). Counts pause until ",
                            "GitHubs Stunden-Kontingent ist fast aufgebraucht (\(b.remaining) von \(b.limit) übrig). Die Zahlen pausieren bis ")
-                         + reset.formatted(date: .omitted, time: .shortened)
+                         + uiTime(reset)
                          + (mins > 0 ? L(" (in \(mins) min).", " (in \(mins) Min).") : L(", back at the next reload.", ", zurück beim nächsten Neuladen.")))
                         .font(.caption)
                 }
@@ -1277,9 +1277,9 @@ struct ContentView: View {
     /// expression in the banner it was too long for the type checker on CI.
     private func loadFailedTitle(_ p: Platform, at: Date) -> String {
         let head: String = L("\(p.rawValue) could not be loaded", "\(p.rawValue) konnte nicht geladen werden")
-        let when: String = " (" + at.formatted(date: .omitted, time: .shortened) + ")"
+        let when: String = " (" + uiTime(at) + ")"
         guard let shown = store.loadedAt[p] else { return head + when }
-        let tail: String = L(" – showing the list from ", " – zu sehen ist der Stand von ") + shown.formatted(date: .omitted, time: .shortened)
+        let tail: String = L(" – showing the list from ", " – zu sehen ist der Stand von ") + uiTime(shown)
         return head + when + tail
     }
 
@@ -1819,7 +1819,7 @@ struct ContentView: View {
             Button(L("Copy list of waiting projects", "Liste der wartenden Projekte kopieren")) {
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(DeployConfirm.waitingList(waitingRows), forType: .string)
-                store.show(Store.Toast(text: L("\(waitingRows.count) projects copied", "\(waitingRows.count) Projekte kopiert"), ok: true))
+                store.show(Store.Toast(text: L(plural(waitingRows.count, "project", "projects") + " copied", plural(waitingRows.count, "Projekt", "Projekte") + " kopiert"), ok: true))
             }
             .disabled(waitingRows.isEmpty)
             Divider()
@@ -1839,7 +1839,7 @@ struct ContentView: View {
                 ForEach(store.messages) { m in
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? Color.good : .red)
-                        Text(m.date.formatted(date: .omitted, time: .shortened)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Text(uiTime(m.date)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                         Text(Demo.scrub(m.text, items: allItems)).font(.caption).textSelection(.enabled)
                         Spacer(minLength: 0)
                         // A line about one project opens its build log (failed ones first of all).
@@ -1858,7 +1858,7 @@ struct ContentView: View {
                     // No modal: the list comes back with "Undo" while the note shows.
                     let old = store.messages, n = old.count
                     store.messages.removeAll(); showMessages = false
-                    store.show(Store.Toast(text: L("\(n) messages cleared", "\(n) Meldungen geleert"), ok: true,
+                    store.show(Store.Toast(text: L(plural(n, "message", "messages") + " cleared", plural(n, "Meldung", "Meldungen") + " geleert"), ok: true,
                                      undoLabel: L("Undo", "Rückgängig"), undo: { [weak store] in store?.messages = old }))
                 }
                     .buttonStyle(.link).font(.caption)

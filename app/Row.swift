@@ -387,7 +387,7 @@ struct Row: View {
     }
 
     private func lastDeployHelp(_ at: Date) -> String {
-        let when: String = at.formatted(date: .complete, time: .shortened)
+        let when: String = uiDate(at, date: .complete, time: .shortened)
         guard let msg = item.lastMsg else { return when }
         let label: String = item.triggered ? L("Last triggered: ", "Zuletzt ausgelöst: ") : L("Live now: ", "Jetzt live: ")
         return when + "\n" + label + (Demo.on ? "…" : msg)
@@ -543,7 +543,7 @@ struct AgentChips: View {
         }
     }
     static func allowedText(_ until: Date) -> String {
-        let t = until.formatted(date: Calendar.current.isDateInToday(until) ? .omitted : .abbreviated, time: .shortened)
+        let t = uiDate(until, date: Calendar.current.isDateInToday(until) ? .omitted : .abbreviated, time: .shortened)
         return L("Auto-deploy allowed until \(t)", "Auto-Deploy erlaubt bis \(t)")
     }
     /// The page a chip opens; none in demo mode, where a URL would show the repo.
@@ -620,7 +620,7 @@ struct AllowanceBanner: View {
         let names: String = on.prefix(4).map { Demo.mask($0.project) }.joined(separator: ", ")
         let more: String = on.count > 4 ? L(" and \(on.count - 4) more", " und \(on.count - 4) weitere") : ""
         let style: Date.FormatStyle.DateStyle = Calendar.current.isDateInToday(last) ? .omitted : .abbreviated
-        let when: String = last.formatted(date: style, time: .shortened)
+        let when: String = uiDate(last, date: style, time: .shortened)
         return L("Auto-deploy is allowed for a while: ", "Auto-Deploy ist vorübergehend erlaubt: ") + names + more + " · " + L("until ", "bis ") + when
     }
     var body: some View {
