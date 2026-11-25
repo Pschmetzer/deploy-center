@@ -21,7 +21,7 @@ Wird mit jedem PR dieser Spur nachgeführt.
    Nur für den Editor; der Release-Weg bleibt `build.sh`. Sparkle ist wie in `scripts/sparkle.sh` festgenagelt.
 7. ✅ **swift-format** – `.swift-format` und ein CI-Schritt, der nie fehlschlägt (`continue-on-error`): die Zahl der Hinweise je Regel
    steht in der Zusammenfassung des Laufs. Der Code behält seine ausgerichteten Spalten; es ist ein Hinweis für neuen Code.
-8. ⬜ **Package.swift und build.sh einig** – eine Prüfung, dass `platforms` in `Package.swift` und `MIN_OS` in `build.sh` dieselbe
+8. ✅ **Package.swift und build.sh einig** (`scripts/check-build.py`, CI-Schritt) – eine Prüfung, dass `platforms` in `Package.swift` und `MIN_OS` in `build.sh` dieselbe
    macOS-Version nennen und Sparkle dieselbe Version wie `scripts/sparkle.sh`.
 9. ⬜ **Test-Ziel im Package** – die App-Tests als zweites Ziel, damit Xcode sie ausführen kann (braucht eine Bibliothek ohne `@main`).
 
