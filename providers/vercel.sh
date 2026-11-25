@@ -85,7 +85,8 @@ vercel_token() {
 }
 # vercel_cli <args>: the vercel CLI with the token (when there is one) in its environment only.
 vercel_cli() {
-  local t; vercel_token_load; t="${VERCEL_TOKEN:-$_VERCEL_TOKEN_KC}"
+  # An explicit VERCEL_TOKEN wins, and then the keychain is not asked at all.
+  local t="${VERCEL_TOKEN:-}"; [ -n "$t" ] || { vercel_token_load; t="$_VERCEL_TOKEN_KC"; }
   if [ -n "$t" ]; then VERCEL_TOKEN="$t" vercel "$@"; else vercel "$@"; fi
 }
 
@@ -93,7 +94,8 @@ vercel_cli() {
 declare -F par_fn >/dev/null && par_fn vercel_cli vercel_token_load
 
 vercel_run() {
-  local t; vercel_token_load; t="${VERCEL_TOKEN:-$_VERCEL_TOKEN_KC}"
+  # An explicit VERCEL_TOKEN wins, and then the keychain is not asked at all.
+  local t="${VERCEL_TOKEN:-}"; [ -n "$t" ] || { vercel_token_load; t="$_VERCEL_TOKEN_KC"; }
   # A `vercel` shell function cannot be exec'd: deploys' own (cli_limit, which ends with 124) gets
   # this limit; a test's stand-in is called as it is. The token goes in the environment of the
   # one command (an empty VERCEL_TOKEN would be ignored by the CLI, but is not set at all).
