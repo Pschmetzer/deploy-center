@@ -8,6 +8,7 @@
 - Widgets: the saving ("≈ $12/mo saved") and the times follow the language of the app, not the system language, as the texts do.
 - MCP: four new read-only tools over existing commands: `deploys_domains`, `deploys_forecast`, `deploys_env_diff` (names only) and `deploys_preview` (framed as untrusted data).
 - Mac app: "Copy for Claude" masks secrets before it cuts the log, so a private key that begins above the excerpt no longer slips through; a token limit like "1,5m" is 1.5 million, not 15 million.
+- Tooling: `scripts/check-build.py` (and a CI step) fails when `Package.swift` and the release build name a different minimum macOS or Sparkle version.
 - Autofix: the hand-over caps (default 6 a day, 2 per project) can be set for good in `~/.config/deploys/autofix-limits.json` (`{"perDay": 20, "perProject": 5}`); `0` means no cap. The environment variables still win.
 - Guard: the notification says why auto-deploy was turned off ("its allowance ended", or "auto-deploy was on and no allowance covers it") and what went wrong when a switch failed (the first error, short, tokens masked); `guard status --json` has a `reason` per action.
 - Fix: `deploy-changed --yes` that could not read anything names a closed deploy window first again (it said "Could not tell" before the window was checked).
