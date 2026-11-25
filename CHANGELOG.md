@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fix: since the Vercel token change, `deploys costs` read no Vercel charges and the budget brake of `deploy-changed` did not hold (the token helper was missing in the parallel cost reads). The keychain is also read once per run and never from the caller's input.
 - Vercel: `deploys vercel set-key` keeps a Vercel token in the keychain (`deploy-center-vercel`), and every `vercel` call of deploys gets it in its environment (never as an argument). The CLI login renews itself on each run; several runs at once could lose that race and open a browser "Authorize Device" page nobody asked for. Without a token the CLI login is used as before.
 - MCP: four more read-only tools over the journal commands: `deploys_health`, `deploys_weeks`, `deploys_streak` and `deploys_when`.
 - Fix: `deploys changed`, `plan` and `ai` hung for minutes with a few hundred projects on the macOS bash 3.2: a whitespace check on the whole list was quadratic. It is a glob match now (`nonblank`).
