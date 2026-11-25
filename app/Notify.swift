@@ -69,7 +69,8 @@ enum Notify {
         let body = neutral ? L("Open Deploy Center for details.", "Details im Deploy Center.") : body
         let category = autoOn && key != nil ? NotifyRouter.autoOnCategory
             : failed && key != nil ? (rollBack ? NotifyRouter.brokenCategory : NotifyRouter.failedCategory) : nil
-        add(title, body, id: UUID().uuidString, category: category, project: project, key: key, silent: silent)
+        // A failure keeps one note per project (a newer one replaces it); anything else stacks.
+        add(title, body, id: failed && key != nil ? failNotePrefix + key! : UUID().uuidString, category: category, project: project, key: key, silent: silent)
         // A failure nobody looked at comes back once, 30 minutes later (Settings), unless the app was opened.
         if failed, let key, d.bool(forKey: "remindFailures") {
             // The repeat does not wake anyone in quiet hours: it waits for them to end.
@@ -104,6 +105,7 @@ enum Notify {
         add(n.title, n.body, id: QuietDigest.id, after: QuietDigest.seconds(until: to))
     }
     static let escalationPrefix = "again|"
+    static let failNotePrefix = "failed|"
     static let soundsKey = "resultSounds"
     /// The second reminders that wait: gone once the person is back in the app, or the project ran again.
     static func dropEscalations(_ key: String? = nil) {

@@ -61,7 +61,9 @@ struct NightlySettings: View {
 
             Toggle(L("Check every night", "Jede Nacht prüfen"), isOn: Binding(
                 get: { status?.scheduled ?? false },
-                set: { on in Task { await run(["nightly", "schedule", on ? "on" : "off"]) } }))
+                set: { on in Task {
+                    if !on, !(await OwnerCheck.confirm(L("switch the nightly security check off", "die nächtliche Sicherheitsprüfung ausschalten"))) { return }
+                    await run(["nightly", "schedule", on ? "on" : "off"]) } }))
                 .disabled(busy || status == nil)
             if status?.scheduled == true {
                 Picker(L("At", "Um"), selection: hour) {

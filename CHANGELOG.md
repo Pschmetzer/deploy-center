@@ -3,6 +3,7 @@
 ## Unreleased
 
 - MCP: four more read-only tools over the journal commands: `deploys_health`, `deploys_weeks`, `deploys_streak` and `deploys_when`.
+- Mac app: with the owner check on, showing the iPhone QR code, switching an account, running Autofix by hand and turning the nightly check off ask for Touch ID too; a log line "exited with 0" is no longer taken for the error; a failed deploy keeps one notification per project instead of a pile.
 - Two-person rule: an approval (review or `deploy-approved-by:` label) only counts from an account that may push to the repo (admin, maintain, write); triage and read-only accounts, and accounts whose permission cannot be read, no longer count. An issue counts for a commit only when it names at least 12 characters of its sha (7 matched by accident).
 - Tests: the VS Code test that registers the commands no longer fails now and then on Linux (the temp folder was removed while the CLI still wrote into it); removing it is retried.
 - Fix: `deploys fly set-key` saved a `FlyV1 …` token with its space unquoted, so the keychain kept only `FlyV1`; it is quoted now.

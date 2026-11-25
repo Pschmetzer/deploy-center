@@ -123,7 +123,9 @@ struct AutofixSettings: View {
         }
         .task { await reload() }
         .confirmationDialog(L("Send build logs to your Claude routine?", "Build-Logs an deine Claude-Routine senden?"), isPresented: $confirmRun, titleVisibility: .visible) {
-            Button(L("Run now", "Jetzt ausführen")) { Task { await run(["autofix"], show: true) } }
+            Button(L("Run now", "Jetzt ausführen")) { Task {
+                guard await OwnerCheck.confirm(L("send build logs to your Claude routine", "Build-Logs an deine Claude-Routine senden")) else { return }
+                await run(["autofix"], show: true) } }
             Button(L("Cancel", "Abbrechen"), role: .cancel) {}
         } message: {
             Text(L("Failed builds' logs go to the cloud routine, which may open a pull request. Nothing is merged or deployed by it. Use Test to see which projects would be sent.",
