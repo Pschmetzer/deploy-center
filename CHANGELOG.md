@@ -15,6 +15,7 @@
 ### All changes
 
 - Mac app: the performance guard's green, yellow or red dot now shows in the menu bar (it is drawn into the icon; a second image next to it was dropped by macOS).
+- Mac app: the main window shows how full the Mac is next to the build costs ("Mac: room to spare", busy, overloaded); a click opens a panel with the reason, the biggest consumers, the processes and the Docker stacks, each with Stop or Wake.
 
 - Hook sites: a name that cannot be looked up is refused instead of passed on to curl unchecked (use `--allow-private` to keep the old way); the private-address list now also covers 198.18.0.0/15, multicast and reserved IPv4, NAT64, 6to4, Teredo, documentation and site-local IPv6.
 - Fix: since the Vercel token change, `deploys costs` read no Vercel charges and the budget brake of `deploy-changed` did not hold (the token helper was missing in the parallel cost reads). The keychain is also read once per run and never from the caller's input.

@@ -245,3 +245,99 @@ struct PerfMenuSection: View {
         }
     }
 }
+
+/// In the main window, next to the build costs: a dot and "Mac: room to spare", busy or overloaded. A click opens the
+/// panel with the reason, the biggest consumers, the processes and the Docker stacks, each with its button.
+struct PerfPill: View {
+    @ObservedObject var perf = PerfMonitor.shared
+    @AppStorage("perfIndicator") private var perfIndicator = true
+    @State private var open = false
+
+    var body: some View {
+        // Group, so the monitor starts even before there is a first figure (and without the menu bar icon).
+        Group { pill }.task { perf.start() }
+    }
+
+    @ViewBuilder private var pill: some View {
+        if perfIndicator, let s = perf.status, let lvl = perf.level {
+            Button { open.toggle() } label: {
+                HStack(spacing: 5) {
+                    Image(nsImage: PerfMonitor.dot(lvl))
+                    Text(lvl.text).foregroundStyle(lvl == .green ? Color.secondary : Color.primary)
+                    Image(systemName: "chevron.down").font(.caption2).foregroundStyle(.secondary)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).font(.callout)
+            .help(s.reasons.first ?? L("Memory, swap and load of this Mac", "Speicher, Swap und Last dieses Macs"))
+            .accessibilityLabel(lvl.text)
+            .popover(isPresented: $open, arrowEdge: .bottom) { PerfPanel().frame(width: 460) }
+            .padding(.trailing, 8)
+        }
+    }
+}
+
+/// The performance guard's panel: what the menu shows, with room for every line.
+struct PerfPanel: View {
+    @ObservedObject var perf = PerfMonitor.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let s = perf.status, let lvl = perf.level {
+                HStack(spacing: 6) {
+                    Image(nsImage: PerfMonitor.dot(lvl))
+                    Text(lvl.text).font(.headline)
+                }
+                if !s.reasons.isEmpty { Text(s.reasons.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary) }
+                Text(L("Load \(String(format: "%.1f", s.load.one)) on \(s.load.cores) cores · swap \(PerfText.gb(s.swap.usedMB)) · \(s.claudeSessions) Claude Code sessions · \(s.checks.running) heavy checks (cap \(s.checks.cap))",
+                       "Last \(String(format: "%.1f", s.load.one)) auf \(s.load.cores) Kernen · Swap \(PerfText.gb(s.swap.usedMB)) · \(s.claudeSessions) Claude-Code-Sitzungen · \(s.checks.running) schwere Checks (Grenze \(s.checks.cap))"))
+                    .font(.caption).foregroundStyle(.secondary)
+                Text(PerfText.admit(s)).font(.caption)
+                Divider()
+                Text(L("Biggest consumers", "Größte Verbraucher")).font(.subheadline.weight(.semibold))
+                ForEach(PerfText.top(s, 5), id: \.self) { Text($0).font(.callout) }
+            } else {
+                Text(L("No figures yet.", "Noch keine Werte.")).foregroundStyle(.secondary)
+            }
+            if !perf.runs.isEmpty {
+                Divider()
+                Text(L("Processes", "Prozesse")).font(.subheadline.weight(.semibold))
+                let flagged = perf.runs.filter(\.flagged)
+                ForEach(flagged + perf.runs.filter { !$0.flagged }.prefix(max(0, 8 - flagged.count))) { r in
+                    HStack {
+                        Text((r.flagged ? "⚠︎ " : "") + r.line).font(.callout).lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        Button(L("Stop", "Beenden")) { Task { await perf.stopRun(r) } }.controlSize(.small)
+                    }
+                }
+            }
+            let running = perf.docker.filter { $0.running > 0 }
+            if !running.isEmpty || !perf.stopped.isEmpty {
+                Divider()
+                Text("Docker").font(.subheadline.weight(.semibold))
+                ForEach(running) { d in
+                    HStack {
+                        Text(Demo.mask(d.stack) + " – \(PerfText.gb(d.memMB))" + (d.active ? L(" (in use)", " (in Benutzung)") : L(" (idle)", " (ungenutzt)")))
+                            .font(.callout).lineLimit(1)
+                        Spacer()
+                        Button(L("Stop", "Stoppen")) { Task { await perf.act(d.stack, wake: false) } }.controlSize(.small).disabled(d.always)
+                    }
+                }
+                ForEach(perf.stopped, id: \.self) { k in
+                    HStack {
+                        Text(Demo.mask(k) + L(" (stopped)", " (gestoppt)")).font(.callout)
+                        Spacer()
+                        Button(L("Wake", "Wecken")) { Task { await perf.act(k, wake: true) } }.controlSize(.small)
+                    }
+                }
+            }
+            if let m = perf.message { Text(m).font(.caption).foregroundStyle(.secondary) }
+            Divider()
+            Text(L("Stopping keeps data. Hung and orphaned checks are stopped on their own every 5 minutes (deploys perf install).",
+                   "Beenden behält Daten. Hängende und verwaiste Prüfläufe werden alle 5 Minuten selbst beendet (deploys perf install)."))
+                .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .task { await perf.refreshRuns(force: true); await perf.refreshDocker(force: true) }
+    }
+}

@@ -1180,6 +1180,8 @@ struct ContentView: View {
                         .help(summaryHelp(w))
                 }
                 Spacer()
+                // The performance guard: how full this Mac is, with its panel (PerfGuard.swift).
+                PerfPill()
                 if let c = costs {
                     Button { showCosts = true } label: {
                         HStack(spacing: 4) {
