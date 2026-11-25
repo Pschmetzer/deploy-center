@@ -2,8 +2,14 @@
 
 ## Unreleased
 
+- Fix: since the Vercel token change, `deploys costs` read no Vercel charges and the budget brake of `deploy-changed` did not hold (the token helper was missing in the parallel cost reads). The keychain is also read once per run and never from the caller's input.
+- Vercel: `deploys vercel set-key` keeps a Vercel token in the keychain (`deploy-center-vercel`), and every `vercel` call of deploys gets it in its environment (never as an argument). The CLI login renews itself on each run; several runs at once could lose that race and open a browser "Authorize Device" page nobody asked for. Without a token the CLI login is used as before.
+- Performance guard: `deploys perf status` shows how full the Mac is (memory pressure, swap-out rate, load, the biggest consumers), `deploys perf gate` and a Claude Code hook hold heavy checks until there is room, `deploys perf clean` finds orphaned dev processes and test browsers, `deploys perf reap` sorts every process class (checks, test browsers, MCP servers, npm exec, dev servers) into in use, hung, orphaned or unused and stops hung and orphaned trees, `deploys perf consumers|stop|wake` shows Docker stacks, simulators and caches and stops or wakes a Docker stack (never its data; idle stop is opt-in), and the menu bar shows a green, yellow or red dot. MCP: `deploys_perf`. Docs: docs/PERF.md.
+
 - MCP: four more read-only tools over the journal commands: `deploys_health`, `deploys_weeks`, `deploys_streak` and `deploys_when`.
 - Mac app: with the owner check on, showing the iPhone QR code, switching an account, running Autofix by hand and turning the nightly check off ask for Touch ID too; a log line "exited with 0" is no longer taken for the error; a failed deploy keeps one notification per project instead of a pile.
+- Fix: `deploys changed`, `plan` and `ai` hung for minutes with a few hundred projects on the macOS bash 3.2: a whitespace check on the whole list was quadratic. It is a glob match now (`nonblank`).
+- Tooling: `scripts/bench.sh` closes stdin and stops a run after `BENCH_TIMEOUT` seconds (default 120), and the CI step has a 10 minute limit; a hanging benchmark no longer cancels the whole test job.
 - Two-person rule: an approval (review or `deploy-approved-by:` label) only counts from an account that may push to the repo (admin, maintain, write); triage and read-only accounts, and accounts whose permission cannot be read, no longer count. An issue counts for a commit only when it names at least 12 characters of its sha (7 matched by accident).
 - Tests: the VS Code test that registers the commands no longer fails now and then on Linux (the temp folder was removed while the CLI still wrote into it); removing it is retried.
 - Fix: `deploys fly set-key` saved a `FlyV1 …` token with its space unquoted, so the keychain kept only `FlyV1`; it is quoted now.

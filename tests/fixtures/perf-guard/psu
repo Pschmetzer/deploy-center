@@ -1,0 +1,16 @@
+201 1 45:00 ?? node /work/app/node_modules/.bin/vitest run
+202 1 05:00 ?? node /work/app/node_modules/.bin/vitest run
+203 1 01:10:00 ?? node /work/app/server.js
+204 210 20:00 ?? node /work/app/node_modules/.bin/tsc -w
+205 1 20:00 ?? node /work/app/node_modules/.bin/eslint .
+206 1 02:00:00 ?? /usr/local/bin/postgres -D /data
+207 1 50:00 ?? node /work/app/node_modules/.bin/tsc --watch
+208 1 50:00 ?? node /work/app/node_modules/.bin/jest
+209 211 30:00 ?? node /gone/repo/.claude/worktrees/old-one/node_modules/.bin/tsc -w
+210 212 30:00 ?? node /work/repo/.claude/worktrees/live-one/x.js
+211 1 1-00:00:00 ?? /bin/zsh -c node x
+212 1 10:00:00 ?? /Users/you/Library/Application Support/Claude/claude-code/2.1.0/abc/claude.app/Contents/MacOS/claude
+213 1 40:00 ?? /Users/you/Library/Caches/ms-playwright/chromium-1100/chrome-mac/Chromium.app/Contents/MacOS/Chromium --headless
+214 1 03:00:00 ?? node /work/site/node_modules/.bin/next dev -p 3001
+215 1 03:00:00 ttys001 node /work/web/node_modules/.bin/vite
+216 1 03:00:00 ?? /Applications/Google Chrome.app/Contents/MacOS/Google Chrome

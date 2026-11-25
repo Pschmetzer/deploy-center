@@ -99,7 +99,7 @@ budget_spent() {
   c="$("$SELF" costs "$dom" 2>/dev/null)" || c=""
   # No answer at all: jq on empty input prints nothing and succeeds, so the fallback below would never run and the
   # caller's --argjson would stop with a jq error (the budget brake of deploy-changed --yes with it).
-  if [ -z "${c//[[:space:]]/}" ]; then echo '{"spentUsd":null,"why":"Vercel billing could not be read"}'; return 0; fi
+  if ! nonblank "$c"; then echo '{"spentUsd":null,"why":"Vercel billing could not be read"}'; return 0; fi
   echo "$c" | jq -c --arg m "$(date -u +%Y-%m)" 'if (.days | type) != "array" then error("no days")
       elif (.missingDays // 0) > 0 then {spentUsd:null, why:"Vercel billing could not be read for \(.missingDays) of this month'"'"'s days"}
       else {spentUsd:([.days[] | select(.day | startswith($m)) | .build] | add // 0 | (. * 100 | round) / 100)} end' 2>/dev/null \

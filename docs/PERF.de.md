@@ -1,0 +1,57 @@
+# Leistungswächter
+
+Viele Claude-Code-Sitzungen auf einem Mac gehen gut, bis ein Dutzend davon gleichzeitig `tsc`, `vitest` oder
+`next build` startet: Der Speicher läuft voll, macOS swappt, und der ganze Mac hängt. Der Leistungswächter zeigt, wie
+voll der Mac ist, und hält schwere Befehle zurück, bis Platz ist. Er beendet nie eine laufende Sitzung.
+
+Englisch, mit allen Details: [PERF.md](PERF.md)
+
+## Die Anzeige lesen
+
+In der Menüleiste steht neben dem Deploy-Center-Symbol ein Punkt:
+
+| Punkt | Bedeutet | Was tun |
+| --- | --- | --- |
+| grün | Speicherdruck normal, kein Swappen, Last unter einem Prozess pro Kern. | Alles starten. |
+| gelb | Ausgelastet: Speicherdruck auf „warn“, etwas Swappen, hohe Last, oder die Grenze für schwere Checks ist erreicht. | Schwere Checks warten kurz, bis die Bremse sie durchlässt. |
+| rot | Überlastet: Speicherdruck kritisch, Swap fast voll und wächst, Last über 4 pro Kern. | Nichts Schweres mehr lokal starten. Alte Sitzungen archivieren, Arbeit in Cloud-Sitzungen geben. |
+
+Das Menü zeigt darunter den Grund, die drei größten Verbraucher (zum Beispiel „Checks and builds (26) – 7,3 GB“),
+wie viele Claude-Code-Sitzungen und schwere Checks laufen und ob ein schwerer Check gerade starten darf.
+
+Im Terminal: `deploys perf status`. Abschalten in den Einstellungen → Allgemein → „Auslastung des Macs zeigen“.
+
+## Die Lastbremse
+
+`deploys perf gate -- npm run verify` startet den Befehl erst, wenn Platz ist (höchstens 10 Minuten warten). Der
+Claude-Code-Hook (`integrations/claude-code/hooks/perf-gate.sh`) macht das automatisch für `tsc`, `vitest`, `eslint`,
+`next build`, `playwright`, `npm run verify|test|build|typecheck|lint` und ähnliche. Leichte Befehle laufen sofort.
+Bleibt der Mac die ganze Wartezeit rot, startet der Befehl nicht, und Claude bekommt den Hinweis, später oder in einer
+Cloud-Sitzung weiterzumachen.
+
+## Hängende und verwaiste Prozesse
+
+Alles, was Speicher kostet, gehört zu einer Klasse mit einer Regel: Prüfläufe (Lint, Typecheck, Tests, Builds),
+Test-Browser, MCP-Server, `npm exec`-Reste und Dev-Server. `deploys perf reap` zeigt, was hängt oder verwaist ist,
+`--all` alle mit Klasse und Einstufung, `--yes` beendet. Selbst beendet (nach `deploys perf install --reap --yes`, alle
+5 Minuten, mit Mitteilung) wird nur Eindeutiges: ein Prüflauf, der über 45 Minuten ohne CPU-Fortschritt oder über
+90 Minuten läuft (bei Rot kürzer, nie unter 15), und Prozesse, deren Sitzung weg ist. Ungenutzte Dev-Server werden nur
+gemeldet. Im Menü unter „Prozesse“ stehen zuerst die hängenden, verwaisten und ungenutzten, dann die größten, jeweils
+mit Klasse, Laufzeit, Speicher und „Beenden“. Claude, dein Chrome, Datenbanken, Docker und alles unter einem Editor
+oder Debugger werden nie angefasst.
+
+## Docker und andere Verbraucher
+
+`deploys perf consumers` zeigt Docker-Stacks, gebootete Simulatoren und die Größe wachsender Caches (Caches werden nur
+gemeldet, nie gelöscht). Im Menü unter „Docker“ hat jeder laufende Stack „Stoppen“ und jeder vom Wächter gestoppte
+„Wecken“; `deploys perf stop <stack> --yes` und `deploys perf wake <stack>` machen dasselbe im Terminal. Gestoppt
+wird nur mit `docker stop`: Container, Volumes und Daten bleiben. Automatisches Stoppen nach 2 Stunden ohne Benutzung
+(bei Gelb 1 Stunde, bei Rot 30 Minuten) ist aus und wird mit `deploys perf install --docker --yes` eingeschaltet;
+Stacks unter `"docker": {"always": [...]}` in `~/.config/deploys/perf.json` bleiben immer an.
+
+## Aufräumer
+
+`deploys perf clean` listet verwaiste Dev-Prozesse (alte Checks ohne Elternprozess, Prozesse in gelöschten
+Worktrees), `--yes` beendet sie. `deploys perf install --yes` richtet einen launchd-Agenten ein, der jede Minute misst,
+bei mehr als 5 Minuten Rot eine Mitteilung mit den größten Verbrauchern schickt und alle 10 Minuten aufräumt (nur
+Bericht, mit `--clean` auch beenden). Protokoll: `~/.config/deploys/perf/clean.log`.

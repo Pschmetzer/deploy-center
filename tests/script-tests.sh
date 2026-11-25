@@ -57,6 +57,9 @@ case "${CURLSTUB:-ok}" in
 esac
 CURL
 printf '#!/bin/bash\necho "security $*" >> "$CALLS"; cat >/dev/null; exit 0\n' > "$tmp/bin/security"
+# The Vercel token is not looked up in the (stand-in) keychain here: those calls would be counted.
+# tests/cli-misc-tests.sh covers that lookup.
+export DEPLOYS_VERCEL_NO_KEYCHAIN=1
 printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/sleep"
 chmod +x "$tmp/bin"/*
 export CALLS="$tmp/calls.log"
