@@ -712,7 +712,7 @@ rm -f "$DEPLOYS_CONFIG/autofix-limits.json"
 expect "autofix limits: no file, the default" "$(af_limit "" perDay 6)" "6"
 af_reset
 jq -n --argjson t "$now" '{fires:[{deployId:"o1",project:"web",status:"fired",at:($t-100)},{deployId:"o2",project:"web",status:"failed",at:($t-200)}]}' > "$AUTOFIX_STATE"
-( AUTOFIX_PER_PROJECT=0; AUTOFIX_PER_DAY=0; afrun | grep -c 'already had' ) > "$af/nocap.out"
+( export AUTOFIX_PER_PROJECT=0 AUTOFIX_PER_DAY=0; afrun | grep -c 'already had' ) > "$af/nocap.out"
 expect "autofix: cap 0 never stops a fire" "$(cat "$af/nocap.out")" "0"
 
 # Merged fix: never deployed, only recorded and announced; its own failure does not fire again.
