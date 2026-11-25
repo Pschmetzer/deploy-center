@@ -1492,7 +1492,7 @@ final class Store: ObservableObject {
         var queuedKeys: Set<String> = []
         for j in jobs where !(itemNow(j.item)?.state.isActive ?? false) {
             if let at = unsureStarts[Self.key(j.item)], Date().timeIntervalSince(at) < Self.unsureWait {
-                let until = at.addingTimeInterval(Self.unsureWait).formatted(date: .omitted, time: .shortened)
+                let until = uiTime(at.addingTimeInterval(Self.unsureWait))
                 say(L("\(j.item.name) may be building already", "\(j.item.name) baut vielleicht schon"),
                     L("The last start got no answer. Check the dashboard; a new start is possible from \(until).",
                       "Der letzte Start blieb ohne Antwort. Im Dashboard nachsehen; neu starten geht ab \(until)."), ok: false)
@@ -2012,7 +2012,7 @@ final class Store: ObservableObject {
         d.set(today, forKey: k)
         say(days <= 0 ? L("\(item.name): the certificate has expired", "\(item.name): das Zertifikat ist abgelaufen")
                       : L("\(item.name): the certificate ends in \(days) \(days == 1 ? "day" : "days")", "\(item.name): das Zertifikat endet in \(days) \(days == 1 ? "Tag" : "Tagen")"),
-            (url.host ?? "") + " – " + end.formatted(date: .abbreviated, time: .omitted), ok: false)
+            (url.host ?? "") + " – " + uiDate(end), ok: false)
     }
     /// Days left when they are 14 or fewer (0 or less: expired); nil otherwise.
     nonisolated static func certificateWarning(expires: Date, now: Date = Date()) -> Int? {

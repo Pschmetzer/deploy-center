@@ -272,10 +272,10 @@ struct SettingsView: View {
             HStack {
                 Text(L("Quiet hours", "Ruhezeit"))
                 Spacer()
-                Picker(L("from", "von"), selection: $quietFrom) { ForEach(0...23, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
+                Picker(L("from", "von"), selection: $quietFrom) { ForEach(0...23, id: \.self) { Text(uiHour($0)).tag($0) } }
                     .labelsHidden().frame(width: 90)
                 Text(L("to", "bis"))
-                Picker(L("to", "bis"), selection: $quietTo) { ForEach(0...23, id: \.self) { Text(String(format: "%02d:00", $0)).tag($0) } }
+                Picker(L("to", "bis"), selection: $quietTo) { ForEach(0...23, id: \.self) { Text(uiHour($0)).tag($0) } }
                     .labelsHidden().frame(width: 90)
             }
             .help(L("Inside these hours only failures notify; the rest comes as one note when they end. The same hour twice: off. macOS Focus applies as well.",
@@ -508,7 +508,7 @@ struct SettingsView: View {
         let d: Doctor? = store.doctor
         let jobs: [String] = d?.jobsMissing ?? []
         let failures: [String] = Platform.allCases.compactMap { p in
-            store.lastLoadError[p].map { "\(p.cli) failed \($0.at.formatted(date: .numeric, time: .shortened))" }
+            store.lastLoadError[p].map { "\(p.cli) failed \(uiDate($0.at, date: .numeric, time: .shortened))" }
         }
         let base: String = SettingsText.diagnostics(version: version, os: ProcessInfo.processInfo.operatingSystemVersionString,
                                                     doctor: d, providers: store.providers, counts: counts,
@@ -533,6 +533,8 @@ struct SettingsView: View {
             }
             CopyButton(title: L("Copy diagnostics", "Diagnose kopieren")) { diagnosticsText() }
             Button(L("Show the first-start guide again", "Erststart-Anleitung wieder zeigen")) { UserDefaults.standard.set(false, forKey: FirstStart.key) }
+                .disabled(Platform.allCases.allSatisfy { store.autoOn($0).isEmpty })
+                .help(L("The guide appears when a project still builds on every push.", "Die Anleitung erscheint, wenn ein Projekt noch bei jedem Push baut."))
             Text(L("Diagnostics: versions and what is connected; no names, no keys.", "Diagnose: Versionen und was verbunden ist; keine Namen, keine Schlüssel."))
                 .font(.caption).foregroundStyle(.secondary)
             Text(L("Version ", "Version ") + version

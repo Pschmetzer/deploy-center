@@ -12,6 +12,10 @@ extension View {
 var uiLocale: Locale { Locale(identifier: isGerman ? "de_DE" : "en_US") }
 /// "9:12 AM" / "09:12", in the app's language.
 func uiTime(_ d: Date) -> String { d.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(uiLocale)) }
+/// A date (and optionally a time) in the app's language.
+func uiDate(_ d: Date, date: Date.FormatStyle.DateStyle = .abbreviated, time: Date.FormatStyle.TimeStyle = .omitted) -> String {
+    d.formatted(Date.FormatStyle(date: date, time: time).locale(uiLocale))
+}
 /// "5:00 AM" / "05:00" for a whole hour.
 func uiHour(_ h: Int) -> String {
     let d = Calendar.current.date(bySettingHour: h, minute: 0, second: 0, of: Date()) ?? Date()

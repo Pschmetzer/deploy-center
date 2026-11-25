@@ -559,7 +559,7 @@ struct ProjectDetail: View {
                     case "clean": Text(L("Last scan: nothing to fix", "Letzter Scan: nichts zu beheben")).font(.caption).foregroundStyle(Color.good)
                     case "pr":
                         if let u = run.prUrl.flatMap(URL.init(string:)) {
-                            Link(L("Fix PR with \(run.fixes ?? 0) fix(es)", "Fix-PR mit \(run.fixes ?? 0) Fix(es)"), destination: u).font(.caption)
+                            Button(L("Fix PR with \(run.fixes ?? 0) fix(es)", "Fix-PR mit \(run.fixes ?? 0) Fix(es)")) { SafeLink.open(u) }.buttonStyle(.link).font(.caption)
                         }
                     default: Text(scrub(run.error ?? L("Scan failed", "Scan fehlgeschlagen"))).font(.caption).foregroundStyle(Color.dangerText).lineLimit(2)
                     }
