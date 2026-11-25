@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Performance guard: a Docker stack that is started again after an idle stop is left alone for 24 hours instead of being stopped again on the next pass.
+
 - Cloud sessions: `deploys sessions` and a "Cloud Sessions" window (menu bar → Cloud Sessions) show which Claude Code cloud sessions finished, wait or seem stuck, read from GitHub (session branches `claude/…`, their pull requests and the `Claude-Session` commit trailer). A Mac notification when sessions are merged ("room for 2 new ones"), when a pull request waits and when a session seems stuck. Repos to watch: `deploys sessions add <owner/name>` (kept in `sessions.json` in the config folder). New read-only MCP tool `deploys_sessions`.
 
 ## 0.14.0 - 2026-11-25

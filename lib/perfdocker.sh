@@ -93,8 +93,18 @@ perfdocker_idle_tick() {
   now="$(perf_now)"; seen="$PERF_DIR/docker-seen.json"; [ -f "$seen" ] || echo '{}' > "$seen"
   idle="$(jq -r --arg l "$lvl" '(.docker // {}) as $d | if $l == "red" then ($d.idleMinRed // 30) elif $l == "yellow" then ($d.idleMinYellow // 60) else ($d.idleMin // 120) end' <<<"$conf")"
   list="$(perfdocker_list)" || return 0
-  # Active or first seen: the time is now. Nothing is stopped right after install.
-  jq -c --argjson now "$now" --argjson l "$list" '. as $s | reduce $l[] as $x ($s; if $x.active or (.[$x.stack] == null) or $x.running == 0 then .[$x.stack] = $now else . end)' "$seen" > "$seen.$$" && mv -f "$seen.$$" "$seen"
+  # Started again after an idle stop (by a person, a script or a restart policy): it is wanted. It is left alone for
+  # 24 hours (its seen time lies in the future) and forgotten as stopped, instead of being stopped again and again.
+  local stopf="$PERF_DIR/docker-stopped.json" back
+  [ -f "$stopf" ] || echo '{}' > "$stopf"
+  back="$(jq -c --argjson l "$list" '[$l[] | select(.running > 0) | .stack] as $up | [keys[] | select(. as $k | $up | index($k))]' "$stopf")"
+  if [ "$back" != '[]' ]; then
+    jq -c --argjson b "$back" 'with_entries(select(.key as $k | $b | index($k) | not))' "$stopf" > "$stopf.$$" && mv -f "$stopf.$$" "$stopf"
+    jq -c --argjson b "$back" --argjson t "$((now + 86400))" 'reduce $b[] as $k (.; .[$k] = $t)' "$seen" > "$seen.$$" && mv -f "$seen.$$" "$seen"
+    perfdocker_log "kept $(jq -r 'join(", ")' <<<"$back"): started again after an idle stop, left alone for 24 h"
+  fi
+  # Active or first seen: the time is now (a later time stays). Nothing is stopped right after install.
+  jq -c --argjson now "$now" --argjson l "$list" '. as $s | reduce $l[] as $x ($s; if $x.active or (.[$x.stack] == null) or $x.running == 0 then .[$x.stack] = ([.[$x.stack] // 0, $now] | max) else . end)' "$seen" > "$seen.$$" && mv -f "$seen.$$" "$seen"
   while IFS= read -r s; do
     [ -n "$s" ] || continue
     k="$(jq -r .stack <<<"$s")"; last="$(jq -r --arg k "$k" '.[$k] // 0' "$seen")"
