@@ -140,6 +140,12 @@ deploys autofix --only vercel my-project --again   # hand it over again when a s
 deploys autodeploy allow vercel my-project 4   # auto-deploy on for 4 hours (see GUARD.md)
 deploys autodeploy allowed | revoke vercel my-project
 deploys guard [--dry-run] | status | schedule on|off   # auto-deploy off where it came back on
+deploys perf status [--json]            # how full the Mac is: green, yellow, red, and the biggest consumers (PERF.md)
+deploys perf gate -- npm run verify     # start a heavy command only when there is room (perf wait: without a command)
+deploys perf clean [--yes] [--dev]      # orphaned dev processes and test browsers; a dry run without --yes
+deploys perf reap [--all] [--yes] [--pid N]   # hung and orphaned process trees by class (PERF.md)
+deploys perf consumers | docker | stop <stack> --yes | wake <stack>   # Docker stacks, simulators, caches
+deploys perf install [--clean] [--docker] --yes | uninstall | hook   # the launchd agent; the Claude Code hook entry
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE-IN-APP.md
 deploys scan start owner/repo           # Claude Code looks for bugs and opens one fix PR (SCAN.md)
 deploys scan status | list | log <id>   # installed and logged in, the newest scans, one report

@@ -699,6 +699,23 @@ const tools = [
     },
   },
   {
+    name: "deploys_perf",
+    description:
+      "How full this Mac is right now (deploys perf status --json): level green/yellow/red with reasons, kernel memory pressure, free swap, the swap-out rate " +
+      "(MB/min), load per core, open Claude Code sessions, heavy checks running and their cap, the biggest process groups and the top processes. " +
+      "`admit` says whether a heavy command (tsc, vitest, next build ...) may start now. Read-only: nothing is stopped or started. " +
+      "When it is red, do not start heavy checks; wait, or suggest a cloud session. `consumers: true` returns instead the Docker stacks " +
+      "(running, RAM, in use or idle), booted simulators and cache sizes (deploys perf consumers --json); stopping one stays the human's click.",
+    inputSchema: {
+      type: "object",
+      properties: { consumers: { type: "boolean", default: false, description: "Docker stacks, simulators and caches instead of the status." } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Load of this Mac", ...READ },
+    json: true,
+    run: (a) => textOf(a.consumers === true ? ["perf", "consumers", "--json"] : ["perf", "status", "--json"]),
+  },
+  {
     name: "deploys_health",
     description:
       "A 0–100 health score per project, worst first, from the local journal and the CI verdicts (deploys health --json). Read-only. `ci: false` skips reading CI, which is faster. Use it to answer \"which project needs attention?\".",

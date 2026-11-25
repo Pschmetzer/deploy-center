@@ -1,0 +1,9 @@
+  101     1 400000 /Users/dev/Library/Application Support/Claude/claude-code/2.1.0/abc/claude.app/Contents/MacOS/claude --output-format stream-json
+  102   101 100000 /opt/homebrew/bin/node /Users/dev/Applications/Deploy Center.app/Contents/Resources/mcp/server.mjs
+  103   101  50000 /bin/zsh -c npx tsc --noEmit
+  104   103 600000 node /work/app/node_modules/.bin/tsc --noEmit
+  105     1 900000 next-build (v16.0.0)
+  106   105 300000 /opt/homebrew/bin/node /work/app/node_modules/next/dist/compiled/jest-worker/processChild.js
+  107     1 200000 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome
+  108     1  80000 /Applications/Claude.app/Contents/Helpers/disclaimer --pgroup -- /Users/dev/Library/Application Support/Claude/claude-code/2.1.0/abc/claude.app/Contents/MacOS/claude
+  109     1  10000 /usr/sbin/cfprefsd agent
