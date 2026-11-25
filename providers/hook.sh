@@ -79,7 +79,9 @@ hook_private_host() {
   esac
   case "$h" in
     *:*)  # IPv6: loopback, unspecified, unique-local, link-local, IPv4-mapped.
-      case "$h" in ::|::1|fc*|fd*|fe8*|fe9*|fea*|feb*|::ffff:*|0:0:0:0:0:0:0:*) return 0 ;; esac
+      # Also multicast (ff..), site-local (fec0..), NAT64 (64:ff9b::), 6to4 (2002::), Teredo (2001:0::),
+      # documentation (2001:db8::) and discard (100::) ranges: they carry or hide an IPv4 or never route.
+      case "$h" in ::|::1|fc*|fd*|fe8*|fe9*|fea*|feb*|fec*|fed*|fee*|fef*|ff*|::ffff:*|0:0:0:0:0:0:0:*|64:ff9b:*|2002:*|2001:0:*|2001:db8:*|100::*) return 0 ;; esac
       return 1 ;;
   esac
   # An IPv4 written any other way than four decimal numbers (2130706433, 0x7f.1, 017.0.0.1)
@@ -93,6 +95,12 @@ hook_private_host() {
     [ "$o1" = 172 ] && [ "$o2" -ge 16 ] && [ "$o2" -le 31 ] && return 0
     [ "$o1" = 192 ] && [ "$o2" = 168 ] && return 0
     [ "$o1" = 100 ] && [ "$o2" -ge 64 ] && [ "$o2" -le 127 ] && return 0
+    [ "$o1" = 198 ] && { [ "$o2" = 18 ] || [ "$o2" = 19 ]; } && return 0   # 198.18.0.0/15 benchmarking
+    [ "$o1" -ge 224 ] && return 0                                        # multicast, reserved, broadcast
+    [ "$o1" = 192 ] && [ "$o2" = 0 ] && [ "$o3" -le 2 ] && return 0      # 192.0.0.0/24, 192.0.2.0/24
+    [ "$o1" = 192 ] && [ "$o2" = 88 ] && [ "$o3" = 99 ] && return 0      # 6to4 relay
+    [ "$o1" = 198 ] && [ "$o2" = 51 ] && [ "$o3" = 100 ] && return 0
+    [ "$o1" = 203 ] && [ "$o2" = 0 ] && [ "$o3" = 113 ] && return 0
     return 1
   fi
   # A name with no dot ("intranet") only resolves inside someone's network.
@@ -119,7 +127,13 @@ hook_pin() {  # hook_pin <url>
   h="${a%%:*}"; [ "$h" = "$a" ] || port="${a##*:}"
   case "$port" in ""|*[!0-9]*) return 0 ;; esac
   [[ "$h" =~ ^[0-9.]+$ ]] && return 0
-  addrs="$(hook_resolve "$h")"; [ -n "$addrs" ] || return 0
+  addrs="$(hook_resolve "$h")"
+  # No answer is not "public": without a lookup nothing proves the name is not a private address,
+  # and curl would look it up again on its own. Refused unless private targets are allowed.
+  if [ -z "$addrs" ]; then
+    [ -z "${HOOK_ALLOW_PRIVATE:-}" ] || return 0
+    die "The hook address $h could not be looked up, so it cannot be checked for private addresses. Try again, or use --allow-private (or HOOK_ALLOW_PRIVATE=1)."
+  fi
   for ip in $addrs; do
     if [ -z "${HOOK_ALLOW_PRIVATE:-}" ] && hook_private_host "$ip"; then
       die "The hook address $h points at a private or local address ($ip). Use --allow-private (or HOOK_ALLOW_PRIVATE=1) if that is meant."

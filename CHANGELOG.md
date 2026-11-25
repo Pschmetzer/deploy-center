@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Hook sites: a name that cannot be looked up is refused instead of passed on to curl unchecked (use `--allow-private` to keep the old way); the private-address list now also covers 198.18.0.0/15, multicast and reserved IPv4, NAT64, 6to4, Teredo, documentation and site-local IPv6.
 - Tests: the VS Code test that registers the commands no longer fails now and then on Linux (the temp folder was removed while the CLI still wrote into it); removing it is retried.
 - Widgets: the saving ("≈ $12/mo saved") and the times follow the language of the app, not the system language, as the texts do.
 - Autofix: the hand-over caps (default 6 a day, 2 per project) can be set for good in `~/.config/deploys/autofix-limits.json` (`{"perDay": 20, "perProject": 5}`); `0` means no cap. The environment variables still win.
