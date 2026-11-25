@@ -1766,7 +1766,7 @@ k="$(cat)"; echo "$*|$k" >> "$HTTP_LOG"
 case "$HTTP_MODE" in ok) printf '%s\n200' '{"ok":true}' ;; down) printf '%s\n503' 'busy' ;; auth) printf '%s\n401' 'no' ;; esac
 C
 printf '#!/bin/bash\nexit 0\n' > "$hb/sleep"; chmod +x "$hb/curl" "$hb/sleep"
-hcall() { ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE="$1"; : > "$HTTP_LOG"; . ./lib/http.sh; HTTP_AUTH="Authorization: Bearer sekret"; HTTP_FIX="deploys x set-key"; ( http_call X "$2" "https://api.x.test/v1/things" ) 2>&1; echo "|rc=$?"; ) }
+hcall() { ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE="$1"; : > "$HTTP_LOG"; . ./lib/http.sh; export HTTP_AUTH="Authorization: Bearer sekret" HTTP_FIX="deploys x set-key"; ( http_call X "$2" "https://api.x.test/v1/things" ) 2>&1; echo "|rc=$?"; ) }
 expect "PRV-130: a 2xx gives the body" "$(hcall ok GET)" '{"ok":true}|rc=0'
 expect "PRV-130: the key goes on stdin, not in the arguments" "$(hcall ok GET >/dev/null; grep -c '|header = "Authorization: Bearer sekret"' "$tmp/http/log"; cut -d'|' -f1 "$tmp/http/log" | grep -c sekret)" $'1\n0'
 expect "PRV-130: a 503 read is asked three times, a POST once" "$(hcall down GET >/dev/null; wc -l < "$tmp/http/log" | tr -d ' '; hcall down POST >/dev/null; wc -l < "$tmp/http/log" | tr -d ' ')" $'3\n1'
@@ -1780,7 +1780,7 @@ expect "FEA-007: triggers: minutes and usd per build, null when unknown" \
   "$(echo "$tv" | trig_vercel_rows 0.1 | jq -sc 'map([.minutes, .usd])'):$(echo "$tv" | trig_vercel_rows "" | jq -sc 'map(.usd)')" '[[1.5,0.15],[null,null]]:[null,null]'
 # lib/http.sh: a body from a file, and the response headers kept where asked.
 echo '{"big":1}' > "$tmp/http/body.json"
-out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$HTTP_LOG"; . ./lib/http.sh; HTTP_HEADERS="$tmp/http/h.txt"; http_call X POST https://api.x.test/v1/things "@$tmp/http/body.json" ) 2>&1)"
+out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$HTTP_LOG"; . ./lib/http.sh; export HTTP_HEADERS="$tmp/http/h.txt"; http_call X POST https://api.x.test/v1/things "@$tmp/http/body.json" ) 2>&1)"
 expect "http_call: @file is sent as the body, -D keeps the headers" "$out:$(grep -c -- "--data-binary @$tmp/http/body.json" "$tmp/http/log"):$(grep -c -- "-D $tmp/http/h.txt" "$tmp/http/log")" '{"ok":true}:1:1'
 out="$( ( PATH="$hb:$PATH"; export HTTP_LOG="$tmp/http/log" HTTP_MODE=ok; : > "$HTTP_LOG"; . ./lib/http.sh; http_call X POST https://api.x.test/v1/things "@$tmp/http/none.json" ) 2>&1)"; rc=$?
 expect "http_call: a body file that is not there is an error, no call" "$rc:$(echo "$out" | grep -c 'cannot be read'):$(grep -c . "$tmp/http/log")" "1:1:0"
