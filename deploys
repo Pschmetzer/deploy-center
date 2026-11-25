@@ -86,6 +86,7 @@
 #   deploys vercel map <p> <owner/repo> [br] [--no-check]   say where a project deploys from
 #                                             (GitLab: gitlab.com/group/name, see docs/GITLAB.md)
 #   deploys vercel team [<id>] [--no-check]   show or set the Vercel team
+#   deploys vercel set-key                    a Vercel token in the keychain, used instead of the CLI login (reads stdin)
 #   deploys render list                       services and their auto-deploy setting
 #   deploys render autodeploy-off <s>|--all
 #   deploys render autodeploy-on <s>|--all    auto-deploy "On Commit" again
@@ -313,6 +314,10 @@ days_ago() { date -u -v-"$1"d +%Y-%m-%d 2>/dev/null || date -u -d "$1 days ago" 
 b64d() { base64 -D 2>/dev/null || base64 -d; }
 
 # A wrong call ("Usage: …", an unknown option or command) exits 2 and an error 1, as docs/CLI.md says.
+# True when the text holds something besides whitespace. A glob match, so it is linear: "${x//[[:space:]]/}" is
+# quadratic in bash 3.2 (20 s for an 80 KB list; `deploys changed` hung for minutes with 200 projects).
+nonblank() { case "$1" in *[![:space:]]*) return 0 ;; esac; return 1; }
+
 die() {
   echo "${ERED:-}Error:${EPLAIN:-} $*" >&2
   case "$*" in Usage:*|Unknown\ option*|Unknown\ command*) exit 2 ;; esac
@@ -1455,7 +1460,7 @@ SECRETS_JQ='def kinds: [
 cost_day() {
   local from="$1" to="$2" team="$3" out="$4" raw
   # A day that could not be read writes no file: it is missing (costs: missingDays), not $0.
-  raw="$(vercel api "/v1/billing/charges?from=${from}T00:00:00.000Z&to=${to}T00:00:00.000Z${team:+&teamId=$team}" 2>/dev/null)" || return 0
+  raw="$(vercel_cli api "/v1/billing/charges?from=${from}T00:00:00.000Z&to=${to}T00:00:00.000Z${team:+&teamId=$team}" 2>/dev/null)" || return 0
   printf '%s' "$raw" | jq -sc --arg d "$from" '{day:$d,
         total:(map(.BilledCost) | add // 0),
         build:(map(select(.ServiceCategory=="Build & Deploy" or (.ServiceName|test("Build")))) | map(.BilledCost) | add // 0),
@@ -2724,7 +2729,7 @@ Likely fix: one sentence on what to change.
 If the log shows a missing secret, an expired token, a quota or a platform outage, say so: then the fix is not in the code.
 SYS
       lg="$(ai_log "$p" 2>/dev/null | ai_excerpt | cut -c1-400 || true)"
-      [ -n "${lg//[[:space:]]/}" ] || die "No log was read: nothing was asked (no tokens used)"
+      nonblank "$lg" || die "No log was read: nothing was asked (no tokens used)"
       { printf 'Project: %s\nBuild log excerpt (secrets masked):\n<<<LOG\n%s\nLOG>>>\n' "$p" "$lg"; } > "$usr" ;;
     notes)
       # en and de as before; any other two-letter language code works too (fr, es, ja, ...): the model is told the language.
@@ -2763,7 +2768,7 @@ You answer one question from a developer about a deploy project. Below the quest
 Answer in at most six short sentences, plainly. If the data does not answer the question, say what is missing instead of guessing.
 SYS
       lg="$(ai_log "$p" 2>/dev/null | ai_excerpt | cut -c1-400 || true)"
-      [ -n "${lg//[[:space:]]/}" ] || die "No log was read: nothing was asked (no tokens used)"
+      nonblank "$lg" || die "No log was read: nothing was asked (no tokens used)"
       { printf 'Question: %s\n\n' "$q"
         ai_project "$p" | jq -r '"Project: \(.row.name) (\(.row.platform)), repo \(.row.repo), branch \(.row.ref // "main"), auto-deploy: \(if .row.auto then "on" else "off" end)",
           "Waiting: \(.d.commits | length) commits, \(.d.files) files, +\(.d.additions) -\(.d.deletions)",
@@ -2780,7 +2785,7 @@ Slowest steps: at most three, from the log (install, build, upload, a test), wit
 Try: at most three concrete changes (build cache, fewer dependencies, a smaller step), each one sentence.
 SYS
       lg="$(ai_log "$p" 2>/dev/null | tail -n 120 | cut -c1-300 || true)"
-      [ -n "${lg//[[:space:]]/}" ] || die "No log was read: nothing was asked (no tokens used)"
+      nonblank "$lg" || die "No log was read: nothing was asked (no tokens used)"
       { printf 'Project: %s\nRecent deploys:\n' "$p"; ai_history "$p" 2>/dev/null | head -n 21
         printf '\nNewest build log (last lines):\n<<<LOG\n%s\nLOG>>>\n' "$lg"; } > "$usr" ;;
     *) die "Usage: deploys ai explain|notes|ship|ask|slow <project>" ;;
@@ -3826,7 +3831,7 @@ case "${1:-} ${2:-}" in
     done
     [ "$forced" = 0 ] || die "--force is for starting a deploy; changed only looks"
     rc=0; list="$(changed_json)" || rc=$?
-    [ -n "${list//[[:space:]]/}" ] || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
+    nonblank "$list" || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
     [ -z "$only" ] || list="$(echo "$list" | jq --arg p "$only" 'map(select(.platform == $p))')"
     if [ "$json" = 1 ]; then echo "$list"; exit "$rc"; fi
     if [ "$(echo "$list" | jq length)" = "0" ]; then
@@ -4010,7 +4015,7 @@ case "${1:-} ${2:-}" in
     done
     load_savings
     rc=0; list="$(changed_json)" || rc=$?
-    [ -n "${list//[[:space:]]/}" ] || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
+    nonblank "$list" || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
     [ "$rc" = 0 ] || [ "$(echo "$list" | jq length)" != 0 ] || die "Could not tell what has changes (see above)."
     apply_rules ""
     # --since: only what changed in that time (the newest commit on the branch is not older)
@@ -4057,7 +4062,7 @@ case "${1:-} ${2:-}" in
     [ -z "$yes" ] || [ -n "$wfw" ] || freeze_check
     rc=0; list="$(changed_json)" || rc=$?
     window_checked=""   # reading the platforms takes time: the check before the first start looks at the window again
-    [ -n "${list//[[:space:]]/}" ] || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
+    nonblank "$list" || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
     apply_rules "$byrules"
     # --only / --exclude / --platform / --max narrow what was found (names without a platform: every platform).
     if [ "${#only[@]}" -gt 0 ] || [ "${#excl[@]}" -gt 0 ] || [ -n "$platf" ] || [ "$maxn" != 0 ]; then
