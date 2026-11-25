@@ -102,7 +102,16 @@ final class LocalSessionsMonitor: ObservableObject {
     static let shared = LocalSessionsMonitor()
     static let key = "localSessionsIndicator"
     @Published private(set) var snapshot: LocalSessionsSnapshot?
-    @Published private(set) var message: String?
+    /// What the last click did. The title is kept raw and masked when shown, so turning demo mode on later still hides it.
+    enum Outcome: Equatable { case ended(String), failed(String) }
+    @Published private(set) var outcome: Outcome?
+    var message: String? {
+        switch outcome {
+        case .ended(let t)?: return L("Ended \(Demo.mask(t))", "\(Demo.mask(t)) beendet")
+        case .failed(let e)?: return e
+        case nil: return nil
+        }
+    }
     private var task: Task<Void, Never>?
 
     var level: PerfLevel? { snapshot.map { $0.level == "yellow" ? .yellow : .green } }
@@ -117,10 +126,16 @@ final class LocalSessionsMonitor: ObservableObject {
         }
     }
 
-    /// One `deploys sessions --json` a minute while the line is switched on.
+    /// One `deploys local-sessions --json` a minute while the line is switched on. When it fails the old figures are
+    /// dropped instead of shown as current (the section disappears until the next answer).
     func refresh() async {
         guard UserDefaults.standard.object(forKey: Self.key) as? Bool ?? true else { return }
-        if let s = try? await Tool.json(["local-sessions", "--json"], as: LocalSessionsSnapshot.self, timeout: 30), s != snapshot { snapshot = s }
+        do {
+            let s = try await Tool.json(["local-sessions", "--json"], as: LocalSessionsSnapshot.self, timeout: 30)
+            if s != snapshot { snapshot = s }
+        } catch {
+            if snapshot != nil { snapshot = nil }
+        }
     }
 
     /// End one session: only from a click, after the person said yes.
@@ -136,9 +151,10 @@ final class LocalSessionsMonitor: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         guard a.runModal() == .alertSecondButtonReturn else { return }
         do {
-            _ = try await Tool.run(["local-sessions", "stop", String(c.pid), "--yes"], timeout: 30)
-            message = L("Ended \(LocalSessionsText.name(c))", "\(LocalSessionsText.name(c)) beendet")
-        } catch { message = LogTools.maskSecrets(error.localizedDescription) }
+            // The session id too: a pid that meanwhile belongs to another session is refused by the CLI.
+            _ = try await Tool.run(["local-sessions", "stop", String(c.pid), "--session", c.sessionId, "--yes"], timeout: 30)
+            outcome = .ended(c.title.isEmpty ? c.folder : c.title)
+        } catch { outcome = .failed(LogTools.maskSecrets(error.localizedDescription)) }
         await refresh()
     }
 }

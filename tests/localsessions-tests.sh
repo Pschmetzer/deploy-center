@@ -44,6 +44,8 @@ for i in 1 2 3 4 5; do sess 11$i bbbbbbbb-0000-4000-8000-00000000000$i /work/new
 for i in 1 2 3 4; do transcript bbbbbbbb-0000-4000-8000-00000000000$i /work/news/.claude/worktrees/w$i 1 $((100 - 2 * i)); done
 transcript bbbbbbbb-0000-4000-8000-000000000005 /work/news/.claude/worktrees/w5 1 30
 echo 'not json' > "$tmp/sessions/109.json"
+# a record with fields of the wrong type is skipped, not fatal
+jq -n '{pid:110, sessionId:"aaaaaaaa-0000-4000-8000-000000000010", cwd:[], name:{}, startedAt:"soon"}' > "$tmp/sessions/110.json"
 echo 'SECRET-KEY-MATERIAL' > "$tmp/sessions/101.0123abcd.key"
 # 101 and 102: same process start (the app restarted them), but created hours apart: no burst
 transcript aaaaaaaa-0000-4000-8000-000000000001 /work/shop/.wt/alpha 2 300
@@ -62,6 +64,7 @@ cat > "$tmp/fx/ps" <<PS
   106     1   0.0   10240       01:00 $C
   107     1   0.0   10240    03:00:00 /usr/bin/python3 server.py
   108     1   2.0  307200       05:00 $C
+  110     1   0.0   10240    02:00:00 $C
   111     1   0.0   10240    02:00:00 $C
   112     1   0.0   10240    02:00:00 $C
   113     1   0.0   10240    02:00:00 $C
@@ -117,6 +120,8 @@ expect "a broken config falls back to the defaults" "$(s config)" '{"maxLocal":3
 echo '[1,2]' > "$DEPLOYS_CONFIG/local-sessions.json"
 expect "a config that is not an object is ignored" "$(s config | jq -r .maxLocal)" "30"
 rm -f "$DEPLOYS_CONFIG/local-sessions.json"
+: > "$tmp/notadir"
+DEPLOYS_CONFIG="$tmp/notadir/x" s set max-local 5 >/dev/null 2>&1; expect "a setting that cannot be written fails" "$?" "1"
 
 # --- no sessions ---
 mkdir -p "$tmp/empty"
@@ -136,6 +141,9 @@ s stop 105 --yes >/dev/null 2>&1; expect "a dead session cannot be stopped" "$?"
 s stop 107 --yes >/dev/null 2>&1; expect "a pid that is not claude cannot be stopped" "$?" "1"
 s stop 106 --yes >/dev/null 2>&1; expect "a reused pid cannot be stopped" "$?" "1"
 s stop 'x; rm' --yes >/dev/null 2>&1; expect "a pid that is not a number is refused" "$?" "2"
+o="$(s stop 102 --session aaaaaaaa-0000-4000-8000-000000000002 --yes)"; expect "stop with the session the app showed" "$o" "Ended session 102 (fixture: nothing sent)."
+s stop 102 --session aaaaaaaa-0000-4000-8000-000000000001 --yes >/dev/null 2>&1; expect "a pid that now belongs to another session is refused" "$?" "1"
+s stop 102 --session >/dev/null 2>&1; expect "--session without an id" "$?" "2"
 
 # --- through deploys ---
 expect "deploys local-sessions --json" "$(./deploys local-sessions --json | jq -r .local.count)" "10"

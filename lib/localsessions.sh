@@ -49,7 +49,10 @@ lsess_files() {
   local d f; d="$(lsess_dir)"
   for f in "$d"/*.json; do
     [ -f "$f" ] || continue
-    jq -c 'select(type == "object" and (.pid | type) == "number" and (.sessionId | type) == "string")
+    jq -c 'def str($k): (.[$k] | type) as $t | $t == "string" or $t == "null";
+      select(type == "object" and (.pid | type) == "number" and .pid > 0 and (.sessionId | type) == "string"
+        and str("cwd") and str("name") and str("kind") and str("entrypoint") and str("status")
+        and ((.startedAt | type) as $t | $t == "number" or $t == "null"))
       | {pid, sessionId, cwd: (.cwd // ""), title: (.name // ""), kind: (.kind // ""), entrypoint: (.entrypoint // ""),
          state: (.status // ""), startedAt: ((.startedAt // 0) / 1000 | floor)}' "$f" 2>/dev/null
   done | jq -sc '.'
@@ -178,15 +181,34 @@ lsess_print() {
 # deploys local-sessions stop <pid> --yes: SIGTERM to one session, after checking again that the pid is a live Claude Code
 # session of the list (not a reused pid). Without --yes it only says what it would do.
 lsess_stop() {
-  local yes=0 pid="" a snap s
-  for a in "$@"; do case "$a" in --yes) yes=1 ;; -*) echo "Unknown option $a" >&2; return 2 ;; *) pid="$a" ;; esac; done
-  case "$pid" in ""|*[!0-9]*) echo "Usage: deploys local-sessions stop <pid> --yes" >&2; return 2 ;; esac
+  local yes=0 pid="" sid="" a snap s p started
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --yes) yes=1 ;;
+      --session) [ $# -ge 2 ] || { echo "--session needs the session id" >&2; return 2; }; sid="$2"; shift ;;
+      -*) echo "Unknown option $1" >&2; return 2 ;;
+      *) pid="$1" ;;
+    esac
+    shift
+  done
+  case "$pid" in ""|*[!0-9]*) echo "Usage: deploys local-sessions stop <pid> [--session <id>] --yes" >&2; return 2 ;; esac
   snap="$(lsess_snapshot)" || return 1
   s="$(jq -c --argjson p "$pid" '.sessions[] | select(.pid == $p)' <<<"$snap")"
   [ -n "$s" ] || { echo "No running Claude Code session has pid $pid." >&2; return 1; }
+  # The app passes the session it showed: a pid that now belongs to another session is refused.
+  if [ -n "$sid" ] && [ "$(jq -r .sessionId <<<"$s")" != "$sid" ]; then
+    echo "Pid $pid now belongs to another session; nothing was ended." >&2; return 1
+  fi
   if [ "$yes" != 1 ]; then
     echo "Would end session $pid ($(jq -r 'if .title == "" then .folder else .title end' <<<"$s")). Its transcript file stays; the Claude app may show it as stopped. Add --yes."
     return 0
+  fi
+  # Checked again right before the signal: still alive, still claude, started no later than the session. Bash cannot
+  # hold a process handle, so this narrows the window for a reused pid; it cannot close it.
+  started="$(jq -r .startedAt <<<"$s")"
+  p="$(lsess_procs "$pid" "$(lsess_now)" | jq -c --arg p "$pid" '.[$p] // empty')"
+  if [ -z "$p" ] || [ "$(jq -r --argjson st "$started" '.claude and ($st == 0 or .start <= $st + 5)' <<<"$p")" != true ]; then
+    echo "Session $pid is gone or its pid was reused; nothing was ended." >&2; return 1
   fi
   [ -z "${DEPLOYS_LOCAL_SESSIONS_FIXTURE:-}" ] || { echo "Ended session $pid (fixture: nothing sent)."; return 0; }
   kill -TERM "$pid" 2>/dev/null || { echo "Could not end session $pid." >&2; return 1; }
@@ -201,7 +223,9 @@ lsess_set() {
   case "$v" in ""|*[!0-9]*|0) echo "local-sessions set: $k needs a whole number of at least 1" >&2; return 2 ;; esac
   mkdir -p "$(dirname "$LSESS_CONF")"
   cur='{}'; [ -f "$LSESS_CONF" ] && cur="$(jq -c 'if type == "object" then . else {} end' "$LSESS_CONF" 2>/dev/null || echo '{}')"
-  jq --arg k "$key" --argjson v "$v" '.[$k] = $v' <<<"$cur" > "$LSESS_CONF.tmp" && mv "$LSESS_CONF.tmp" "$LSESS_CONF"
+  if ! { jq --arg k "$key" --argjson v "$v" '.[$k] = $v' <<<"$cur" > "$LSESS_CONF.tmp" && mv "$LSESS_CONF.tmp" "$LSESS_CONF"; }; then
+    rm -f "$LSESS_CONF.tmp"; echo "local-sessions set: could not write $LSESS_CONF" >&2; return 1
+  fi
   echo "local-sessions: $k = $v"
 }
 

@@ -727,7 +727,7 @@ const tools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Claude Code sessions on this Mac", ...READ },
     json: true,
-    run: () => textOf(["local-sessions", "--json"]),
+    run: () => textOf(["local-sessions", "--json"], { mask: true }),
   },
   {
     name: "deploys_health",
