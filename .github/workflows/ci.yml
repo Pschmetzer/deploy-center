@@ -409,6 +409,8 @@ jobs:
         run: python3 -I scripts/check-strings.py
       - name: No visible text without an L(English, Deutsch) pair (brands are in scripts/export-strings-ignore.txt)
         run: python3 -I scripts/export-strings.py --check --strict
+      - name: Package.swift and the build agree (minimum macOS, Sparkle pin)
+        run: python3 -I scripts/check-build.py
       - name: Release gate (VERSION, home page and appcast name the same release)
         run: python3 -I scripts/check-release.py
       - name: Docs agree (every page in docs/README.md, README.md and README.de.md alike, one h1, the man page is current)

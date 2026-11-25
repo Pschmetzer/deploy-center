@@ -56,6 +56,14 @@ expect "export-strings: a Text without L is found, one with a pair is not" \
 printf 'import SwiftUI\nstruct V: View { var body: some View { Text(L("Save changes", "Änderungen sichern")) } }\n' > "$tmp/es/W.swift"
 expect "export-strings: an L pair is clean" "$(python3 -I scripts/export-strings.py --check --strict "$tmp/es/W.swift" >/dev/null; echo $?)" 0
 
+# --- scripts/check-build.py: Package.swift and the build agree ---
+expect "check-build: the repo passes" "$(python3 -I scripts/check-build.py >/dev/null 2>&1; echo $?)" 0
+mkdir -p "$tmp/cb/scripts"; cp Package.swift build.sh "$tmp/cb/"; cp scripts/sparkle.sh "$tmp/cb/scripts/"
+sed 's/exact: "[0-9.]*"/exact: "0.0.1"/' Package.swift > "$tmp/cb/Package.swift"
+expect "check-build: a different Sparkle pin fails" "$(python3 -I scripts/check-build.py "$tmp/cb" >/dev/null 2>&1; echo $?)" 1
+cp Package.swift "$tmp/cb/Package.swift"; sed 's/^MIN_OS="[0-9.]*"/MIN_OS="13.0"/' build.sh > "$tmp/cb/build.sh"
+expect "check-build: a different minimum macOS fails" "$(python3 -I scripts/check-build.py "$tmp/cb" >/dev/null 2>&1; echo $?)" 1
+
 # --- scripts/new-provider.sh: refuses bad names and existing hosts, and what it scaffolds passes its own test ---
 expect "new-provider: a bad name is refused" "$(bash scripts/new-provider.sh 'Bad Name' >/dev/null 2>&1; echo $?)" 2
 expect "new-provider: an existing host is refused" "$(bash scripts/new-provider.sh deno >/dev/null 2>&1; echo $?)" 1
