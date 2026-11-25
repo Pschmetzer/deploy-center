@@ -70,19 +70,30 @@ VERCEL_TIMEOUT="${DEPLOYS_VERCEL_TIMEOUT:-${DEPLOYS_CLI_TIMEOUT:-60}}"
 VERCEL_KEYCHAIN="deploy-center-vercel"
 # The token for the CLI: VERCEL_TOKEN, else the keychain item, else nothing (then the CLI login).
 # Never an argument (--token would show in ps); the caller hands it on in the environment.
+# Read once per run (not exported, set in this shell, not a subshell): one keychain read, not one
+# per call. Never from stdin: a caller's pipe must not be eaten by `security`.
+_VERCEL_TOKEN_READ=""; _VERCEL_TOKEN_KC=""
+vercel_token_load() {
+  [ -z "$_VERCEL_TOKEN_READ" ] || return 0
+  _VERCEL_TOKEN_READ=1
+  [ -z "${DEPLOYS_VERCEL_NO_KEYCHAIN:-}" ] || return 0
+  _VERCEL_TOKEN_KC="$(security find-generic-password -a "${USER:-$(id -un)}" -s "${VERCEL_KEYCHAIN:-deploy-center-vercel}" -w </dev/null 2>/dev/null)" || _VERCEL_TOKEN_KC=""
+}
 vercel_token() {
   if [ -n "${VERCEL_TOKEN:-}" ]; then printf '%s' "$VERCEL_TOKEN"; return 0; fi
-  [ -n "${DEPLOYS_VERCEL_NO_KEYCHAIN:-}" ] && return 0
-  security find-generic-password -a "${USER:-$(id -un)}" -s "$VERCEL_KEYCHAIN" -w 2>/dev/null || true
+  vercel_token_load; printf '%s' "$_VERCEL_TOKEN_KC"
 }
 # vercel_cli <args>: the vercel CLI with the token (when there is one) in its environment only.
 vercel_cli() {
-  local t; t="$(vercel_token)"
+  local t; vercel_token_load; t="${VERCEL_TOKEN:-$_VERCEL_TOKEN_KC}"
   if [ -n "$t" ]; then VERCEL_TOKEN="$t" vercel "$@"; else vercel "$@"; fi
 }
 
+# Costs run cost_day under xargs (a child bash): it needs these there too.
+declare -F par_fn >/dev/null && par_fn vercel_cli vercel_token_load
+
 vercel_run() {
-  local t; t="$(vercel_token)"
+  local t; vercel_token_load; t="${VERCEL_TOKEN:-$_VERCEL_TOKEN_KC}"
   # A `vercel` shell function cannot be exec'd: deploys' own (cli_limit, which ends with 124) gets
   # this limit; a test's stand-in is called as it is. The token goes in the environment of the
   # one command (an empty VERCEL_TOKEN would be ignored by the CLI, but is not set at all).

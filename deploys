@@ -47,6 +47,7 @@
 #   deploys domains [--warn 30] [--json]      custom domains and platform addresses with the days their TLS certificate has left; exit 1 inside --warn
 #   deploys forecast [--warn 80] [--json]     the month's build cost so far and where it ends (estimate), against `budget`; exit 1 when over
 #   deploys env-diff <p> [--json]             variable NAMES in production but not in preview and the other way (never values); exit 1 when they differ
+#   deploys perf status|gate|clean|consumers|stop|wake  how full the Mac is, hold heavy commands, Docker stop/wake (docs/PERF.md)
 #   deploys group list|add <name> <p>...|remove <name>|run <name> [--yes]   your own ordered groups; run waits for each member, stops at the first failure, starts only with --yes or "y"
 #   deploys prepare on [HH:MM] [--when-green] [--no-freeze] [--yes] | off | status | show | run   a morning job that gets a deploy ready; it starts only with --yes stored
 #   deploys creds [--max-age 90] [--json]     where each platform's key comes from, if it works, how old a keychain key is
@@ -448,7 +449,7 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare; do
+for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done
@@ -3887,7 +3888,7 @@ case "${1:-} ${2:-}" in
     sed -n '/^# Exit codes: /,/^#$/p' "$SELF" | sed 's/^# \{0,1\}//'
     echo "Every command: the table is in docs/CLI.md (Exit codes)." ;;
 
-  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*)
+  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*)
     case "$1" in env-diff) _f=envdiff_main ;; group) _f=groups_main ;; *) _f="${1}_main" ;; esac
     declare -F "$_f" >/dev/null || die "$1 needs its file in lib/ next to deploys."
     "$_f" "${@:2}" ;;

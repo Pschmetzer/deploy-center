@@ -68,7 +68,10 @@ for pid in sorted(set(caps) - seen):
 
 # every DEPLOYS_* variable the scripts read is in some docs page, except the ones that only pass a value between our own calls
 INTERNAL = {"DEPLOYS_FORCE_REASON", "DEPLOYS_ONLY", "DEPLOYS_ONLY_ID", "DEPLOYS_SAVINGS_LIB", "DEPLOYS_SELF", "DEPLOYS_TEAM_LIB",
-            "DEPLOYS_LIB", "DEPLOYS_NO_JOURNAL", "DEPLOYS_CALLER"}
+            "DEPLOYS_LIB", "DEPLOYS_NO_JOURNAL", "DEPLOYS_CALLER",
+            # the performance guard's test seams and knobs, described in docs/PERF.md where they matter
+            "DEPLOYS_PERF_FIXTURE", "DEPLOYS_PERF_NOW", "DEPLOYS_PERF_NORECORD", "DEPLOYS_PERF_KILL_AFTER", "DEPLOYS_PERF_DB_WAIT",
+            "DEPLOYS_PERF_LABEL", "DEPLOYS_PERF_NOTIFY_CMD", "DEPLOYS_PERF_LIB", "DEPLOYS_PERF_MAX_WAIT", "DEPLOYS_PERF_GATE"}
 def _read_all(paths):
     out = ""
     for pth in paths:

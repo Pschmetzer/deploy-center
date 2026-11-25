@@ -26,6 +26,7 @@ struct SettingsView: View {
     @AppStorage("quietTo") private var quietTo = 0
     @AppStorage("remindFailures") private var remindFailures = false
     @AppStorage("showMenuBar") private var showMenuBar = true
+    @AppStorage("perfIndicator") private var perfIndicator = true
     @AppStorage("hideDock") private var hideDock = false
     @AppStorage("notifications") private var notifications = true
     @AppStorage("checkUpdates") private var checkUpdates = true
@@ -172,6 +173,10 @@ struct SettingsView: View {
                 .onChange(of: showMenuBar) { _, on in
                     if !on && hideDock { hideDock = false }
                 }
+            Toggle(L("Show how full the Mac is (green, yellow, red dot)", "Auslastung des Macs zeigen (grüner, gelber, roter Punkt)"), isOn: $perfIndicator)
+                .disabled(!showMenuBar)
+                .help(L("From deploys perf status: memory pressure, swap, load and the biggest consumers.",
+                        "Aus deploys perf status: Speicherdruck, Swap, Last und die größten Verbraucher."))
             Toggle(L("No Dock icon (menu bar only)", "Kein Dock-Symbol (nur Menüleiste)"), isOn: $hideDock)
                 .disabled(!showMenuBar)
                 .help(showMenuBar ? "" : L("Needs the menu bar icon: without both there is no way back in.",
@@ -606,6 +611,9 @@ struct DeployCenterApp: App {
     @ObservedObject private var updates = SoftwareUpdate.shared
     @AppStorage("showMenuBar") private var showMenuBar = true
     @AppStorage("demoMode") private var demoMode = false
+    /// The performance guard's dot next to the icon (PerfGuard.swift).
+    @AppStorage("perfIndicator") private var perfIndicator = true
+    @ObservedObject private var perf = PerfMonitor.shared
 
     init() {
         let store = Store()
@@ -686,13 +694,14 @@ struct DeployCenterApp: App {
             let budget = UserDefaults.standard.double(forKey: "monthlyBudget")
             let overBudget = budget > 0 && (store.monthPace ?? 0) > budget
             Image(systemName: active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : (overBudget ? "dollarsign.circle.fill" : "paperplane")))
-                .task { appDelegate.attach(store); store.boot() }
+                .task { appDelegate.attach(store); store.boot(); PerfMonitor.shared.start() }
                 .modifier(OpensSettingsOnRequest(store: store))
                 .accessibilityLabel("Deploy Center")
                 .accessibilityValue(active ? L("deploying", "deployt gerade")
                     : failed ? L("a deploy failed", "ein Deploy ist fehlgeschlagen")
                     : MenuBarSummary.text(waiting: n, failed: store.allItems.filter { Row.keyFigure($0) == .failed && !store.isHidden($0) }.count) ?? L("everything is live", "alles ist live"))
             if n > 0 { Text("\(n)") }
+            if perfIndicator, let lvl = perf.level { Image(nsImage: PerfMonitor.dot(lvl)) }
         }
     }
 }
@@ -707,6 +716,7 @@ struct MenuBarContent: View {
     @AppStorage("demoMode") private var demoMode = false
     @AppStorage("onlyChanged") private var onlyChanged = false
     @AppStorage("showAll") private var showAll = false
+    @AppStorage("perfIndicator") private var perfIndicator = true
 
     private func openMain() { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
 
@@ -792,6 +802,7 @@ struct MenuBarContent: View {
                    "Claude behebt \(store.fixingCount) \(store.fixingCount == 1 ? "fehlgeschlagenen Build" : "fehlgeschlagene Builds")"))
         }
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
+        if perfIndicator { PerfMenuSection() }
         if tipOn { Text(L("Tip: ", "Tipp: ") + Tips.tip()).foregroundStyle(.secondary) }
         // Stopping needs no confirmation in the window either; it is the same cancel as the row's.
         let active = store.allItems.filter { $0.state.isActive }.sorted { $0.name < $1.name }
