@@ -44,7 +44,7 @@ extension EnvironmentValues {
     var words: Words { get { self[WordsKey.self] } set { self[WordsKey.self] = newValue } }
 }
 
-private func money(_ v: Double) -> String { v.formatted(.currency(code: "USD").precision(.fractionLength(0))) }
+private func money(_ v: Double, _ w: Words) -> String { v.formatted(.currency(code: "USD").precision(.fractionLength(0)).locale(w.locale)) }
 
 /// Orange for small text: the system orange is about 2.3:1 on white; this one reaches 4.5:1 in light mode
 /// (the app's `warningText`), and is the system orange in dark mode. `warn` false gives `other`.
@@ -106,8 +106,8 @@ struct Header: View {
             Spacer(minLength: 2)
             // The time of the data, only on iOS (see isStale): with the day when it is not today.
             #if os(iOS)
-            let when = Calendar.current.isDate(snap.at, inSameDayAs: date) ? snap.at.formatted(date: .omitted, time: .shortened)
-                                                                           : snap.at.formatted(.dateTime.day().month().hour().minute())
+            let when = Calendar.current.isDate(snap.at, inSameDayAs: date) ? snap.at.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(w.locale))
+                                                                           : snap.at.formatted(Date.FormatStyle().day().month().hour().minute().locale(w.locale))
             Text(snap.isStale(at: date) ? w("old: ", "alt: ") + when : when)
                 .warnText(snap.isStale(at: date))
                 .lineLimit(1)
@@ -186,7 +186,7 @@ struct ListView: View {
                 Text(w.n(snap.waitingProjects, ("project", "Projekt"), ("projects", "Projekte"))).font(.caption2).foregroundStyle(.secondary)
                     .lineLimit(1).minimumScaleFactor(0.7)
                 if let s = snap.saving, s.after < s.before {
-                    Text(w("≈ \(money(s.month))/mo saved", "≈ \(money(s.month))/Monat gespart"))
+                    Text(w("≈ \(money(s.month, w))/mo saved", "≈ \(money(s.month, w))/Monat gespart"))
                         .font(.caption2.weight(.semibold)).foregroundStyle(.green)
                         .lineLimit(2).minimumScaleFactor(0.7)
                 }
@@ -593,7 +593,7 @@ struct NextDeployContent: View {
                 if let r = run {
                     Text(r.name).font(.headline).lineLimit(1).minimumScaleFactor(0.7).privacySensitive()
                     Text(r.at, style: .relative).font(.title3.weight(.bold).monospacedDigit()).minimumScaleFactor(0.6)
-                    Text((r.platform.isEmpty ? "" : r.platform + " · ") + r.at.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.secondary)
+                    Text((r.platform.isEmpty ? "" : r.platform + " · ") + r.at.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(w.locale))).font(.caption2).foregroundStyle(.secondary)
                 } else {
                     Spacer(minLength: 0)
                     Text(stale ? w("Out of date: open the app", "Veraltet: App öffnen") : w("No deploy planned", "Kein Deploy geplant"))
@@ -756,7 +756,7 @@ private func phaseIcon(_ p: DeployActivity.ContentState.Phase, _ w: Words, rollb
 private func line(_ ctx: ActivityViewContext<DeployActivity>, _ w: Words) -> String {
     let what = ctx.state.words + " · " + ctx.attributes.platform
     guard ctx.isStale && ctx.state.phase == .running else { return what }
-    let t = ctx.state.updated.formatted(date: .omitted, time: .shortened)
+    let t = ctx.state.updated.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(w.locale))
     // Plain: the time of the last update, not an instruction (IDEEN-12 C27).
     return what + w(" · as of \(t)", " · Stand \(t)")
 }
