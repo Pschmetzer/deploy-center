@@ -36,4 +36,13 @@ d guard status --json > "$out/guard.json"
 d autofix status --json > "$out/autofix.json"
 d config --json > "$out/config.json"
 d window --json > "$out/window.json"
-for f in guard autofix config window; do jq -e . "$out/$f.json" >/dev/null || { echo "contract-json: $f.json is not JSON" >&2; exit 1; }; done
+# Two made-up sessions on one repo, one with a transcript (the app's SessionsSnapshot reads every field)
+mkdir -p "$tmp/sess" "$tmp/proj/-work-shop" "$tmp/sessfx"
+jq -n --argjson t "$((now * 1000 - 600000))" '{pid:501, sessionId:"c0000000-0000-4000-8000-000000000001", cwd:"/work/shop", name:"Fix the login", startedAt:$t, status:"busy"}' > "$tmp/sess/501.json"
+jq -n --argjson t "$((now * 1000 - 600000))" '{pid:502, sessionId:"c0000000-0000-4000-8000-000000000002", cwd:"/work/shop/.claude/worktrees/b", name:"fix the login", startedAt:$t, status:"idle"}' > "$tmp/sess/502.json"
+printf '{"type":"queue-operation","timestamp":"2026-01-01T00:00:00.000Z"}\n' > "$tmp/proj/-work-shop/c0000000-0000-4000-8000-000000000001.jsonl"
+printf '  501 1 1.0 102400 20:00 /opt/bin/claude\n  502 1 0.0 102400 20:00 /opt/bin/claude\n' > "$tmp/sessfx/ps"
+env -i HOME="$tmp/home" PATH="$tmp/bin:$jqdir:/usr/bin:/bin" DEPLOYS_CONFIG="$c" DEPLOYS_LOCAL_SESSIONS_DIR="$tmp/sess" \
+  DEPLOYS_CLAUDE_PROJECTS="$tmp/proj" DEPLOYS_LOCAL_SESSIONS_FIXTURE="$tmp/sessfx" DEPLOYS_LOCAL_SESSIONS_NOW="$now" \
+  /bin/bash ./deploys local-sessions --json </dev/null > "$out/local-sessions.json"
+for f in guard autofix config window local-sessions; do jq -e . "$out/$f.json" >/dev/null || { echo "contract-json: $f.json is not JSON" >&2; exit 1; }; done

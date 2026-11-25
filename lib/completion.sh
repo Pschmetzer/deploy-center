@@ -5,9 +5,9 @@
 completion_main() {
     # Tab completion: eval "$(deploys completion zsh)" in ~/.zshrc, or bash in ~/.bashrc.
     # Per provider: the verbs every provider has, plus its own commands (<p>_cli_<verb>).
-    # The commands are read from the case labels of this script (the same source as the typo hint), so a new
+    # The commands are read from the case labels of this script, every alternative of a label line (the same source as the typo hint), so a new
     # command is completed the day it exists; the providers and the flags are added.
-    cmds="$( { sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' "$SELF" 2>/dev/null; printf '%s\n' "${PROVIDERS[@]}" completion --help --version; } | sort -u | paste -sd' ' -)"
+    cmds="$( { grep -E '^  "[a-z][a-z -]*"\*?(\|"[a-z][a-z -]*"\*?)*\)' "$SELF" 2>/dev/null | sed 's/).*//' | tr '|' '\n' | sed -n 's/^ *"\([a-z][a-z-]*\)[ "].*/\1/p'; printf '%s\n' "${PROVIDERS[@]}" completion --help --version; } | sort -u | paste -sd' ' -)"
     # The case labels cannot be read when this script is not a readable file (a pipe, a different layout): then the
     # built-in list is what is completed, so a completion is never empty.
     [ "$(printf '%s\n' $cmds | wc -l | tr -d ' ')" -ge 30 ] || cmds="$cmds $(printf '%s ' list deploy deploy-changed rollback status cancel logs watch verify risk history diff notes open details doctor config guard freeze digest journal idle certs creds secrets plan rules team scan check autofix autodeploy schedule readonly price budget hooks hook ignore metrics explain simulate triggers where window providers ai gitlab completion | tr ' ' '\n' | sort -u | paste -sd' ' -)"
@@ -26,6 +26,7 @@ price:set unset
 budget:set off
 journal:verify export report
 idle:--days --json
+local-sessions:stop set config --json --yes
 creds:--max-age --json
 certs:--days --json
 domains:--warn --json
