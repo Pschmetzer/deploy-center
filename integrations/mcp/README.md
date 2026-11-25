@@ -113,6 +113,7 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_preview(project)` | `deploys preview <project> --json` | What a production deploy would do and a verdict. Framed as untrusted data. Starts nothing. |
 | `deploys_perf(consumers?)` | `deploys perf status --json` (or `perf consumers --json`) | How full the Mac is (green/yellow/red), the biggest consumers, and whether a heavy check may start now. Read-only. |
 | `deploys_health(days?, project?, ci?)` | `deploys health --days <n> [--project p] [--no-ci] --json` | 0–100 health per project, worst first. Read-only. |
+| `deploys_sessions(hours?, repo?)` | `deploys sessions [--hours n] [--repo o/n] --json` | Claude Code cloud sessions on GitHub: merged (a slot is free), waiting, stuck, with pull request and session links. Read-only. |
 | `deploys_weeks(days?, project?)` | `deploys weeks --days <n> --json` | The last N days against the N before: deploys, failure rate, rollbacks. Read-only. |
 | `deploys_streak(days?, project?)` | `deploys streak --days <n> --json` | Deploys in a row without a failure, now and longest. Read-only. |
 | `deploys_when(days?, by?)` | `deploys when --days <n> --by weekday\|hour --json` | On which weekday or hour deploys failed more often (UTC). Read-only. |

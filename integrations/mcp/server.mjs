@@ -738,6 +738,34 @@ const tools = [
     },
   },
   {
+    name: "deploys_sessions",
+    description:
+      "Claude Code cloud sessions seen on GitHub in the watched repos (deploys sessions --json): per session branch its state " +
+      "(merged = done and a slot is free, closed, open, waiting = pull request open for a few minutes, stuck = no change for a while, pushed = branch without pull request), " +
+      "the pull request link, the Claude session link from the commit trailer, and minutes since the first commit; plus a summary " +
+      "(mergedLastHour, waiting, stuck, open). Read-only: nothing is merged or closed. Use it to answer \"which cloud sessions are done, is there room to start new ones?\". " +
+      "The watched repos are set by the human (deploys sessions add <owner/name>).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hours: { type: "integer", minimum: 1, maximum: 168, default: 6, description: "How many hours to look back (1–168, default: the setting, 6)." },
+        repo: { type: "string", description: "Only this repo, owner/name (optional; default: every watched repo)." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "Claude cloud sessions on GitHub", ...READ },
+    json: true,
+    run: (a) => {
+      const args = ["sessions"];
+      if (a.hours !== undefined && a.hours !== null) args.push("--hours", String(checkRange(a.hours, "hours", 6, 168)));
+      if (a.repo !== undefined && a.repo !== null) {
+        if (typeof a.repo !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(a.repo)) throw new Error("repo must be owner/name");
+        args.push("--repo", a.repo);
+      }
+      return textOf([...args, "--json"], { timeoutMs: SLOW_TIMEOUT_MS });
+    },
+  },
+  {
     name: "deploys_weeks",
     description:
       "The last `days` days against the same number of days before: deploys, failure rate, rollbacks (deploys weeks --json). Read-only, from the local journal.",

@@ -67,6 +67,7 @@ case "\$*" in
   "history vercel:app-web 10 --json") [ -n "\${FAKE_NEW_CLI:-}" ] || exit 1
     echo "[{\"when\":\"x\",\"state\":\"READY\",\"at\":$((now - 7200))},{\"when\":\"y\",\"state\":\"ERROR\",\"at\":$((now - 3600))},{\"when\":\"z\",\"state\":\"BUILDING\",\"at\":$((now - 60))}]" ;;
   "notes app-web") printf '## app-web\\n- New billing page (#12) – Ana\\n- Faster search – Ben\\n\\nDependency updates:\\n- Bump jq – dependabot\\n' ;;
+  "sessions --json"|"sessions --hours 3 --repo acme/web --json") echo '{"summary":{"mergedLastHour":2,"waiting":1,"stuck":0,"open":0},"sessions":[]}' ;;
   "notes broken") printf '\033[31mpartial notes\033[0m\n'; echo "Error: GitHub rate limit" >&2; exit 1 ;;
   "notes "*) exit 1 ;;
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;

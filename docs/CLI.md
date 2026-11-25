@@ -28,6 +28,8 @@ deploys preview <project> [--json]       # what a production deploy would do: co
 deploys timeline [--days 3] [--project <name>] [--limit 50] [--json]   # what happened, newest day first: deploys, failures, rollbacks, forced starts (from the journal, UTC; reads only)
 deploys recovery [--days 30] [--project <name>] [--json]   # how long a failure lasted until the next deploy of that project; an outage without a later deploy is "open"
 deploys health [--days 30] [--project <name>] [--no-ci] [--json]   # 0-100 per project, worst first (formula below); CI is read from GitHub/GitLab, --no-ci stays offline
+deploys sessions [--hours 6] [--repo <owner/name>] [--json]   # Claude Code cloud sessions on GitHub: merged (a slot is free), closed, open, waiting (pull request open for `wait` min), stuck (no change for `idle` min), pushed (branch without pull request); reads only
+deploys sessions add|remove <owner/name> | repos | set prefix|wait|idle|hours <value>   # the watched repos and settings, in sessions.json in the config folder (prefix claude/, wait 3, idle 20, hours 6)
 deploys weeks [--days 7] [--project <name>] [--json]   # the last --days days against the same number before: deploys, failure rate, typical recovery, open failures (from the journal; reads only)
 deploys export [--format csv|json] [--what journal|costs|all] [--days 30] [--project <name>] [--out <file>]   # journal and Vercel costs with a fixed schema (below); secrets in details masked, files 0600
 deploys streak [--days 90] [--project <name>] [--json]   # deploys in a row without a failure per project: now and longest (from the journal; reads only)

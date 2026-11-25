@@ -76,6 +76,7 @@ No key is ever printed.
   deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
   deploys when [\-\-days 90] [\-\-by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
   deploys health [\-\-days 30] [\-\-project <p>] [\-\-no\-ci]   0\-100 per project from failures, recovery, age of the last deploy, CI
+  deploys sessions [\-\-hours 6] [\-\-json] | add <owner/repo>   Claude cloud sessions on GitHub: merged, waiting, stuck
   deploys weeks [\-\-days 7] [\-\-project <p>]       the last days against the same number before: deploys, failure rate, recovery
   deploys export [\-\-format csv|json] [\-\-what journal|costs|all] [\-\-days 30] [\-\-out <file>]   journal and costs, fixed columns, secrets masked
   deploys doctor \-\-fix [\-\-json]             what to do about each problem (shown only, nothing is run)

@@ -582,6 +582,8 @@ struct SettingsView: View {
         s.pendingDeployAll = true
     }
 
+    func applicationDidFinishLaunching(_ notification: Notification) { SessionsWatch.shared.start() }
+
     func attach(_ s: Store) {
         guard store !== s else { return }
         store = s
@@ -682,6 +684,8 @@ struct DeployCenterApp: App {
         WindowGroup(L("Project", "Projekt"), id: "project", for: String.self) { $key in
             ProjectWindow(store: store, key: key ?? "")
         }
+        // Claude Code cloud sessions on GitHub: done, waiting, stuck (app/Sessions.swift).
+        Window(L("Cloud Sessions", "Cloud-Sessions"), id: "sessions") { SessionsView() }
         Settings { SettingsView(store: store) }
         MenuBarExtra(isInserted: $showMenuBar) {
             MenuBarContent(store: store)
@@ -721,6 +725,7 @@ struct MenuBarContent: View {
     @AppStorage("onlyChanged") private var onlyChanged = false
     @AppStorage("showAll") private var showAll = false
     @AppStorage("perfIndicator") private var perfIndicator = true
+    @ObservedObject private var sessions = SessionsWatch.shared
 
     private func openMain() { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
 
@@ -832,6 +837,7 @@ struct MenuBarContent: View {
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
         }
         .keyboardShortcut("o")
+        Button(sessions.menuTitle) { openWindow(id: "sessions"); NSApp.activate(ignoringOtherApps: true) }
         if w.projects > 0 && !store.observer {
             Button(L("Deploy everything with changes …", "Alles mit Änderungen deployen …")) {
                 openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)

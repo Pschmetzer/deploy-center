@@ -123,6 +123,8 @@ jobs:
         run: bash tests/bughunt-tests.sh
       - name: Health, weeks and export tests
         run: bash tests/health-tests.sh
+      - name: Cloud session tests (deploys sessions)
+        run: bash tests/sessions-tests.sh
       - name: Preview tests (deploys preview)
         run: bash tests/preview-tests.sh
       - name: Performance guard tests (perf status, gate, clean, the hook)
@@ -246,6 +248,8 @@ jobs:
         run: bash tests/bughunt-tests.sh
       - name: Health, weeks and export tests
         run: bash tests/health-tests.sh
+      - name: Cloud session tests (deploys sessions)
+        run: bash tests/sessions-tests.sh
       - name: Preview tests
         run: bash tests/preview-tests.sh
       - name: Performance guard tests
