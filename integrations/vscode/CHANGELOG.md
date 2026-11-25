@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0
 
 - The status bar shows this month's Vercel charges (`deployCenter.showCosts`), and `Deploys closed` or `Deploy window open` when `window.json` has closed times.
 - **Preview a Rollback**: what a rollback would go back to, read from the deploy history; it changes nothing.
