@@ -58,5 +58,12 @@ else fail "fake json is the same as before" "$(diff <(echo "$got") "$golden" | h
 n="$(printf '%s' "$got" | jq length)"; [ "$n" = 9 ] && ok "all 9 projects are in the list" || fail "all projects listed" "$n"
 [ "$(printf '%s' "$got" | jq -r '.[] | select(.name=="e-bitb") | .noRepo')" = "the git host of bitbucket.org/acme/app is not supported" ] \
   && ok "an unsupported host is named" || fail "an unsupported host is named" "see the golden file"
+# nonblank on a big list must be linear: "${x//[[:space:]]/}" took 20 s for 80 KB in bash 3.2 and hung `deploys changed` with 200 projects.
+nb="$(awk '/^nonblank\(\)/' deploys)"; eval "$nb"
+big="$(jq -n '[range(3000) | {a:"x", b:"y", c:[1,2,3]}]')"
+t0=$SECONDS; nonblank "$big"; rcb=$?; dt=$((SECONDS - t0))
+[ "$rcb" = 0 ] && [ "$dt" -le 2 ] && ok "nonblank on a ${#big}-byte list is quick (${dt}s)" || fail "nonblank is quick" "rc=$rcb after ${dt}s"
+nonblank "$(printf ' \n\t ')" && fail "nonblank: whitespace only is blank" "said not blank" || ok "nonblank: whitespace only is blank"
+nonblank "" && fail "nonblank: empty is blank" "said not blank" || ok "nonblank: empty is blank"
 [ "$fails" = 0 ] || { echo "$fails failed"; exit 1; }
 echo "all ok"

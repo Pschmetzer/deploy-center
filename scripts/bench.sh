@@ -54,18 +54,30 @@ for t in jq date tr sed; do
   chmod +x "$w/cnt-$t"
 done
 
+# One run with stdin closed and a time limit (BENCH_TIMEOUT seconds, default 120): a command that waits for
+# input or for the network must end the table, not hang the CI job. Returns 124 when it was stopped.
+limited() {
+  local out="$1" err="$2" pid wd rc; shift 2
+  "$@" < /dev/null > "$out" 2> "$err" & pid=$!
+  ( sleep "${BENCH_TIMEOUT:-120}"; kill -TERM "$pid" 2>/dev/null; sleep 2; kill -KILL "$pid" 2>/dev/null ) >/dev/null 2>&1 & wd=$!
+  wait "$pid" 2>/dev/null; rc=$?
+  kill "$wd" 2>/dev/null; wait "$wd" 2>/dev/null
+  [ "$rc" -lt 128 ] || rc=124
+  return "$rc"
+}
+
 run() {  # run <label> <deploys arguments...>: the time without counting, then the starts with counting
   local label="$1"; shift
   local t0 t1 ms c
   export PATH="$w/bin:$PATH" DEPLOYS_CONFIG="$w/cfg" DEPLOYS_DIR="$w/dd" BENCH_N="$n" HOME="$w" NO_COLOR=1
   t0="$(date +%s%N 2>/dev/null)"; case "$t0" in *N|"") t0="$(python3 -c 'import time;print(int(time.time()*1e9))')" ;; esac
-  "$w/dd/deploys" "$@" > "$w/out.$label" 2>"$w/err.$label"; local rc=$?; [ -z "${BENCH_SHOW_ERR:-}" ] || head -3 "$w/err.$label" >&2
+  limited "$w/out.$label" "$w/err.$label" "$w/dd/deploys" "$@"; local rc=$?; [ -z "${BENCH_SHOW_ERR:-}" ] || head -3 "$w/err.$label" >&2
   t1="$(date +%s%N 2>/dev/null)"; case "$t1" in *N|"") t1="$(python3 -c 'import time;print(int(time.time()*1e9))')" ;; esac
   ms=$(( (t1 - t0) / 1000000 ))
   # The counting pass: the stand-ins first on PATH, named as the real tools.
   mkdir -p "$w/cbin"; for t in jq date tr sed; do [ -x "$w/cnt-$t" ] && ln -sf "$w/cnt-$t" "$w/cbin/$t"; done
   find "$w/count" -type f -delete
-  PATH="$w/cbin:$PATH" "$w/dd/deploys" "$@" >/dev/null 2>&1
+  PATH="$w/cbin:$PATH" limited /dev/null /dev/null "$w/dd/deploys" "$@"
   c=""
   for t in jq date tr sed; do c="$c $t=$(find "$w/count" -name "$t.*" | wc -l | tr -d ' ')"; done
   printf '%-28s %6d ms  rc=%s  starts:%s\n' "$label" "$ms" "$rc" "$c"
