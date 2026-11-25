@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.14.0 - 2026-11-25
+
+### Highlights
+
+- Performance guard: how full the Mac is as a green, yellow or red dot in the menu bar, heavy checks that wait for room (`deploys perf gate` and a Claude Code hook), hung and orphaned process trees stopped, Docker stacks stopped and woken with a click
+- Vercel token in the keychain (`deploys vercel set-key`); costs and the budget brake read Vercel charges again
+- New commands: `deploys preview`, `domains`, `forecast`, `env-diff`, `group`, `prepare` and `self-update --check`; eight more read-only MCP tools
+- Mac app: owner check asks for Touch ID for more actions; the menu bar says what waits and what failed
+- Faster and steadier with hundreds of projects (`deploys changed` no longer hangs on macOS bash 3.2)
+
+### All changes
+
 - Mac app: the performance guard's green, yellow or red dot now shows in the menu bar (it is drawn into the icon; a second image next to it was dropped by macOS).
 
 - Hook sites: a name that cannot be looked up is refused instead of passed on to curl unchecked (use `--allow-private` to keep the old way); the private-address list now also covers 198.18.0.0/15, multicast and reserved IPv4, NAT64, 6to4, Teredo, documentation and site-local IPv6.
