@@ -6,7 +6,7 @@ enum LogTools {
     /// Words that mark a failing line in the logs of npm, pnpm, tsc, pip, Docker, Vercel and Render.
     /// Matched as whole words, so `ErrorBoundary.tsx` or `onError` is not a failure.
     private static let errorPattern = try! NSRegularExpression(
-        pattern: #"(?<![\w/-])(error|errors|failed|failure|fatal|exception|traceback)(?![\w/-]|\.\w)|\berr!|cannot find|not found|exited with \d+"#,
+        pattern: #"(?<![\w/-])(error|errors|failed|failure|fatal|exception|traceback)(?![\w/-]|\.\w)|\berr!|cannot find|not found|exited with (?:code |status )?(?!0+\b)\d+"#,
         options: [.caseInsensitive])
     /// Good news and noise that contain those words.
     private static let harmless = try! NSRegularExpression(

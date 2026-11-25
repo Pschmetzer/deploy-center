@@ -252,7 +252,9 @@ struct PhoneLinkSettings: View {
                 .disabled(hasGitHub)
                 .help(L("It can usually push code and run workflows; the iPhone app only reads commits. Off, the phone shows no commit counts.",
                         "Es darf meist Code pushen und Workflows starten; die iPhone-App liest nur Commits. Aus: das iPhone zeigt keine Commit-Zahlen."))
-            Button(L("Show a QR code for the iPhone …", "QR-Code fürs iPhone zeigen …")) { qr = true }
+            Button(L("Show a QR code for the iPhone …", "QR-Code fürs iPhone zeigen …")) {
+                Task { if await OwnerCheck.confirm(L("show the QR code with your keys", "den QR-Code mit deinen Schlüsseln zeigen")) { qr = true } }
+            }
                 // Demo mode is for recordings, and the code holds every key.
                 .disabled(demoMode)
                 .help(demoMode ? L("Not in demo mode: the code holds your keys.", "Nicht im Demo-Modus: Der Code enthält deine Schlüssel.") : "")

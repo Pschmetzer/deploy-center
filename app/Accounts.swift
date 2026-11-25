@@ -119,7 +119,8 @@ struct AccountsCard: View {
                                 Spacer()
                                 if n != active {
                                     Button(L("Switch", "Wechseln")) {
-                                        Task { message = await Accounts.activate(host: h.id, label: n); tick += 1; if message == nil, let p = Platform.allCases.first(where: { $0.cli == h.id }) { await store.load(p, fresh: true) } }
+                                        Task { guard await OwnerCheck.confirm(L("switch the \(h.id) account to \(n)", "das \(h.id)-Konto auf \(n) umschalten")) else { return }
+                                            message = await Accounts.activate(host: h.id, label: n); tick += 1; if message == nil, let p = Platform.allCases.first(where: { $0.cli == h.id }) { await store.load(p, fresh: true) } }
                                     }
                                 }
                                 Button(role: .destructive) { Accounts.remove(host: h.id, label: n); tick += 1 } label: { Image(systemName: "trash") }
