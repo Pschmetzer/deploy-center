@@ -205,7 +205,7 @@ fly_set_key() {
   case "$key" in "FlyV1 "*) [[ "${key#FlyV1 }" != *[[:space:]]* ]] || die "That does not look like a Fly.io token" ;; *[[:space:]]*) die "That does not look like a Fly.io token" ;; esac
   case "$key" in *\'*|*\"*|*\\*|*[[:cntrl:]]*) die "That does not look like a Fly.io token" ;; esac
   ( FLY_API_TOKEN="$key"; key_of() { printf '%s' "$FLY_API_TOKEN"; }; fly_apps >/dev/null ) || die "Fly.io did not accept that token; nothing was saved"
-  printf 'add-generic-password -U -a %s -s %s -w %s\n' "${USER:-$(id -un)}" "$FLY_KEYCHAIN" "$key" | security -i >/dev/null \
+  printf 'add-generic-password -U -a %s -s %s -w "%s"\n' "${USER:-$(id -un)}" "$FLY_KEYCHAIN" "$key" | security -i >/dev/null \
     || die "The token works, but could not be saved in the keychain"
   echo "Fly.io token saved and working."
 }

@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Tests: the VS Code test that registers the commands no longer fails now and then on Linux (the temp folder was removed while the CLI still wrote into it); removing it is retried.
+- Fix: `deploys fly set-key` saved a `FlyV1 …` token with its space unquoted, so the keychain kept only `FlyV1`; it is quoted now.
 - Widgets: the saving ("≈ $12/mo saved") and the times follow the language of the app, not the system language, as the texts do.
 - Autofix: the hand-over caps (default 6 a day, 2 per project) can be set for good in `~/.config/deploys/autofix-limits.json` (`{"perDay": 20, "perProject": 5}`); `0` means no cap. The environment variables still win.
 - Guard: the notification says why auto-deploy was turned off ("its allowance ended", or "auto-deploy was on and no allowance covers it") and what went wrong when a switch failed (the first error, short, tokens masked); `guard status --json` has a `reason` per action.
