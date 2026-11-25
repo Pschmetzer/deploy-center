@@ -57,6 +57,7 @@ t332() {  # t332 <commit the review approved>
   ( c332="$1"; gh() { case "$*" in
            *commits/s1/pulls*) echo '[{"number":5,"html_url":"https://x/5","head":{"sha":"h2"},"labels":[]}]' ;;
            *pulls/5/reviews*) echo '[{"user":{"login":"rev"},"state":"APPROVED","submitted_at":"2026-01-01T00:00:00Z","commit_id":"'"$c332"'"}]' ;;
+           *collaborators*) echo '{"role_name":"write"}' ;;
            *issues*) echo '[]' ;;
            *) return 1 ;;
          esac; }
