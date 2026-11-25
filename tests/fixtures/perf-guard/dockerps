@@ -1,0 +1,5 @@
+aaaaaaaaaaaa1	supabase_db_shop	running	shop		/nonexistent-perf-test/shop	127.0.0.1:54322->5432/tcp
+bbbbbbbbbbbb1	supabase_auth_shop	running	shop		/nonexistent-perf-test/shop	
+cccccccccccc1	notes-pg	running				127.0.0.1:54361->5432/tcp
+dddddddddddd1	cache-redis	running				127.0.0.1:6380->6379/tcp
+eeeeeeeeeeee1	old-pg	exited				
