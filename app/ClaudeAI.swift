@@ -35,11 +35,20 @@ enum ClaudeAI {
 
     /// A token limit as people write it: "1000000", "1.000.000", "1 000 000", "500k", "1 Mio", "2m"; nil when it is not a positive number (IDEEN-11 257).
     nonisolated static func parseCap(_ text: String) -> Int? {
-        var t = text.lowercased().filter { !$0.isWhitespace && $0 != "." && $0 != "," && $0 != "'" && $0 != "_" }
+        var t = text.lowercased().filter { !$0.isWhitespace }
         var mult = 1
         for (suffix, m) in [("mio", 1_000_000), ("m", 1_000_000), ("k", 1_000), ("t", 1_000)] where t.hasSuffix(suffix) {
             t.removeLast(suffix.count); mult = m; break
         }
+        // "1,5m" and "1.5 Mio" are decimals; "1.000.000" and "500.000k" are thousands groups.
+        if mult > 1, t.range(of: #"^\d+[.,]\d{1,2}$"#, options: .regularExpression) != nil {
+            let parts = t.split(whereSeparator: { $0 == "." || $0 == "," })
+            if let a = Int(parts[0]), let b = Int(parts[1]), a <= Int.max / mult / 2 {
+                let v = a * mult + b * mult / (parts[1].count == 1 ? 10 : 100)
+                return v > 0 ? v : nil
+            }
+        }
+        t = t.filter { $0 != "." && $0 != "," && $0 != "'" && $0 != "_" }
         guard let n = Int(t), n > 0, n <= Int.max / mult else { return nil }
         return n * mult
     }

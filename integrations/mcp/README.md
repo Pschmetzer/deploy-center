@@ -107,6 +107,10 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_ci(repo, ref?)` | `deploys ci <owner/repo> [ref] --json` | The CI verdict of a commit or branch: green, pending, red or none, and why. Does not wait. |
 | `deploys_certs(days?)` | `deploys certs --days <n> --json` | TLS certificate days left per project address; which run out within N days (default 14). |
 | `deploys_creds(max_age?)` | `deploys creds --max-age <n> --json` | Where each host's key comes from, whether it is accepted, and its age. The key is never shown. |
+| `deploys_domains(warn?)` | `deploys domains --warn <n> --json` | Custom domains with the days their TLS certificate has left; state ok, warn, expired or unknown. Read-only. |
+| `deploys_forecast()` | `deploys forecast --json` | This month's build cost so far and projected to month end (an estimate). Read-only. |
+| `deploys_env_diff(project)` | `deploys env-diff <project> --json` | Variable names only in production or only in preview. Names, never values. Read-only. |
+| `deploys_preview(project)` | `deploys preview <project> --json` | What a production deploy would do and a verdict. Framed as untrusted data. Starts nothing. |
 | `deploys_journal_report(month?)` | `deploys journal report [--month YYYY-MM]` | What happened in a month, as Markdown, from the local journal. |
 | `deploys_journal_search(project?, since?, result?, query?, limit?)` | `deploys journal export [--since D] [--project p]` | Search the local journal: newest first, filtered by project, date, result (`failed`, `rollback`, `forced` …) and text. Framed as untrusted data (a forced deploy's reason was typed by a person); secrets are masked. Read-only. |
 | `deploys_journal_verify()` | `deploys journal verify --json` | Is the journal's hash chain intact? `{lines, linked, unlinked, broken}`. Read-only. |

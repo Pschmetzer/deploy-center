@@ -59,7 +59,7 @@ expect "the token is not in any logged call" "$(grep -c 'fm_secret_token_123' "$
 # set-key: tried first, then saved through `security -i` (the token on stdin, never an argument).
 : > "$CALLS"
 expect "set-key saves a working token" "$(printf 'fm_new_token\n' | fly_set_key 2>&1 | tail -n 1)" "Fly.io token saved and working."
-expect "set-key: the token went to security on stdin" "$(grep -c '^security -i STDIN\[add-generic-password .* -s deploy-center-fly -w fm_new_token\]' "$CALLS")" "1"
+expect "set-key: the token went to security on stdin" "$(grep -c '^security -i STDIN\[add-generic-password .* -s deploy-center-fly -w "fm_new_token"\]' "$CALLS")" "1"
 expect "set-key: and was in no argument" "$(grep -c '^security add' "$CALLS"):$(grep '^curl' "$CALLS" | grep -c fm_new_token)" "0:0"
 : > "$CALLS"
 expect "set-key refuses a token Fly.io does not take" "$(printf 'fm_bad\n' | CURLSTUB=401 fly_set_key 2>&1 | tail -n 1 | grep -c 'nothing was saved'):$(grep -c '^security -i' "$CALLS")" "1:0"

@@ -46,5 +46,13 @@ export RAILWAY_API_TOKEN='rw_a"b\c'
 try railway_gql 'query{x}' >/dev/null
 expect "railway: a quote and a backslash are escaped in the config" "$(grep -c 'Bearer rw_a\\"b\\\\c"$' "$CFGSEEN")" "1"
 
+# fly: "FlyV1 fm2_x" has a space, so the keychain line quotes it (security -i splits on spaces).
+printf '#!/bin/bash\ncat > "$SECSEEN"\n' > "$tmp/bin/security"; chmod +x "$tmp/bin/security"
+# shellcheck source=../../providers/fly.sh
+. ./providers/fly.sh
+fly_apps() { echo '{"apps":[]}'; }
+echo 'FlyV1 fm2_abc' | SECSEEN="$tmp/sec" fly_set_key >/dev/null 2>&1
+expect "fly: the token with a space is quoted for security -i" "$(grep -c -- '-w "FlyV1 fm2_abc"$' "$tmp/sec")" "1"
+
 echo
 [ "$fails" = 0 ] && echo "All key-quoting tests passed." || { echo "$fails failed."; exit 1; }

@@ -15,6 +15,11 @@ import AppKit
     expect("cap: dotted", ClaudeAI.parseCap("1.000.000") ?? 0, 1_000_000)
     expect("cap: Mio", ClaudeAI.parseCap("2 Mio") ?? 0, 2_000_000)
     expect("cap: k", ClaudeAI.parseCap("500k") ?? 0, 500_000)
+    expect("cap: decimal comma", ClaudeAI.parseCap("1,5m") ?? 0, 1_500_000)
+    expect("cap: decimal Mio", ClaudeAI.parseCap("1.5 Mio") ?? 0, 1_500_000)
+    expect("cap: thousands k", ClaudeAI.parseCap("500.000k") ?? 0, 500_000_000)
+    let cut = (["-----BEGIN PRIVATE KEY-----"] + (0..<100).map { "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC\($0)" } + ["-----END PRIVATE KEY-----"] + (0..<50).map { "error line \($0)" }).joined(separator: "\n")
+    expect("prompt: cut inside a key keeps no key", LogTools.claudePrompt(name: "x", repo: nil, ref: nil, sha: nil, message: nil, log: cut).contains("MIIEvQ"), false)
     expect("cap: junk", ClaudeAI.parseCap("abc") == nil && ClaudeAI.parseCap("0") == nil && ClaudeAI.parseCap("") == nil, true)
     expect("bearer masked", LogTools.maskSecrets("Authorization: Bearer abc.def-123456"), "Authorization: Bearer [HIDDEN]")
     for k in ["shpat_0123456789abcdef0123", "hf_abcdefghijklmnopqrstuvwx", "gsk_abcdefghijkl", "r8_abcdefghijkl", "ntn_abcdefghijkl", "nfp_abcdefghijkl", "fo1_abcdefghijkl", "pscale_tkn_abcdefghij", "napi_abcdefghijkl", "123456789:ABCdefGHIjklMNOpqrSTUvwxYZ012345678"] {
