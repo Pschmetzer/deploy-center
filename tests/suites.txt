@@ -30,3 +30,4 @@ tests/health-tests.sh
 tests/examples-tests.sh
 tests/sessions-tests.sh
 tests/localsessions-tests.sh
+tests/clean-tests.sh

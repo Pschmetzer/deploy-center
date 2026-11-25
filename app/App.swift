@@ -665,6 +665,7 @@ struct DeployCenterApp: App {
             .windowResizability(.contentMinSize)
         .commands {
             WindowCommands()
+            DiskCleanCommand()
             // Edit → Find (⌘F): the build log's find bar. In the main window ⌘F still goes to the search.
             TextEditingCommands()
             // View menu: demo mode without opening Settings (⌥⌘D is the system's Dock shortcut).
@@ -691,6 +692,8 @@ struct DeployCenterApp: App {
         }
         // Claude Code cloud sessions on GitHub: done, waiting, stuck (app/Sessions.swift).
         Window(L("Cloud Sessions", "Cloud-Sessions"), id: "sessions") { SessionsView() }
+        // Free disk space: a report of old worktrees, deleted only after a click and a confirmation.
+        Window(L("Free Disk Space", "Speicher freigeben"), id: "clean") { DiskCleanView() }
         Settings { SettingsView(store: store) }
         MenuBarExtra(isInserted: $showMenuBar) {
             MenuBarContent(store: store)

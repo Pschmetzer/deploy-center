@@ -68,6 +68,8 @@
 #   deploys recovery [--days 30] [--project <p>]   how long a failure lasted until the next deploy
 #   deploys streak [--days 90] [--project <p>]   deploys in a row without a failure, per project
 #   deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
+#   deploys clean [--root <dir>] [--days 2] [--worktrees] [--min-free <GB>] [--yes]   free disk space: build output in old worktrees (and with --worktrees merged, unchanged worktrees); a report without --yes
+#   deploys clean schedule on|off|status [--min-free 60]   a daily cleanup of build output when the disk runs low
 #   deploys when [--days 90] [--by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
 #   deploys health [--days 30] [--project <p>] [--no-ci]   0-100 per project from failures, recovery, age of the last deploy, CI
 #   deploys local-sessions [--json] | stop <pid> --yes | set <key> <n>   Claude Code sessions on this Mac; tasks started together, twins (docs/LOCAL-SESSIONS.md)
@@ -476,6 +478,9 @@ if [ -f "$LIB_DIR/insights.sh" ]; then . "$LIB_DIR/insights.sh"; fi
 if [ -f "$LIB_DIR/health.sh" ]; then . "$LIB_DIR/health.sh"; fi
 # shellcheck source=lib/export.sh
 if [ -f "$LIB_DIR/export.sh" ]; then . "$LIB_DIR/export.sh"; fi
+# clean (lib/clean.sh): disk space held by old git worktrees.
+# shellcheck source=lib/clean.sh
+if [ -f "$LIB_DIR/clean.sh" ]; then . "$LIB_DIR/clean.sh"; fi
 # streak and note (lib/notes.sh; it uses INSIGHTS_JQ of lib/insights.sh).
 # shellcheck source=lib/notes.sh
 if [ -f "$LIB_DIR/notes.sh" ]; then . "$LIB_DIR/notes.sh"; fi
@@ -3913,6 +3918,9 @@ case "${1:-} ${2:-}" in
   "sessions "*)
     declare -F sessions_main >/dev/null || die "lib/sessions.sh is not next to deploys."
     sessions_main "${@:2}" ;;
+  "clean "*)
+    declare -F clean_main >/dev/null || die "lib/clean.sh is not next to deploys."
+    clean_main "${@:2}" ;;
 
   "streak "*)
     declare -F streak_main >/dev/null || die "lib/notes.sh is not next to deploys."
