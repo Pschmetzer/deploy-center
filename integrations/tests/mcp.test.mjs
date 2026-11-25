@@ -71,7 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_domains", "deploys_env_diff", "deploys_explain", "deploys_freeze", "deploys_guard_status", "deploys_history", "deploys_forecast", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_preview", "deploys_providers", "deploys_recovery", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status", "deploys_timeline"];
+const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_domains", "deploys_env_diff", "deploys_explain", "deploys_forecast", "deploys_freeze", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_preview", "deploys_providers", "deploys_recovery", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status", "deploys_timeline"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
