@@ -70,6 +70,8 @@ PAGES = [
      "deploys guard notices when auto-deploy comes back on by itself and turns it off again, and allows auto-deploy for a while on purpose."),
     ("perf", "Performance guard", "Using it", "docs/PERF.md",
      "deploys perf shows how full the Mac is, holds heavy checks like tsc or next build until there is room, and finds orphaned dev processes."),
+    ("local-sessions", "Local session counter", "Using it", "docs/LOCAL-SESSIONS.md",
+     "deploys local-sessions counts the Claude Code sessions on this Mac and finds tasks started together that belong in one to three sessions."),
     ("savings", "Savings: simulate and ledger", "Using it", "docs/SAVINGS.md",
      "deploys simulate estimates what auto-deploy would cost a month, deploys ledger what turning it off saved, on Vercel and Render."),
     ("team", "Team mode", "Using it", "docs/TEAM.md",

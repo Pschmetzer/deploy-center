@@ -716,6 +716,20 @@ const tools = [
     run: (a) => textOf(a.consumers === true ? ["perf", "consumers", "--json"] : ["perf", "status", "--json"]),
   },
   {
+    name: "deploys_local_sessions",
+    description:
+      "The Claude Code sessions running on this Mac (deploys local-sessions --json): count and threshold (level green/yellow), per session pid, title, " +
+      "folder, state, idle minutes, CPU and RAM; `bursts` (more than `bundleTo` sessions on one repo, each created within `burstMin` minutes of the one before: tasks " +
+      "that belong in one to three sessions; `extra` are the ones beyond), `duplicates` (the same title twice), `sameFolder` (two sessions in one " +
+      "folder), `idle` (no activity for over an hour) and `hint` (\"bundle tasks\"). 20-30 sessions at once are fine. The number of running cloud sessions cannot be read on the Mac (`cloud.count` null); " +
+      "deploys_sessions shows cloud sessions as GitHub sees them. Read-only. Check it before starting several sessions at once: " +
+      "tasks started together go to one to three sessions that work them one after another, not one session each. Ending a session stays the human's click.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Claude Code sessions on this Mac", ...READ },
+    json: true,
+    run: () => textOf(["local-sessions", "--json"]),
+  },
+  {
     name: "deploys_health",
     description:
       "A 0–100 health score per project, worst first, from the local journal and the CI verdicts (deploys health --json). Read-only. `ci: false` skips reading CI, which is faster. Use it to answer \"which project needs attention?\".",
