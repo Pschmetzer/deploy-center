@@ -77,6 +77,10 @@ case "\$*" in
   "forecast --json") echo '{"month":"2026-11","spentUsd":4.2,"projectedUsd":9.5,"estimate":true,"warning":null}' ;;
   "env-diff app-web --json") echo '{"project":"app-web","platform":"vercel","same":false,"onlyProduction":["API_URL"],"onlyPreview":[]}' ;;
   "preview app-web --json") echo '{"project":"app-web","verdict":"ok","commits":[{"message":"fix: typo"}]}' ;;
+  "health --days "*" --json"|"health --days "*" --no-ci --json") echo '{"projects":[{"name":"app-web","score":82}]}' ;;
+  "weeks --days "*" --json") echo '{"days":7,"deploys":{"now":3,"before":2}}' ;;
+  "streak --days "*" --json") echo '{"projects":[{"name":"app-web","now":4,"longest":9}]}' ;;
+  "when --days "*" --by "*" --json") echo "{\"by\":\"\$5\",\"buckets\":[]}" ;;
   "creds --max-age "*" --json") echo '[{"platform":"vercel","label":"Vercel","source":"keychain","accepted":true,"keyAgeDays":120,"rotate":true}]' ;;
   "journal report --month "*) printf '# Deploy Center: %s\n\n3 deploys.\n' "\$4" ;;
   "journal report") printf '# Deploy Center: this month\n\nNo journal yet.\n' ;;

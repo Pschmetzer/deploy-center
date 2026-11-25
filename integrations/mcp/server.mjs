@@ -699,6 +699,86 @@ const tools = [
     },
   },
   {
+    name: "deploys_health",
+    description:
+      "A 0–100 health score per project, worst first, from the local journal and the CI verdicts (deploys health --json). Read-only. `ci: false` skips reading CI, which is faster. Use it to answer \"which project needs attention?\".",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", minimum: 1, maximum: 365, default: 30, description: "How many days to look back (1–365, default 30)." },
+        project: { type: "string", description: "Only this project (optional)." },
+        ci: { type: "boolean", default: true, description: "Read CI verdicts too (default true; false is faster)." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "Health score per project", ...READ },
+    json: true,
+    run: (a) => {
+      const args = ["health", "--days", String(checkRange(a.days, "days", 30, 365))];
+      if (a.project !== undefined && a.project !== null) args.push("--project", checkProject(a.project));
+      if (a.ci === false) args.push("--no-ci");
+      return textOf([...args, "--json"], { timeoutMs: SLOW_TIMEOUT_MS });
+    },
+  },
+  {
+    name: "deploys_weeks",
+    description:
+      "The last `days` days against the same number of days before: deploys, failure rate, rollbacks (deploys weeks --json). Read-only, from the local journal.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", minimum: 1, maximum: 90, default: 7, description: "How many days to look back (1–90, default 7)." },
+        project: { type: "string", description: "Only this project (optional)." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "This period against the one before", ...READ },
+    json: true,
+    run: (a) => {
+      const args = ["weeks", "--days", String(checkRange(a.days, "days", 7, 90))];
+      if (a.project !== undefined && a.project !== null) args.push("--project", checkProject(a.project));
+      return textOf([...args, "--json"]);
+    },
+  },
+  {
+    name: "deploys_streak",
+    description:
+      "Deploys in a row without a failure per project, now and longest (deploys streak --json). Read-only, from the local journal.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", minimum: 1, maximum: 365, default: 90, description: "How many days to look back (1–365, default 90)." },
+        project: { type: "string", description: "Only this project (optional)." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "Deploys in a row without a failure", ...READ },
+    json: true,
+    run: (a) => {
+      const args = ["streak", "--days", String(checkRange(a.days, "days", 90, 365))];
+      if (a.project !== undefined && a.project !== null) args.push("--project", checkProject(a.project));
+      return textOf([...args, "--json"]);
+    },
+  },
+  {
+    name: "deploys_when",
+    description: "On which weekday or hour of the day (UTC) deploys failed more often (deploys when --json). Read-only, from the local journal.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "integer", minimum: 1, maximum: 365, default: 90, description: "How many days to look back (1–365, default 90)." },
+        by: { type: "string", enum: ["weekday", "hour"], default: "weekday", description: "Group by weekday or by hour of the day." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "When deploys fail", ...READ },
+    json: true,
+    run: (a) => {
+      if (a.by !== undefined && a.by !== "weekday" && a.by !== "hour") throw new ToolError("by must be weekday or hour.");
+      return textOf(["when", "--days", String(checkRange(a.days, "days", 90, 365)), "--by", a.by ?? "weekday", "--json"]);
+    },
+  },
+  {
     name: "deploys_freeze",
     description:
       "Are deploys closed right now by the closed times of window.json, and which times are set (deploys freeze status --json). Read-only: " +

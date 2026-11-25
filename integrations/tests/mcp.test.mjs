@@ -71,7 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_domains", "deploys_env_diff", "deploys_explain", "deploys_forecast", "deploys_freeze", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_preview", "deploys_providers", "deploys_recovery", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status", "deploys_timeline"];
+const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_domains", "deploys_env_diff", "deploys_explain", "deploys_forecast", "deploys_freeze", "deploys_guard_status", "deploys_health", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_preview", "deploys_providers", "deploys_recovery", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status", "deploys_streak", "deploys_timeline", "deploys_weeks", "deploys_when"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -223,6 +223,22 @@ check("env_diff refuses an option as project", r.error === true, r.text);
 writeFileSync(calls, "");
 r = await s.call("deploys_preview", { project: "app-web" });
 check("preview is framed as untrusted data", !r.error && callLog().trim() === "preview app-web --json" && /untrusted-data/.test(r.text), r.text + callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_health", { ci: false, project: "app-web" });
+check("health passes --no-ci and the project", !r.error && callLog().trim() === "health --days 30 --project app-web --no-ci --json" && JSON.parse(r.text).projects[0].score === 82, r.text + callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_weeks");
+check("weeks defaults to 7 days", !r.error && callLog().trim() === "weeks --days 7 --json", r.text + callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_streak", { days: 30 });
+check("streak passes days", !r.error && callLog().trim() === "streak --days 30 --json", r.text + callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_when", { by: "hour" });
+check("when groups by hour", !r.error && callLog().trim() === "when --days 90 --by hour --json", r.text + callLog());
+r = await s.call("deploys_when", { by: "minute" });
+check("when refuses an unknown grouping", r.error === true || /by/.test(r.text) && /must|one of/i.test(r.text), r.text);
+r = await s.call("deploys_streak", { project: "--yes" });
+check("streak refuses an option as project", r.error === true, r.text);
 writeFileSync(calls, "");
 r = await s.call("deploys_journal_report", { month: "2026-03" });
 check("journal report passes the month", !r.error && /2026-03/.test(r.text) && callLog().trim() === "journal report --month 2026-03", r.text + callLog());
