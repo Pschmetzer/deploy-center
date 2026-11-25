@@ -1,11 +1,14 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154  # CONFIG_DIR, REPOS, RED, PLAIN and the helpers come from `deploys`.
-# Vercel, through the `vercel` CLI login on this Mac (`vercel login`). Sourced by `deploys`.
+# Vercel, through the `vercel` CLI on this Mac. Sourced by `deploys`. Auth: VERCEL_TOKEN, else a
+# token in the keychain item deploy-center-vercel (`deploys vercel set-key`), else the CLI login
+# (`vercel login`). A token is preferred: the login is renewed by each CLI run, and several runs
+# at once can lose that race and open a browser login ("Authorize Device") nobody asked for.
 # The contract every provider fulfils is in docs/PROVIDERS.md. A Vercel project's id here is its
 # name: the API takes either, and every command people type uses the name.
 
 vercel_meta() {
-  printf '%s\n' '{"id":"vercel","label":"Vercel","noun":"project","defaultOn":true,"keyEnv":["VERCEL_TOKEN"],"keychain":null,"auth":"vercel CLI login","onDryRun":true,"caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":true}}'
+  printf '%s\n' '{"id":"vercel","label":"Vercel","noun":"project","defaultOn":true,"keyEnv":["VERCEL_TOKEN"],"keychain":null,"auth":"token (VERCEL_TOKEN or keychain), else vercel CLI login","onDryRun":true,"caps":{"off":true,"sha":true,"cancel":true,"rollback":true,"logs":true,"preview":true}}'
 }
 
 # Set up here: the CLI is installed, or projects are remembered. Under launchd's PATH the vercel
@@ -64,9 +67,26 @@ with_team() {
 # CLI then ends with 142 (SIGALRM). Without perl it runs as it is. Update notices stay off
 # stderr: they would be the line a failure is reported with.
 VERCEL_TIMEOUT="${DEPLOYS_VERCEL_TIMEOUT:-${DEPLOYS_CLI_TIMEOUT:-60}}"
+VERCEL_KEYCHAIN="deploy-center-vercel"
+# The token for the CLI: VERCEL_TOKEN, else the keychain item, else nothing (then the CLI login).
+# Never an argument (--token would show in ps); the caller hands it on in the environment.
+vercel_token() {
+  if [ -n "${VERCEL_TOKEN:-}" ]; then printf '%s' "$VERCEL_TOKEN"; return 0; fi
+  [ -n "${DEPLOYS_VERCEL_NO_KEYCHAIN:-}" ] && return 0
+  security find-generic-password -a "${USER:-$(id -un)}" -s "$VERCEL_KEYCHAIN" -w 2>/dev/null || true
+}
+# vercel_cli <args>: the vercel CLI with the token (when there is one) in its environment only.
+vercel_cli() {
+  local t; t="$(vercel_token)"
+  if [ -n "$t" ]; then VERCEL_TOKEN="$t" vercel "$@"; else vercel "$@"; fi
+}
+
 vercel_run() {
+  local t; t="$(vercel_token)"
   # A `vercel` shell function cannot be exec'd: deploys' own (cli_limit, which ends with 124) gets
-  # this limit; a test's stand-in is called as it is.
+  # this limit; a test's stand-in is called as it is. The token goes in the environment of the
+  # one command (an empty VERCEL_TOKEN would be ignored by the CLI, but is not set at all).
+  if [ -n "$t" ]; then local -x VERCEL_TOKEN="$t"; fi
   if [ "$(type -t vercel)" = function ]; then
     DEPLOYS_CLI_TIMEOUT="$VERCEL_TIMEOUT" NO_UPDATE_NOTIFIER=1 vercel "$@"
   elif command -v perl >/dev/null 2>&1; then
@@ -508,7 +528,19 @@ vercel_url() {
   fi
 }
 
-vercel_set_key() { die "Vercel uses the vercel CLI login, not a stored key. Run: vercel login (or set VERCEL_TOKEN)"; }
+# A token from vercel.com/account/settings/tokens (scope: the team, with an expiry), read from stdin.
+# Tried first, saved only when Vercel takes it: a typo must not replace a working token.
+vercel_set_key() {
+  local key
+  if [ -t 0 ]; then IFS= read -rs key || true; echo >&2; else IFS= read -r key || true; fi
+  key="$(printf "%s" "$key" | tr -d "\r" | sed "s/^[[:space:]]*//; s/[[:space:]]*\$//")"
+  [ -n "$key" ] || die "Pipe the token in: pbpaste | deploys vercel set-key"
+  case "$key" in *\'*|*\"*|*\\*|*[[:space:]]*|*[[:cntrl:]]*) die "That does not look like a Vercel token" ;; esac
+  ( VERCEL_TOKEN="$key" NO_UPDATE_NOTIFIER=1 vercel whoami </dev/null >/dev/null 2>&1 ) || die "Vercel did not accept that token; nothing was saved"
+  printf 'add-generic-password -U -a %s -s %s -w %s\n' "${USER:-$(id -un)}" "$VERCEL_KEYCHAIN" "$key" | security -i >/dev/null \
+    || die "The token works, but could not be saved in the keychain"
+  echo "Saved. Vercel commands now use this token instead of the CLI login."
+}
 
 # Written with printf, not jq: doctor has to work when jq is missing.
 vercel_doctor() {
@@ -517,14 +549,14 @@ vercel_doctor() {
   if type -P vercel >/dev/null 2>&1; then
     cli=true
     vercel api --help >/dev/null 2>&1 && vapi=true
-    vercel whoami >/dev/null 2>&1 && vlogin=true
+    vercel_cli whoami </dev/null >/dev/null 2>&1 && vlogin=true
   fi
   printf '{"vercelCli":%s,"vercelApi":%s,"vercelLoggedIn":%s}\n' "$cli" "$vapi" "$vlogin"
 }
 
 # Lines for `deploys where`.
 vercel_where() {
-  local vu; vu="$(vercel whoami 2>/dev/null | tail -n 1 || true)"
+  local vu; vu="$(vercel_cli whoami </dev/null 2>/dev/null | tail -n 1 || true)"
   printf '%-13s%s\n' "vercel team" "$(cat "$CONFIG_DIR/vercel-team" 2>/dev/null || echo "not chosen yet")" "vercel user" "${vu:-not logged in}"
 }
 
