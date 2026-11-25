@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Local session counter: `deploys local-sessions [--json]` lists the Claude Code sessions on this Mac (title, folder, idle time, CPU, RAM) and finds tasks that should have been bundled: more than 3 sessions on one repo, each started within 10 minutes of the one before, and the same task running twice; two sessions in one folder and sessions idle for over an hour are flagged too. The count turns yellow only at 30 (`deploys local-sessions set max-local|bundle-to|burst-min`). The menu shows the count with a green or yellow dot and a "Bundle tasks" menu with the extras; ending a session always asks first (`deploys local-sessions stop <pid> --yes`). Read-only MCP tool `deploys_local_sessions`. The number of running cloud sessions cannot be read on the Mac; `deploys sessions` shows them as GitHub sees them ([docs/LOCAL-SESSIONS.md](docs/LOCAL-SESSIONS.md)).
+- Performance guard: a Docker stack that is started again after an idle stop is left alone for 24 hours instead of being stopped again on the next pass.
+
 - Cloud sessions: `deploys sessions` and a "Cloud Sessions" window (menu bar → Cloud Sessions) show which Claude Code cloud sessions finished, wait or seem stuck, read from GitHub (session branches `claude/…`, their pull requests and the `Claude-Session` commit trailer). A Mac notification when sessions are merged ("room for 2 new ones"), when a pull request waits and when a session seems stuck. Repos to watch: `deploys sessions add <owner/name>` (kept in `sessions.json` in the config folder). New read-only MCP tool `deploys_sessions`.
 
 ## 0.14.0 - 2026-11-25
