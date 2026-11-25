@@ -104,7 +104,7 @@ $dummy 1 1:10:00 51200 S 0:01.00 ?? tsc --noEmit
 309 1 3:00:00 300000 S 0:10.00 ?? node /work/old/node_modules/.bin/vite
 310 1 3:00:00 300000 S 0:10.00 ?? node /work/w/node_modules/.bin/tsc -w
 311 1 3:00:00 900000 T 0:10.00 ?? node /work/dbg/node_modules/.bin/tsc
-312 1 40:00 300000 S 0:10.00 ?? /Users/dev/Library/Caches/ms-playwright/chromium-1/chrome-mac/Chromium.app/Contents/MacOS/Chromium --headless
+312 1 40:00 300000 S 0:10.00 ?? /Users/you/Library/Caches/ms-playwright/chromium-1/chrome-mac/Chromium.app/Contents/MacOS/Chromium --headless
 313 900 50:00 700000 S 1:00.00 ?? node /work/s/node_modules/.bin/tsc --noEmit
 900 1 5:00:00 1000 S 0:01.00 ttys002 /bin/zsh -l
 ROWS
