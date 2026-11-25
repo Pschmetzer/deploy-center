@@ -764,6 +764,51 @@ const tools = [
     run: (a) => jsonListOf(["creds", "--max-age", String(checkRange(a.max_age, "max_age", 90, 3650)), "--json"]),
   },
   {
+    name: "deploys_domains",
+    description:
+      "Custom domains (not the platform's own addresses) with the days their TLS certificate has left (deploys domains --json). Read-only. " +
+      "Returns {warnDays, domains:[{platform, name, host, daysLeft, state}], problems}; state is ok, warn, expired or unknown (host not reachable: unknown, not a failure). " +
+      "Certificate only, no registration lookup. It opens a connection to each host, so it can take a while.",
+    inputSchema: {
+      type: "object",
+      properties: { warn: { type: "integer", minimum: 1, maximum: 365, default: 30, description: "Warn when a certificate has fewer days left (1–365, default 30)." } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Custom domains and certificates", ...READ },
+    json: true,
+    run: (a) => jsonListOf(["domains", "--warn", String(checkRange(a.warn, "warn", 30, 365)), "--json"]),
+  },
+  {
+    name: "deploys_forecast",
+    description:
+      "This month's build cost so far, projected to month end and shared by project (deploys forecast --json). Read-only. " +
+      "The numbers are ESTIMATES: say so when you quote them. `warning` says when the projection is near the `budget` limit.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Build cost forecast (estimate)", ...READ },
+    json: true,
+    run: () => jsonListOf(["forecast", "--json"]),
+  },
+  {
+    name: "deploys_env_diff",
+    description:
+      "Environment variable NAMES that exist in production but not in preview, and the other way round, for one project (deploys env-diff --json). Read-only. " +
+      "Values are never read. Hosts without a preview/production split answer {exposed:false}. A preview build may miss the names listed under onlyProduction.",
+    inputSchema: { type: "object", properties: { project: projectProp }, required: ["project"], additionalProperties: false },
+    annotations: { title: "Production vs preview variable names", ...READ },
+    json: true,
+    run: (a) => jsonListOf(["env-diff", checkProject(a.project), "--json"]),
+  },
+  {
+    name: "deploys_preview",
+    description:
+      "What a production deploy of one project would do: waiting commits, files, risk check, matching rule, deploy window, budget and a verdict (deploys preview --json). " +
+      "Read-only, starts nothing. Use it before suggesting a deploy; deploying stays a separate step that the human confirms.",
+    inputSchema: { type: "object", properties: { project: projectProp }, required: ["project"], additionalProperties: false },
+    annotations: { title: "Preview of a deploy", ...READ },
+    // Commit texts and file names come from whoever pushed: framed as data.
+    run: async (a) => untrusted("deploys preview", await textOf(["preview", checkProject(a.project), "--json"], { mask: true })),
+  },
+  {
     name: "deploys_journal_report",
     description:
       "What happened in a month, as Markdown, from the local deploy journal (deploys journal report [--month YYYY-MM]). Read-only. " +
