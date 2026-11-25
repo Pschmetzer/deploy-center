@@ -23,7 +23,7 @@ beforeEach(() => {
 afterEach(() => {
   ctl?.dispose(); ctl = null;
   delete process.env.DEPLOYS_FAKE_ARGS_LOG;
-  rmSync(dir, { recursive: true, force: true });
+  rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
 async function ready(followMs = 5): Promise<Controller> {
