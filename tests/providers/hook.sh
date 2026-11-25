@@ -60,6 +60,7 @@ export PATH="$tmp/bin:$PATH" KCDIR="$tmp/keychain"
 # shellcheck source=../../providers/hook.sh
 . ./providers/hook.sh
 set +e
+hook_resolve() { echo 93.184.216.34; }   # the stand-in lookup: every name is public
 
 SECRET="https://hooks.example.com/deploy/s3cr3t-T0KEN-abc"
 leaks() { grep -c 's3cr3t' <<< "$1"; }
@@ -108,12 +109,20 @@ done
 for u in http://localhost:3000/x http://127.0.0.1/x "http://[::1]:8080/x"; do
   ( hook_check_url "$u" ) >/dev/null 2>&1; expect "plain http to $u is allowed (this Mac)" "$?" "0"
 done
-for u in https://169.254.169.254/latest https://metadata.google.internal/x https://10.0.0.5/h https://192.168.1.2/h https://172.16.0.1/h https://172.31.9.9/h https://127.0.0.2/h https://0.0.0.0/h https://2130706433/h https://0x7f.0.0.1/h https://017.0.0.1/h "https://[::1]/h" "https://[fd00:ec2::254]/h" "https://[fe80::1]/h" https://100.64.0.1/h https://intranet/h https://nas.local/h https://app.localhost/h; do
+for u in https://169.254.169.254/latest https://metadata.google.internal/x https://10.0.0.5/h https://192.168.1.2/h https://172.16.0.1/h https://172.31.9.9/h https://127.0.0.2/h https://0.0.0.0/h https://2130706433/h https://0x7f.0.0.1/h https://017.0.0.1/h "https://[::1]/h" "https://[fd00:ec2::254]/h" "https://[fe80::1]/h" https://100.64.0.1/h https://198.18.0.1/h https://198.19.255.1/h https://224.0.0.1/h https://255.255.255.255/h https://192.0.2.1/h "https://[ff02::1]/h" "https://[64:ff9b::808:808]/h" "https://[2002:7f00:1::]/h" "https://[fec0::1]/h" https://intranet/h https://nas.local/h https://app.localhost/h; do
   ( hook_check_url "$u" ) >/dev/null 2>&1; expect "https to $u is refused (private/metadata)" "$?" "1"
 done
 for u in https://hooks.example.com/x https://172.32.0.1/x https://8.8.8.8/x https://100.128.0.1/x https://api.github.com/x; do
   ( hook_check_url "$u" ) >/dev/null 2>&1; expect "https to $u is allowed" "$?" "0"
 done
+# A name with no lookup answer is refused (fail closed), unless private targets are allowed.
+hook_resolve() { :; }
+( hook_pin https://hooks.example.com/x ) >/dev/null 2>&1; expect "a name that cannot be looked up is refused" "$?" "1"
+( HOOK_ALLOW_PRIVATE=1 hook_pin https://hooks.example.com/x ) >/dev/null 2>&1; expect "... unless private targets are allowed" "$?" "0"
+hook_resolve() { echo 198.18.0.7; }
+( hook_pin https://hooks.example.com/x ) >/dev/null 2>&1; expect "a name that points into 198.18/15 is refused" "$?" "1"
+hook_resolve() { echo 93.184.216.34; }
+expect "a name with a public address is pinned" "$(hook_pin https://hooks.example.com/x)" 'resolve = "hooks.example.com:443:93.184.216.34"'
 ( HOOK_ALLOW_PRIVATE=1 hook_check_url https://10.0.0.5/h ) >/dev/null 2>&1; expect "private https with HOOK_ALLOW_PRIVATE" "$?" "0"
 hook_cli add priv "https://10.0.0.5/deploy/x" --allow-private >/dev/null 2>&1; expect "add --allow-private stores a private hook" "$?" "0"
 unset HOOK_ALLOW_PRIVATE; hook_cli remove priv >/dev/null 2>&1

@@ -25,6 +25,7 @@ out="$(env -u DEPLOYS_LIB PATH="$e2e/bin:/usr/bin:/bin" DEPLOYS_DIR="$p336" DEPL
 expect "336: open refuses a file:// address" "$rc:$(echo "$out" | grep -c 'no web address')" "1:1"
 
 # 334: a hook over http only to this machine, by its exact host.
+hook_resolve() { echo 93.184.216.34; }   # the stand-in lookup: every name is public
 bad=""
 for u in http://localhost.example.com/h http://127.0.0.1.example.test/h http://localhostx/h http://user@evil.test/h; do
   ( hook_check_url "$u" ) >/dev/null 2>&1 && bad="$bad $u"
