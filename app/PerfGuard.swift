@@ -159,7 +159,34 @@ final class PerfMonitor: ObservableObject {
         await refreshDocker(force: true)
     }
 
-    /// A small colored dot for the menu bar (not a template image, so the color stays).
+    /// The menu bar icon: the SF Symbol, and with a level a colored dot at its lower right. Without a level it stays a
+    /// template image (the menu bar tints it); with one it is drawn in the label color at draw time, so it still
+    /// follows a light or dark menu bar, and the dot keeps its color.
+    static func icon(_ symbol: String, level: PerfLevel?) -> NSImage {
+        let conf = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        guard let base = NSImage(systemSymbolName: symbol, accessibilityDescription: "Deploy Center")?.withSymbolConfiguration(conf) else {
+            return NSImage(size: NSSize(width: 16, height: 16))
+        }
+        guard let level else { base.isTemplate = true; return base }
+        let d: CGFloat = 7
+        let size = NSSize(width: base.size.width + d + 1, height: base.size.height)
+        let img = NSImage(size: size, flipped: false) { r in
+            let symRect = NSRect(x: 0, y: 0, width: base.size.width, height: base.size.height)
+            // The symbol in the label color: drawn, then colored over its own shape.
+            let tinted = NSImage(size: base.size, flipped: false) { rr in
+                base.draw(in: rr); NSColor.labelColor.set(); rr.fill(using: .sourceAtop); return true
+            }
+            tinted.draw(in: symRect)
+            let dot = NSRect(x: r.maxX - d, y: 0, width: d, height: d)
+            level.color.setFill(); NSBezierPath(ovalIn: dot).fill()
+            return true
+        }
+        img.isTemplate = false
+        img.accessibilityDescription = "Deploy Center – " + level.text
+        return img
+    }
+
+    /// A small colored dot for the menu (not a template image, so the color stays).
     static func dot(_ level: PerfLevel) -> NSImage {
         let img = NSImage(size: NSSize(width: 8, height: 8), flipped: false) { r in
             level.color.setFill(); NSBezierPath(ovalIn: r.insetBy(dx: 0.5, dy: 0.5)).fill(); return true

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Mac app: the performance guard's green, yellow or red dot now shows in the menu bar (it is drawn into the icon; a second image next to it was dropped by macOS).
+
 - Hook sites: a name that cannot be looked up is refused instead of passed on to curl unchecked (use `--allow-private` to keep the old way); the private-address list now also covers 198.18.0.0/15, multicast and reserved IPv4, NAT64, 6to4, Teredo, documentation and site-local IPv6.
 - Fix: since the Vercel token change, `deploys costs` read no Vercel charges and the budget brake of `deploy-changed` did not hold (the token helper was missing in the parallel cost reads). The keychain is also read once per run and never from the caller's input.
 - Vercel: `deploys vercel set-key` keeps a Vercel token in the keychain (`deploy-center-vercel`), and every `vercel` call of deploys gets it in its environment (never as an argument). The CLI login renews itself on each run; several runs at once could lose that race and open a browser "Authorize Device" page nobody asked for. Without a token the CLI login is used as before.

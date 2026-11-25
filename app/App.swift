@@ -693,7 +693,10 @@ struct DeployCenterApp: App {
             // Over the monthly budget at this pace: a dollar sign, unless something more urgent shows.
             let budget = UserDefaults.standard.double(forKey: "monthlyBudget")
             let overBudget = budget > 0 && (store.monthPace ?? 0) > budget
-            Image(systemName: active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : (overBudget ? "dollarsign.circle.fill" : "paperplane")))
+            // One image: the menu bar shows only the first image of the label, so the performance guard's dot is
+            // drawn into the icon (PerfMonitor.icon) instead of standing next to it.
+            Image(nsImage: PerfMonitor.icon(active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : (overBudget ? "dollarsign.circle.fill" : "paperplane")),
+                                            level: perfIndicator ? perf.level : nil))
                 .task { appDelegate.attach(store); store.boot(); PerfMonitor.shared.start() }
                 .modifier(OpensSettingsOnRequest(store: store))
                 .accessibilityLabel("Deploy Center")
@@ -701,7 +704,6 @@ struct DeployCenterApp: App {
                     : failed ? L("a deploy failed", "ein Deploy ist fehlgeschlagen")
                     : MenuBarSummary.text(waiting: n, failed: store.allItems.filter { Row.keyFigure($0) == .failed && !store.isHidden($0) }.count) ?? L("everything is live", "alles ist live"))
             if n > 0 { Text("\(n)") }
-            if perfIndicator, let lvl = perf.level { Image(nsImage: PerfMonitor.dot(lvl)) }
         }
     }
 }
