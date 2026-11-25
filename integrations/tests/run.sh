@@ -67,12 +67,13 @@ case "\$*" in
   "history vercel:app-web 10 --json") [ -n "\${FAKE_NEW_CLI:-}" ] || exit 1
     echo "[{\"when\":\"x\",\"state\":\"READY\",\"at\":$((now - 7200))},{\"when\":\"y\",\"state\":\"ERROR\",\"at\":$((now - 3600))},{\"when\":\"z\",\"state\":\"BUILDING\",\"at\":$((now - 60))}]" ;;
   "notes app-web") printf '## app-web\\n- New billing page (#12) – Ana\\n- Faster search – Ben\\n\\nDependency updates:\\n- Bump jq – dependabot\\n' ;;
+  "sessions --json"|"sessions --hours 3 --repo acme/web --json") echo '{"summary":{"mergedLastHour":2,"waiting":1,"stuck":0,"open":0},"sessions":[]}' ;;
   "notes broken") printf '\033[31mpartial notes\033[0m\n'; echo "Error: GitHub rate limit" >&2; exit 1 ;;
   "notes "*) exit 1 ;;
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;
   "plan --json") echo '{"estimate":true,"total":{"builds":2,"usd":1.2,"unpriced":0,"minutes":6},"projects":[{"platform":"vercel","name":"app-web","action":"would-deploy","usd":0.8},{"platform":"render","name":"api","action":"would-deploy","usd":0.4},{"platform":"vercel","name":"site","action":"would-skip","usd":null}]}' ;;
   "idle --days "*" --json") echo "[{\"platform\":\"render\",\"name\":\"old-api\",\"lastAt\":1,\"days\":\$3}]" ;;
-  "sessions --json") echo '{"level":"yellow","local":{"count":9,"max":8,"over":true},"cloud":{"count":null,"status":"unknown"},"duplicates":[],"hint":"bundle tasks"}' ;;
+  "localsessions --json") echo '{"level":"yellow","local":{"count":9,"max":8,"over":true},"cloud":{"count":null,"status":"unknown"},"duplicates":[],"hint":"bundle tasks"}' ;;
   "certs --days "*" --json") echo "[{\"platform\":\"vercel\",\"name\":\"app-web\",\"host\":\"app-web.example.invalid\",\"daysLeft\":5,\"expiring\":true}]" ;;
   "domains --warn "*" --json") echo "{\"warnDays\":\$3,\"domains\":[{\"platform\":\"vercel\",\"name\":\"app-web\",\"host\":\"www.example.invalid\",\"daysLeft\":9,\"state\":\"warn\"}],\"problems\":1}" ;;
   "forecast --json") echo '{"month":"2026-11","spentUsd":4.2,"projectedUsd":9.5,"estimate":true,"warning":null}' ;;

@@ -1,175 +1,250 @@
-// Deploy Center — The session counter in the menu: how many Claude Code sessions run on this Mac, a green or yellow
-// dot against a high threshold (20-30 sessions are fine), and a "Bundle tasks" menu: sessions started together on one
-// repo beyond the first few (they should have been one to three sessions), the same task twice, two in one folder, idle. The figures come from `deploys sessions --json` (lib/sessions.sh). Read-only: a session is
-// ended only after a click and a confirmation (`deploys sessions stop <pid> --yes`). Cloud sessions: unknown.
+// Deploy Center — Claude Code cloud sessions: which ones finished, wait or seem stuck (`deploys sessions --json`).
+// GitHub is the signal (lib/sessions.sh): a merged pull request means a session is done and a slot is free.
+// Read only: nothing here pushes, merges or closes anything.
 
-import AppKit
 import SwiftUI
+import AppKit
 
-struct SessionsSnapshot: Decodable, Equatable {
-    struct Count: Decodable, Equatable { let count: Int; let max: Int; let over: Bool }
-    struct Cloud: Decodable, Equatable { let count: Int?; let max: Int; let status: String }
-    struct Twin: Decodable, Equatable { let title: String; let pids: [Int] }
-    struct Folder: Decodable, Equatable { let cwd: String; let folder: String; let pids: [Int] }
-    /// More than `keep` sessions started within burstMin minutes on one repo; `extra` are the ones beyond `keep`.
-    struct Burst: Decodable, Equatable { let repo: String; let folder: String; let count: Int; let keep: Int; let pids: [Int]; let extra: [Int]; let from: Int; let to: Int }
-    let level: String
-    let local: Count
-    let cloud: Cloud
-    let idleMin: Int
-    let burstMin: Int
-    let bundleTo: Int
-    let sessions: [ClaudeSession]
-    let bursts: [Burst]
-    let duplicates: [Twin]
-    let sameFolder: [Folder]
-    let idle: [Int]
-    let hint: String?
+struct SessionsReport: Decodable, Equatable {
+    struct Settings: Decodable, Equatable { let prefix: String; let wait: Int; let idle: Int; let hours: Int }
+    struct Summary: Decodable, Equatable { let merged: Int; let mergedLastHour: Int; let open: Int; let waiting: Int; let stuck: Int; let closed: Int }
+    struct RepoError: Decodable, Equatable { let repo: String; let error: String }
+    struct Row: Decodable, Equatable, Identifiable {
+        let repo: String; let branch: String; let state: String; let title: String?
+        let pr: Int?; let url: String?; let session: String?
+        let began: String?; let ended: String?; let minutes: Int?; let idleMinutes: Int?
+        var id: String { repo + "#" + branch }
+    }
+    let settings: Settings; let repos: [String]; let errors: [RepoError]; let summary: Summary; let sessions: [Row]
 }
 
-struct ClaudeSession: Decodable, Equatable, Identifiable {
-    let pid: Int
-    let sessionId: String
-    let cwd: String
-    let title: String
-    let state: String
-    let folder: String
-    let idleMin: Int?
-    let cpu: Double
-    let mb: Int
-    let duplicate: Bool
-    let sameFolder: Bool
-    let burst: Bool
-    let burstExtra: Bool
-    let idle: Bool
-    var id: Int { pid }
-}
-
-enum SessionsText {
-    /// "Claude Code: 9 on this Mac · cloud: unknown"
-    static func summary(_ s: SessionsSnapshot) -> String {
-        let cloud = s.cloud.count.map { L("cloud: \($0)", "Cloud: \($0)") } ?? L("cloud: unknown", "Cloud: unbekannt")
-        return L("Claude Code: \(s.local.count) on this Mac", "Claude Code: \(s.local.count) auf diesem Mac") + " · " + cloud
+/// Pure: which rows are news since the keys already seen. A key is "repo#branch:state", so every state is told once.
+enum SessionsNews {
+    static func key(_ r: SessionsReport.Row) -> String { r.id + ":" + r.state }
+    static let told: Set<String> = ["merged", "closed", "waiting", "stuck"]
+    static func fresh(_ rows: [SessionsReport.Row], seen: Set<String>) -> [SessionsReport.Row] {
+        rows.filter { told.contains($0.state) && !seen.contains(key($0)) }
     }
-
-    static func threshold(_ s: SessionsSnapshot) -> String {
-        s.local.over ? L("Yellow from \(s.local.max): bundle tasks into fewer sessions", "Gelb ab \(s.local.max): Aufgaben in weniger Sitzungen bündeln")
-                     : L("Yellow from \(s.local.max)", "Gelb ab \(s.local.max)")
-    }
-
-    /// "Shop: 6 started within 4 min – should be 3 at most"
-    static func burst(_ b: SessionsSnapshot.Burst) -> String {
-        let min = max(0, (b.to - b.from) / 60)
-        return L("\(Demo.mask(b.folder)): \(b.count) started within \(min) min – \(b.keep) at most",
-                 "\(Demo.mask(b.folder)): \(b.count) innerhalb von \(min) min gestartet – höchstens \(b.keep)")
-    }
-
-    static func age(_ m: Int?) -> String {
-        guard let m else { return "?" }
-        if m < 60 { return "\(m) min" }
-        if m < 2880 { return "\(m / 60) h" }
-        return L("\(m / 1440) d", "\(m / 1440) T")
-    }
-
-    /// The sessions worth closing, each once, in this order: started together beyond the first few, the same task
-    /// twice, two in one folder, idle.
-    static func candidates(_ s: SessionsSnapshot) -> [ClaudeSession] {
-        let order: (ClaudeSession) -> Int = { $0.burstExtra ? 0 : ($0.duplicate ? 1 : ($0.sameFolder ? 2 : 3)) }
-        return s.sessions.filter { $0.burstExtra || $0.duplicate || $0.sameFolder || $0.idle }
-            .sorted { (order($0), -($0.idleMin ?? 0)) < (order($1), -($1.idleMin ?? 0)) }
-    }
-
-    /// Why a session is in the list: "twice", "same folder", "idle 3 h".
-    static func reason(_ c: ClaudeSession) -> String {
-        var r: [String] = []
-        if c.burstExtra { r.append(L("started together", "zusammen gestartet")) }
-        if c.duplicate { r.append(L("twice", "doppelt")) }
-        if c.sameFolder { r.append(L("same folder", "selber Ordner")) }
-        if c.idle { r.append(L("idle \(age(c.idleMin))", "untätig \(age(c.idleMin))")) }
-        return r.joined(separator: ", ")
-    }
-
-    static func name(_ c: ClaudeSession) -> String {
-        Demo.mask(c.title.isEmpty ? c.folder : c.title)
-    }
-
-    static func line(_ c: ClaudeSession) -> String {
-        "\(name(c)) – \(Demo.mask(c.folder)) – \(reason(c)) – \(PerfText.gb(c.mb))"
+    /// The notifications for the news: finished ones as one note ("3 sessions done"), the others one each.
+    static func notes(_ news: [SessionsReport.Row], hold: Int) -> [(id: String, title: String, body: String)] {
+        var out: [(id: String, title: String, body: String)] = []
+        let done = news.filter { $0.state == "merged" || $0.state == "closed" }
+        if !done.isEmpty {
+            let names = done.prefix(4).map { $0.title ?? $0.branch }.joined(separator: " · ")
+            let n = done.count
+            out.append(("sessions-done-\(Int(Date().timeIntervalSince1970))",
+                        n == 1 ? L("Cloud session done: room for a new one", "Cloud-Session fertig: Platz für eine neue")
+                               : L("\(n) cloud sessions done: room for \(n) new ones", "\(n) Cloud-Sessions fertig: Platz für \(n) neue"),
+                        names))
+        }
+        for r in news where r.state == "waiting" {
+            out.append(("sessions-" + key(r), L("Pull request waits: #\(r.pr ?? 0)", "Pull Request wartet: #\(r.pr ?? 0)"), r.title ?? r.branch))
+        }
+        for r in news where r.state == "stuck" {
+            out.append(("sessions-" + key(r), L("Session seems stuck for \(r.idleMinutes ?? hold) min", "Session hängt seit \(r.idleMinutes ?? hold) Min."),
+                        (r.pr.map { "#\($0) " } ?? "") + (r.title ?? r.branch)))
+        }
+        return out
     }
 }
 
-@MainActor
-final class SessionsMonitor: ObservableObject {
-    static let shared = SessionsMonitor()
-    static let key = "sessionsIndicator"
-    @Published private(set) var snapshot: SessionsSnapshot?
-    @Published private(set) var message: String?
-    private var task: Task<Void, Never>?
+/// Polls `deploys sessions --json` once a minute while the app runs and tells news as Mac notifications.
+/// The first answer after a start only fills the memory, so a restart does not repeat old news.
+@MainActor final class SessionsWatch: ObservableObject {
+    static let shared = SessionsWatch()
+    @Published private(set) var report: SessionsReport?
+    @Published private(set) var error: String?
+    @Published private(set) var loading = false
+    @Published private(set) var checkedAt: Date?
+    private var timer: Timer?
+    private let seenKey = "sessionsSeen"
 
-    var level: PerfLevel? { snapshot.map { $0.level == "yellow" ? .yellow : .green } }
+    /// The menu bar line: "Cloud sessions: 2 done, 1 waiting" when something is there.
+    var menuTitle: String {
+        guard let s = report?.summary else { return L("Cloud Sessions …", "Cloud-Sessions …") }
+        var parts: [String] = []
+        if s.mergedLastHour > 0 { parts.append(L("\(s.mergedLastHour) done", "\(s.mergedLastHour) fertig")) }
+        if s.waiting > 0 { parts.append(L("\(s.waiting) waiting", "\(s.waiting) wartet")) }
+        if s.stuck > 0 { parts.append(L("\(s.stuck) stuck", "\(s.stuck) hängt")) }
+        return parts.isEmpty ? L("Cloud Sessions …", "Cloud-Sessions …") : L("Cloud sessions: ", "Cloud-Sessions: ") + parts.joined(separator: ", ")
+    }
 
     func start() {
-        guard task == nil else { return }
-        task = Task { [weak self] in
-            while !Task.isCancelled {
-                await self?.refresh()
-                try? await Task.sleep(nanoseconds: 60_000_000_000)
-            }
+        guard timer == nil else { return }
+        Task { await refresh() }
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in Task { @MainActor in await SessionsWatch.shared.refresh() } }
+    }
+
+    func refresh() async {
+        guard !loading else { return }
+        loading = true; defer { loading = false }
+        do {
+            let r = try await Tool.json(["sessions", "--json"], as: SessionsReport.self, timeout: 45)
+            report = r; error = nil; checkedAt = Date()
+            tell(r)
+        } catch {
+            self.error = (error as? ToolError)?.message ?? error.localizedDescription
         }
     }
 
-    /// One `deploys sessions --json` a minute while the line is switched on.
-    func refresh() async {
-        guard UserDefaults.standard.object(forKey: Self.key) as? Bool ?? true else { return }
-        if let s = try? await Tool.json(["sessions", "--json"], as: SessionsSnapshot.self, timeout: 30), s != snapshot { snapshot = s }
+    private func tell(_ r: SessionsReport) {
+        let d = UserDefaults.standard
+        let first = d.object(forKey: seenKey) == nil
+        var seen = Set(d.stringArray(forKey: seenKey) ?? [])
+        let news = SessionsNews.fresh(r.sessions, seen: seen)
+        guard !news.isEmpty || first else { return }
+        if !first && d.object(forKey: "sessionNotifications") as? Bool ?? true {
+            for n in SessionsNews.notes(news, hold: r.settings.idle) { Notify.remind(n.title, n.body, id: n.id) }
+        }
+        news.forEach { seen.insert(SessionsNews.key($0)) }
+        // Only keys of rows still in the window are kept, so the memory does not grow without end.
+        let live = Set(r.sessions.map(SessionsNews.key))
+        d.set(Array(seen.intersection(live)), forKey: seenKey)
     }
 
-    /// End one session: only from a click, after the person said yes.
-    func close(_ c: ClaudeSession) async {
-        let a = NSAlert()
-        a.messageText = L("End the session “\(SessionsText.name(c))”?", "Sitzung „\(SessionsText.name(c))“ beenden?")
-        let why = SessionsText.reason(c), cap = why.prefix(1).uppercased() + why.dropFirst()
-        a.informativeText = L("\(cap). Its transcript file stays; the Claude app may show the session as stopped. Work it has not saved is lost.",
-                              "\(cap). Die Transkript-Datei bleibt; die Claude-App zeigt die Sitzung evtl. als gestoppt. Nicht gesicherte Arbeit geht verloren.")
-        // The safe answer is the default (Return); ending is the second button.
-        a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
-        a.addButton(withTitle: L("End session", "Sitzung beenden")).hasDestructiveAction = true
-        NSApp.activate(ignoringOtherApps: true)
-        guard a.runModal() == .alertSecondButtonReturn else { return }
-        do {
-            _ = try await Tool.run(["sessions", "stop", String(c.pid), "--yes"], timeout: 30)
-            message = L("Ended \(SessionsText.name(c))", "\(SessionsText.name(c)) beendet")
-        } catch { message = LogTools.maskSecrets(error.localizedDescription) }
+    /// `deploys sessions add|remove <owner/name>`, then a fresh look.
+    func change(_ verb: String, _ repo: String) async {
+        do { _ = try await Tool.run(["sessions", verb, repo], timeout: 15) } catch {
+            self.error = (error as? ToolError)?.message ?? error.localizedDescription; return
+        }
         await refresh()
     }
 }
 
-/// The lines in the menu: the count with its dot, and with a hint the "Bundle tasks" menu.
-struct SessionsMenuSection: View {
-    @ObservedObject var mon = SessionsMonitor.shared
-    private func burstLine(_ b: SessionsSnapshot.Burst) -> String { "   " + SessionsText.burst(b) }
+struct SessionsView: View {
+    @ObservedObject var watch = SessionsWatch.shared
+    @State private var newRepo = ""
+    @AppStorage("sessionNotifications") private var notify = true
 
     var body: some View {
-        if let s = mon.snapshot, let lvl = mon.level {
-            Divider()
-            Label { Text(SessionsText.summary(s)) } icon: { Image(nsImage: PerfMonitor.dot(lvl)) }
-            Text(SessionsText.threshold(s)).font(.caption)
-            let list = SessionsText.candidates(s)
-            if s.hint != nil || !list.isEmpty {
-                let extra = s.bursts.reduce(0) { $0 + $1.extra.count }
-                Menu(L("Bundle tasks (\(extra) started together, \(s.duplicates.count) twice)", "Aufgaben bündeln (\(extra) zusammen gestartet, \(s.duplicates.count) doppelt)")) {
-                    Text(L("Tasks started together belong in one to \(s.bundleTo) sessions that work them one after another.",
-                           "Zusammen gestartete Aufgaben gehören in eine bis \(s.bundleTo) Sitzungen, die sie nacheinander abarbeiten."))
-                    ForEach(s.bursts, id: \.pids) { b in Text(burstLine(b)) }
-                    if !list.isEmpty { Divider() }
-                    ForEach(list.prefix(15)) { c in
-                        Button(L("End ", "Beenden: ") + SessionsText.line(c) + " …") { Task { await mon.close(c) } }
-                    }
-                    Divider()
-                    Text(L("Asks first. Nothing is ended without your click.", "Fragt vorher. Ohne deinen Klick wird nichts beendet."))
+        VStack(alignment: .leading, spacing: 10) {
+            header
+            if let e = watch.error { Text(e).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
+            if let r = watch.report {
+                ForEach(r.errors, id: \.repo) { e in
+                    Text(L("\(e.repo): not read – \(e.error)", "\(e.repo): nicht gelesen – \(e.error)")).foregroundStyle(.orange).font(.callout)
                 }
+                if r.sessions.isEmpty {
+                    Text(r.repos.isEmpty ? L("No repo is watched yet. Add one below (owner/name).", "Noch kein Repo beobachtet. Unten eines hinzufügen (owner/name).")
+                                         : L("No session branch or pull request in the last \(r.settings.hours) h.", "Kein Session-Branch und kein Pull Request in den letzten \(r.settings.hours) Std."))
+                        .foregroundStyle(.secondary).frame(maxWidth: .infinity, minHeight: 80)
+                } else {
+                    List(r.sessions) { SessionRow(row: $0, multiRepo: r.repos.count > 1) }.listStyle(.inset(alternatesRowBackgrounds: true))
+                }
+                footer(r)
+            } else if watch.loading {
+                ProgressView().frame(maxWidth: .infinity, minHeight: 80)
             }
-            if let m = mon.message { Text(m).font(.caption).foregroundStyle(.secondary) }
+        }
+        .padding(14)
+        .frame(minWidth: 560, minHeight: 360)
+        .task { SessionsWatch.shared.start(); await watch.refresh() }
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            if let s = watch.report?.summary {
+                Text(L("\(s.mergedLastHour) done in the last hour", "\(s.mergedLastHour) fertig in der letzten Stunde")).font(.headline)
+                badge(s.waiting, L("waiting", "wartet"), .orange)
+                badge(s.stuck, L("stuck", "hängt"), .red)
+                badge(s.open, L("open", "offen"), .blue)
+            } else { Text(L("Cloud sessions", "Cloud-Sessions")).font(.headline) }
+            Spacer()
+            if let at = watch.checkedAt { Text(L("As of ", "Stand ") + uiTime(at)).foregroundStyle(.secondary).font(.caption) }
+            Button { Task { await watch.refresh() } } label: { Image(systemName: "arrow.clockwise") }
+                .disabled(watch.loading).help(L("Check now", "Jetzt prüfen"))
+        }
+    }
+
+    private func badge(_ n: Int, _ label: String, _ color: Color) -> some View {
+        Text("\(n) \(label)").font(.callout).padding(.horizontal, 7).padding(.vertical, 2)
+            .background(Capsule().fill(color.opacity(n > 0 ? 0.18 : 0.06))).foregroundStyle(n > 0 ? color : .secondary)
+    }
+
+    private func footer(_ r: SessionsReport) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                ForEach(r.repos, id: \.self) { repo in
+                    Text(repo).font(.caption).padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(.quaternary))
+                        .contextMenu { Button(L("Stop watching", "Nicht mehr beobachten")) { Task { await watch.change("remove", repo) } } }
+                }
+                TextField(L("owner/name", "owner/name"), text: $newRepo).textFieldStyle(.roundedBorder).frame(maxWidth: 200)
+                    .onSubmit(add)
+                Button(L("Watch", "Beobachten"), action: add).disabled(!valid)
+            }
+            HStack {
+                Toggle(L("Notify me", "Mitteilungen"), isOn: $notify)
+                Text(L("Branches \(r.settings.prefix.isEmpty ? "(all)" : r.settings.prefix) · waits after \(r.settings.wait) min · stuck after \(r.settings.idle) min · deploys sessions set …",
+                       "Branches \(r.settings.prefix.isEmpty ? "(alle)" : r.settings.prefix) · wartet nach \(r.settings.wait) Min. · hängt nach \(r.settings.idle) Min. · deploys sessions set …"))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var valid: Bool { newRepo.range(of: "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", options: .regularExpression) != nil }
+    private func add() {
+        guard valid else { return }
+        let r = newRepo; newRepo = ""
+        Task { await watch.change("add", r) }
+    }
+}
+
+struct SessionRow: View {
+    let row: SessionsReport.Row
+    let multiRepo: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon).foregroundStyle(color).frame(width: 18).help(stateText)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title ?? row.branch).lineLimit(1)
+                Text((multiRepo ? row.repo + " · " : "") + row.branch + " · " + stateText + detail)
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            if let s = row.session, let u = URL(string: s) {
+                Button { NSWorkspace.shared.open(u) } label: { Image(systemName: "sparkles") }
+                    .buttonStyle(.borderless).help(L("Open the Claude session", "Claude-Session öffnen"))
+            }
+            if let s = row.url, let u = URL(string: s), let n = row.pr {
+                Button("#\(n)") { NSWorkspace.shared.open(u) }.buttonStyle(.borderless).help(L("Open the pull request", "Pull Request öffnen"))
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var stateText: String {
+        switch row.state {
+        case "merged": return L("merged", "gemergt")
+        case "closed": return L("closed", "geschlossen")
+        case "waiting": return L("pull request waits", "Pull Request wartet")
+        case "stuck": return L("stuck", "hängt")
+        case "pushed": return L("pushed, no pull request", "gepusht, kein Pull Request")
+        default: return L("open", "offen")
+        }
+    }
+    private var detail: String {
+        var s = ""
+        if let m = row.minutes { s += L(" · \(m) min since the first commit", " · \(m) Min. seit dem ersten Commit") }
+        if let q = row.idleMinutes, row.state != "open" { s += L(" · quiet \(q) min", " · still seit \(q) Min.") }
+        return s
+    }
+    private var icon: String {
+        switch row.state {
+        case "merged": return "checkmark.circle.fill"
+        case "closed": return "xmark.circle"
+        case "waiting": return "hourglass"
+        case "stuck": return "exclamationmark.triangle.fill"
+        default: return "arrow.triangle.branch"
+        }
+    }
+    private var color: Color {
+        switch row.state {
+        case "merged": return .green
+        case "waiting": return .orange
+        case "stuck": return .red
+        case "closed": return .secondary
+        default: return .blue
         }
     }
 }

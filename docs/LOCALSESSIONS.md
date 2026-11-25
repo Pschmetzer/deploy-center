@@ -2,19 +2,19 @@
 
 Twenty or thirty Claude Code sessions at once are fine. What is not: ten tasks started at the same moment as ten
 sessions, when one to three sessions working them one after another would do, or the same task running twice.
-`deploys sessions` counts the sessions on this Mac, finds tasks that were started together on one repo and should have
+`deploys localsessions` counts the sessions on this Mac, finds tasks that were started together on one repo and should have
 been bundled, flags twins and idle sessions, and lists the extras so you can close them. It never closes a session by
 itself.
 
-German: [SESSIONS.de.md](SESSIONS.de.md)
+German: [LOCALSESSIONS.de.md](LOCALSESSIONS.de.md)
 
 ## In the terminal
 
 ```bash
-deploys sessions                 # every session: pid, idle time, CPU, RAM, state, title and folder; twins, idle ones, the hint
-deploys sessions --json          # the same for scripts, the app and the MCP server (deploys_sessions)
-deploys sessions stop 4242       # what ending that session would do
-deploys sessions stop 4242 --yes # end it (SIGTERM); its transcript file stays, the Claude app may show it as stopped
+deploys localsessions                 # every session: pid, idle time, CPU, RAM, state, title and folder; twins, idle ones, the hint
+deploys localsessions --json          # the same for scripts, the app and the MCP server (deploys_sessions)
+deploys localsessions stop 4242       # what ending that session would do
+deploys localsessions stop 4242 --yes # end it (SIGTERM); its transcript file stays, the Claude app may show it as stopped
 ```
 
 What is flagged:
@@ -34,14 +34,14 @@ restarted all its sessions at once they are not "started together".
 ## Thresholds
 
 ```bash
-deploys sessions set max-local 30   # yellow from this many sessions on this Mac
-deploys sessions set max-cloud 30   # kept for the cloud count, see below
-deploys sessions set bundle-to 3    # how many sessions tasks started together may use
-deploys sessions set burst-min 10   # "together": each created within this many minutes of the one before, on one repository
-deploys sessions set idle-min 60    # idle after this many minutes without activity
+deploys localsessions set max-local 30   # yellow from this many sessions on this Mac
+deploys localsessions set max-cloud 30   # kept for the cloud count, see below
+deploys localsessions set bundle-to 3    # how many sessions tasks started together may use
+deploys localsessions set burst-min 10   # "together": each created within this many minutes of the one before, on one repository
+deploys localsessions set idle-min 60    # idle after this many minutes without activity
 ```
 
-They are stored in `~/.config/deploys/sessions.json`.
+They are stored in `~/.config/deploys/localsessions.json`.
 
 ## In the menu bar
 
@@ -83,6 +83,6 @@ reliable source exists.
 
 ## Tests
 
-`tests/sessions-tests.sh` runs on made-up files: `DEPLOYS_SESSIONS_FIXTURE` (a folder with a `ps` output),
+`tests/localsessions-tests.sh` runs on made-up files: `DEPLOYS_SESSIONS_FIXTURE` (a folder with a `ps` output),
 `DEPLOYS_SESSIONS_DIR` (the session files), `DEPLOYS_CLAUDE_PROJECTS` (the transcripts) and `DEPLOYS_SESSIONS_NOW`
 (the clock). With `DEPLOYS_SESSIONS_FIXTURE` set, `stop --yes` sends nothing.

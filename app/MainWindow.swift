@@ -163,7 +163,6 @@ struct ContentView: View {
     @State private var searchDebounce: Task<Void, Never>?
     @State private var confirming = false
     @State private var confirmingOff = false
-    /// The checkbox in the deploy confirmation: only commits whose CI passed go out. Remembered.
     /// The deploy window's rule while it is closed, the platforms waiting for "Deploy anyway…", and why.
     @State private var freezeReason: String?
     /// What "Deploy anyway" starts, with the reason, once the deploy window was found closed.

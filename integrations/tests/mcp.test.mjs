@@ -71,7 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_domains", "deploys_env_diff", "deploys_explain", "deploys_forecast", "deploys_freeze", "deploys_guard_status", "deploys_health", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_perf", "deploys_plan", "deploys_preview", "deploys_providers", "deploys_recovery", "deploys_risk", "deploys_rollback_preview", "deploys_sessions", "deploys_simulate", "deploys_status", "deploys_streak", "deploys_timeline", "deploys_weeks", "deploys_when"];
+const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_domains", "deploys_env_diff", "deploys_explain", "deploys_forecast", "deploys_freeze", "deploys_guard_status", "deploys_health", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_localsessions", "deploys_logs", "deploys_notes", "deploys_perf", "deploys_plan", "deploys_preview", "deploys_providers", "deploys_recovery", "deploys_risk", "deploys_rollback_preview", "deploys_sessions", "deploys_simulate", "deploys_status", "deploys_streak", "deploys_timeline", "deploys_weeks", "deploys_when"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -284,11 +284,20 @@ check("journal report passes the month", !r.error && /2026-03/.test(r.text) && c
 r = await s.call("deploys_journal_report", { month: "2026-13; rm" });
 check("journal report refuses a bad month", r.error === true || /month must/.test(r.text), r.text);
 writeFileSync(calls, "");
+r = await s.call("deploys_sessions");
+check("sessions asks the CLI with --json only", !r.error && callLog().trim() === "sessions --json" && /mergedLastHour/.test(r.text), r.text + callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_sessions", { hours: 3, repo: "acme/web" });
+check("sessions passes hours and repo", !r.error && callLog().trim() === "sessions --hours 3 --repo acme/web --json", r.text + callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_sessions", { repo: "acme/web; rm -rf" });
+check("sessions refuses a repo that is no owner/name", r.error === true && callLog().trim() === "", r.text + callLog());
+writeFileSync(calls, "");
 r = await s.call("deploys_idle");
 check("idle defaults to 90 days and lists the project", !r.error && callLog().trim() === "idle --days 90 --json" && /old-api/.test(r.text) && /"days":90/.test(r.text), r.text + callLog());
 writeFileSync(calls, "");
-r = await s.call("deploys_sessions");
-check("sessions: read-only, the count and cloud unknown", !r.error && callLog().trim() === "sessions --json" && /"count":9/.test(r.text) && /"unknown"/.test(r.text), r.text + callLog());
+r = await s.call("deploys_localsessions");
+check("localsessions: read-only, the count and cloud unknown", !r.error && callLog().trim() === "localsessions --json" && /"count":9/.test(r.text) && /"unknown"/.test(r.text), r.text + callLog());
 r = await s.call("deploys_idle", { days: 0 });
 check("idle refuses days below 1", r.error === true || /days must be/.test(r.text), r.text);
 r = await s.call("deploys_idle", { days: "7; rm" });

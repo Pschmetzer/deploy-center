@@ -32,17 +32,6 @@ import AppKit
         expect("live row is current", "\(i.hasNewCommits) \(i.lastFailed)", "false false")
         expect("nothing left to follow after the end", Store.readFollowed().isEmpty, true)
 
-        let ci = Store()
-        var b = item(changed: true, commits: 1); b.repo = "me/app"; b.selected = true
-        ci.items[.vercel] = [b]
-        ci.deploySelected(.vercel, whenGreen: true)
-        spin { ci.items[.vercel]![0].state == .running(L("waiting for checks", "wartet auf Checks")) }
-        expect("waiting for CI counts as busy", ci.deploysBusy, true)
-        ci.cancel(ci.items[.vercel]![0])
-        spin { !ci.items[.vercel]![0].state.isActive }
-        // Nothing was started yet: the row is simply back to idle (main's rule).
-        expect("CI wait cancelled", "\(ci.items[.vercel]![0].state)", "idle")
-
         // The follow deadline (40 minutes, 12 hours), on a short clock: a deploy that never ends frees the row.
         Store.followLimits = (.milliseconds(100), .milliseconds(400))
         Tool.testRunner = { args in

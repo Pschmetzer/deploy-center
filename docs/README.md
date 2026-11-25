@@ -21,6 +21,7 @@
 | [TEAM.md](TEAM.md) | Team mode: a shared `deploy-center.json`, observers, the two-person rule |
 | [GUARD.md](GUARD.md) | The guard that turns auto-deploy off again, and allowing it for a few hours |
 | [PERF.md](PERF.md) | The performance guard: how full the Mac is, heavy checks that wait for room, orphaned processes, Docker stop and wake |
+| [LOCALSESSIONS.md](LOCALSESSIONS.md) ([de](LOCALSESSIONS.de.md)) | The Claude Code sessions on this Mac: count, tasks started together, twins, idle ones |
 | [CLAUDE-IN-APP.md](CLAUDE-IN-APP.md) | Claude in the app with your own key: explain a failure, plain release notes, ship check; the PR workflow |
 | [SCAN.md](SCAN.md) | Bug scan: Claude Code looks through a repo and opens one fix PR; the security check with OSV-Scanner, gitleaks and Semgrep |
 | [AUTOFIX.md](AUTOFIX.md) | A failed build handed to a Claude Code routine, the fix deployed after you merge |

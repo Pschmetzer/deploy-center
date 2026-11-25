@@ -1,8 +1,8 @@
-// The session counter (app/Sessions.swift): the answer of `deploys sessions --json` decodes, the summary says
+// The session counter (app/LocalSessions.swift): the answer of `deploys localsessions --json` decodes, the summary says
 // "cloud: unknown" instead of a number, and the list to close holds the extras of a burst first, each session once.
 import AppKit
 
-func suite_sessions() {
+func suite_localsessions() {
     let json = """
     {"time":1800000000,"level":"yellow","local":{"count":3,"max":3,"over":true},
      "cloud":{"count":null,"max":30,"status":"unknown","note":"x"},"idleMin":60,"burstMin":10,"bundleTo":3,

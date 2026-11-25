@@ -54,7 +54,7 @@ No key is ever printed.
   deploys forecast [\-\-warn 80] [\-\-json]     the month's build cost so far and where it ends (estimate), against `budget`; exit 1 when over
   deploys env\-diff <p> [\-\-json]             variable NAMES in production but not in preview and the other way (never values); exit 1 when they differ
   deploys perf status|gate|clean|consumers|stop|wake  how full the Mac is, hold heavy commands, Docker stop/wake (docs/PERF.md)
-  deploys sessions [\-\-json] | stop <pid> \-\-yes | set max\-local|max\-cloud|idle\-min <n>   Claude Code sessions on this Mac, twins, idle ones (docs/SESSIONS.md)
+  deploys localsessions [\-\-json] | stop <pid> \-\-yes | set max\-local|max\-cloud|idle\-min <n>   Claude Code sessions on this Mac, twins, idle ones (docs/LOCALSESSIONS.md)
   deploys group list|add <name> <p>...|remove <name>|run <name> [\-\-yes]   your own ordered groups; run waits for each member, stops at the first failure, starts only with \-\-yes or "y"
   deploys prepare on [HH:MM] [\-\-when\-green] [\-\-no\-freeze] [\-\-yes] | off | status | show | run   a morning job that gets a deploy ready; it starts only with \-\-yes stored
   deploys creds [\-\-max\-age 90] [\-\-json]     where each platform's key comes from, if it works, how old a keychain key is
@@ -77,6 +77,7 @@ No key is ever printed.
   deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
   deploys when [\-\-days 90] [\-\-by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
   deploys health [\-\-days 30] [\-\-project <p>] [\-\-no\-ci]   0\-100 per project from failures, recovery, age of the last deploy, CI
+  deploys sessions [\-\-hours 6] [\-\-json] | add <owner/repo>   Claude cloud sessions on GitHub: merged, waiting, stuck
   deploys weeks [\-\-days 7] [\-\-project <p>]       the last days against the same number before: deploys, failure rate, recovery
   deploys export [\-\-format csv|json] [\-\-what journal|costs|all] [\-\-days 30] [\-\-out <file>]   journal and costs, fixed columns, secrets masked
   deploys doctor \-\-fix [\-\-json]             what to do about each problem (shown only, nothing is run)

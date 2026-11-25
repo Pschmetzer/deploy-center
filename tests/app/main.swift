@@ -18,7 +18,7 @@ MainActor.assumeIsolated {
     suite_rounds_cost_quiet()
     suite_ux2()
     suite_ux()
-    suite_sessions()
+    suite_localsessions()
     insightsAppTests(expect); insightsAppTests2(expect)
 }
 

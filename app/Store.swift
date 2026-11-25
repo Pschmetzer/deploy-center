@@ -1415,8 +1415,6 @@ final class Store: ObservableObject {
 
     struct Job {
         let item: Item; var preview = false; var sha: String? = nil; var clearCache = false; var readyAt = Date.distantPast
-        /// Only once the CI of the commit is green (waits up to 30 minutes for running checks).
-        var whenGreen = false
         /// Why it goes out inside a closed deploy window; the script writes it to the journal.
         var force: String? = nil
     }
@@ -1425,11 +1423,11 @@ final class Store: ObservableObject {
     private var cancelled: Set<String> = []
     var maxParallel: Int { let n = UserDefaults.standard.integer(forKey: "maxParallel"); return n >= 1 ? n : 3 }
 
-    func deploySelected(_ p: Platform, preview: Bool = false, whenGreen: Bool = false, force: String? = nil) {
+    func deploySelected(_ p: Platform, preview: Bool = false, force: String? = nil) {
         let chosen = selected(p).filter { !isHidden($0) }   // a hidden project never goes out with the others
         // A refusal keeps the ticks: nothing went out.
         guard namesTyped(chosen, preview: preview) else { return }
-        let queued = enqueue(chosen.map { Job(item: $0, preview: preview, whenGreen: whenGreen, force: force) })
+        let queued = enqueue(chosen.map { Job(item: $0, preview: preview, force: force) })
         // A refused start (observer mode, "may be building already") keeps its tick, so nothing is lost.
         // Rows already under way untick too: they are running, nothing is lost.
         for i in (items[p] ?? []).indices where queued.contains(Self.key(items[p]![i])) || items[p]![i].state.isActive { items[p]![i].selected = false }
@@ -1440,10 +1438,9 @@ final class Store: ObservableObject {
         try? await Tool.json(["window", "--json"], as: WindowReply.self, timeout: 30)
     }
 
-    /// One row. `whenGreen` waits for the commit's CI like the footer's "only when green";
-    /// `force` (a reason) goes out inside a closed deploy window, as the footer's dialog does.
-    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, whenGreen: Bool = false, force: String? = nil) {
-        let job = Job(item: item, preview: preview, sha: sha, clearCache: clearCache, whenGreen: whenGreen, force: force)
+    /// One row. `force` (a reason) goes out inside a closed deploy window, as the footer's dialog does.
+    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, force: String? = nil) {
+        let job = Job(item: item, preview: preview, sha: sha, clearCache: clearCache, force: force)
         // A preview is never held by the deploy window. A live deploy from a row, the details or the
         // palette is: the script would refuse it anyway, so say why here instead of a failed row.
         guard !preview, !observer, force == nil else {
@@ -1573,11 +1570,6 @@ final class Store: ObservableObject {
     }
 
     private func pump() {
-        // Waiting for green checks takes no build slot; the job comes back to the queue once they are green.
-        while let k = queue.firstIndex(where: { $0.whenGreen && !$0.preview && $0.readyAt <= Date() && waitsFor($0) == nil }) {
-            let job = queue.remove(at: k)
-            ciWaits[Self.key(job.item)] = Task { await waitForChecks(job) }
-        }
         while running < maxParallel, let k = queue.firstIndex(where: { $0.readyAt <= Date() && waitsFor($0) == nil }) {
             let job = queue.remove(at: k)
             running += 1
@@ -1595,7 +1587,7 @@ final class Store: ObservableObject {
                                                              "Nicht gestartet: das Backend desselben Repos ist fehlgeschlagen")))
             }
         }
-        if queue.isEmpty && running == 0 && ciWaits.isEmpty {
+        if queue.isEmpty && running == 0 {
             queueBatch = []
             let hadRun = !batch.isEmpty
             summarize()
@@ -1623,9 +1615,6 @@ final class Store: ObservableObject {
     func cancel(_ item: Item) {
         if let k = queue.firstIndex(where: { Self.key($0.item) == Self.key(item) }) {
             queue.remove(at: k); set(item.platform, item.id, .idle, cancelled: true); pump(); return
-        }
-        if let t = ciWaits.removeValue(forKey: Self.key(item)) {   // still waiting for checks: nothing was started
-            t.cancel(); set(item.platform, item.id, .idle, cancelled: true); pump(); return
         }
         guard let id = itemNow(item)?.deployId else {
             show(Toast(text: L("\(item.name) is still starting – try again in a moment", "\(item.name) startet noch – gleich nochmal versuchen"), ok: false))
@@ -1790,40 +1779,6 @@ final class Store: ObservableObject {
         }
     }
 
-    /// Jobs waiting for their checks, by row; outside the queue and the build slots, and cancellable.
-    private var ciWaits: [String: Task<Void, Never>] = [:]
-
-    /// Only once the CI of the commit is green (waits up to 30 minutes for running checks).
-    private func waitForChecks(_ job: Job) async {
-        guard !Task.isCancelled else { return }   // cancelled before it began
-        let item = job.item, p = item.platform
-        if p == .render { queueBatch.insert(item.id) }
-        // Cancelled in the row: cancel() already took it out (a new wait for the row may be there now).
-        defer { if !Task.isCancelled { ciWaits[Self.key(item)] = nil; pump() } }
-        // The commit that is checked is the one that goes out: a newer push waits for the next deploy.
-        guard let repo = item.repo, let commit = job.sha ?? item.headSha else {
-            set(p, item.id, .skipped(L("Checks unknown: no commit or repo known", "Checks unbekannt: kein Commit oder Repo bekannt"))); return
-        }
-        set(p, item.id, .running(L("waiting for checks", "wartet auf Checks")))
-        do {
-            let ci = try await Tool.json(["ci", repo, commit, "--wait", "30m", "--json"], as: CIReply.self, timeout: 32 * 60)
-            guard !Task.isCancelled else { return }
-            switch ci.state {
-            case "green", "none":
-                var next = job; next.sha = commit; next.whenGreen = false; next.readyAt = .distantPast
-                set(p, item.id, .queued)
-                queue.append(next)
-            case "red":
-                set(p, item.id, .skipped(L("CI is red: ", "CI ist rot: ") + ci.reason))
-            default:
-                set(p, item.id, .skipped(L("Checks not done after 30 minutes: ", "Checks nach 30 Minuten nicht fertig: ") + ci.reason))
-            }
-        } catch {
-            guard !Task.isCancelled else { return }
-            set(p, item.id, .failed(error.localizedDescription))
-        }
-    }
-
     private func deploy(_ job: Job) async {
         let item = job.item, p = item.platform
         guard Self.safeArg(item.id) else { set(p, item.id, .failed(L("Not started: the name starts with \"-\"", "Nicht gestartet: der Name beginnt mit \"-\""))); return }
@@ -1832,7 +1787,7 @@ final class Store: ObservableObject {
         cancelled.remove(Self.key(item))
         clearPreview(item)   // an older preview must not be promoted over what this deploy brings
         do {
-            let sha = job.sha   // with "only when green" the checked commit, see waitForChecks
+            let sha = job.sha
             var args = [p.cli, "deploy-json", item.id]
             if job.preview { args.append("--preview") }
             if let sha { args += ["--sha", sha] }
@@ -2315,7 +2270,7 @@ final class Store: ObservableObject {
             Notify.remove(id)
             let now = self.itemNow(item)
             // A newer deploy (a fix) is queued, waiting or building, or already went out: it is not rolled back.
-            let newer = self.queue.contains { Self.key($0.item) == Self.key(item) } || self.ciWaits[Self.key(item)] != nil
+            let newer = self.queue.contains { Self.key($0.item) == Self.key(item) }
             guard Self.rollbackStillDue(now, checkedId: checkedId, newerQueued: newer) else {
                 self.say(L("Rollback skipped", "Zurückrollen ausgelassen"),
                          L("A newer deploy of \(item.name) is under way or live.", "Ein neuerer Deploy von \(item.name) läuft oder ist live."), ok: true)
@@ -2359,7 +2314,7 @@ final class Store: ObservableObject {
     }
 
     /// Deploys queued or building; an update waits for them instead of quitting in the middle.
-    var deploysBusy: Bool { !queue.isEmpty || running > 0 || !ciWaits.isEmpty || !rollbackCountdowns.isEmpty || allItems.contains { $0.state.isActive } }
+    var deploysBusy: Bool { !queue.isEmpty || running > 0 || !rollbackCountdowns.isEmpty || allItems.contains { $0.state.isActive } }
 
     /// States the app knows; any other is shown as the platform sent it, and logged once.
     static var knownStates: Set<String> { DeployState.known }

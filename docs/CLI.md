@@ -28,6 +28,8 @@ deploys preview <project> [--json]       # what a production deploy would do: co
 deploys timeline [--days 3] [--project <name>] [--limit 50] [--json]   # what happened, newest day first: deploys, failures, rollbacks, forced starts (from the journal, UTC; reads only)
 deploys recovery [--days 30] [--project <name>] [--json]   # how long a failure lasted until the next deploy of that project; an outage without a later deploy is "open"
 deploys health [--days 30] [--project <name>] [--no-ci] [--json]   # 0-100 per project, worst first (formula below); CI is read from GitHub/GitLab, --no-ci stays offline
+deploys sessions [--hours 6] [--repo <owner/name>] [--json]   # Claude Code cloud sessions on GitHub: merged (a slot is free), closed, open, waiting (pull request open for `wait` min), stuck (no change for `idle` min), pushed (branch without pull request); reads only
+deploys sessions add|remove <owner/name> | repos | set prefix|wait|idle|hours <value>   # the watched repos and settings, in sessions.json in the config folder (prefix claude/, wait 3, idle 20, hours 6)
 deploys weeks [--days 7] [--project <name>] [--json]   # the last --days days against the same number before: deploys, failure rate, typical recovery, open failures (from the journal; reads only)
 deploys export [--format csv|json] [--what journal|costs|all] [--days 30] [--project <name>] [--out <file>]   # journal and Vercel costs with a fixed schema (below); secrets in details masked, files 0600
 deploys streak [--days 90] [--project <name>] [--json]   # deploys in a row without a failure per project: now and longest (from the journal; reads only)
@@ -146,9 +148,9 @@ deploys perf clean [--yes] [--dev]      # orphaned dev processes and test browse
 deploys perf reap [--all] [--yes] [--pid N]   # hung and orphaned process trees by class (PERF.md)
 deploys perf consumers | docker | stop <stack> --yes | wake <stack>   # Docker stacks, simulators, caches
 deploys perf install [--clean] [--docker] --yes | uninstall | hook   # the launchd agent; the Claude Code hook entry
-deploys sessions [--json]               # Claude Code sessions on this Mac: tasks started together on one repo, twins, idle ones (SESSIONS.md)
-deploys sessions stop <pid> --yes       # end one session (its transcript file stays); without --yes only what it would do
-deploys sessions set max-local 30 | bundle-to 3 | burst-min 10 | idle-min 60   # yellow count, what counts as started together, idle
+deploys localsessions [--json]               # Claude Code sessions on this Mac: tasks started together on one repo, twins, idle ones (LOCALSESSIONS.md)
+deploys localsessions stop <pid> --yes       # end one session (its transcript file stays); without --yes only what it would do
+deploys localsessions set max-local 30 | bundle-to 3 | burst-min 10 | idle-min 60   # yellow count, what counts as started together, idle
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE-IN-APP.md
 deploys scan start owner/repo           # Claude Code looks for bugs and opens one fix PR (SCAN.md)
 deploys scan status | list | log <id>   # installed and logged in, the newest scans, one report

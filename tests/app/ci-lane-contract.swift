@@ -76,8 +76,8 @@ import AppKit
         if let w = load(WindowReply.self, "window.json") {
             expect("contract window: closed, with the reason", "\(w.denied) \(w.reason ?? "-")", "true freeze")
         }
-        if let s = load(SessionsSnapshot.self, "sessions.json") {
-            expect("contract sessions: count, twins, cloud unknown", "\(s.local.count) \(s.duplicates.map(\.pids)) \(s.cloud.count == nil)", "2 [[501, 502]] true")
+        if let s = load(SessionsSnapshot.self, "localsessions.json") {
+            expect("contract localsessions: count, twins, cloud unknown", "\(s.local.count) \(s.duplicates.map(\.pids)) \(s.cloud.count == nil)", "2 [[501, 502]] true")
         }
     } else {
         print("skip contract tests (DC_CONTRACT not set; tests/app-tests.sh sets it)")

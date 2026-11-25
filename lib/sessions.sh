@@ -1,224 +1,158 @@
 # shellcheck shell=bash
-# lib/sessions.sh — `deploys sessions [--json]`: the Claude Code sessions running on this Mac, with folder, title,
-# idle time, CPU and RAM. The hint is to bundle tasks: more than bundleTo sessions started within burstMin minutes on
-# one repo, or the same task twice; two sessions in one folder and idle ones are flagged too. Read-only, except `deploys sessions stop <pid> --yes`, which
-# ends one session after a click or a typed --yes. Bash 3.2.
+# lib/sessions.sh — `deploys sessions`: which Claude Code cloud sessions finished, wait or seem stuck.
 #
-# Sources (read-only, docs/SESSIONS.md):
-#   ~/.claude/sessions/<pid>.json        one file per Claude Code process: sessionId, cwd, name (the title), status,
-#                                        startedAt (ms). Only *.json is read; the .key files next to them never are.
-#   ps                                   is the pid alive, is it claude, did it start before the session (pid reuse),
-#                                        CPU and RAM of it and everything under it.
-#   ~/.claude/projects/*/<sessionId>.jsonl   the transcript: its modification time is the last activity.
-# Cloud sessions are not counted: nothing on this Mac says which of them are running (docs/SESSIONS.md).
+#   deploys sessions [--hours 6] [--repo <owner/name>] [--json]   the sessions of the watched repos
+#   deploys sessions add|remove <owner/name>                      watch a repo (or stop)
+#   deploys sessions repos                                        the watched repos and the settings
+#   deploys sessions set prefix|wait|idle|hours <value>           branch prefix (claude/), minutes, hours
 #
-# Tests: DEPLOYS_SESSIONS_FIXTURE=<dir> reads <dir>/ps instead of ps; DEPLOYS_SESSIONS_DIR and DEPLOYS_CLAUDE_PROJECTS
-# point at made-up folders; DEPLOYS_SESSIONS_NOW fixes the clock.
+# There is no public interface for the state of a cloud session, so GitHub is the signal: a cloud session pushes a
+# branch (claude/… by default) and opens a pull request, and its commits carry a "Claude-Session: <url>" trailer.
+# The commit dates are rewritten when it pushes, so the time a branch was last pushed says little; the authored
+# date of its first commit is when the work began. One GraphQL call per repo: the newest pull requests and branches.
+# States of a row:
+#   merged   the pull request was merged: the session is done, a slot is free
+#   closed   closed without a merge
+#   open     a pull request opened less than `wait` minutes ago (sessions that merge themselves do it in seconds)
+#   waiting  a pull request open for `wait` minutes or more: it waits for someone
+#   stuck    no change for `idle` minutes: an open pull request nobody touches, or a branch pushed without one
+#   pushed   a branch without a pull request, pushed less than `idle` minutes ago
+# Settings in sessions.json in the config folder (never in the repo): {"repos":[…],"prefix":"claude/","wait":3,
+# "idle":20,"hours":6}. Read only: nothing here pushes, merges or closes anything.
 
-SESS_CONF="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}/sessions.json"
+SESSIONS_FILE="${CONFIG_DIR:-$HOME/.config/deploys}/sessions.json"
 
-sess_now() { if [ -n "${DEPLOYS_SESSIONS_NOW:-}" ]; then echo "$DEPLOYS_SESSIONS_NOW"; else date +%s; fi; }
-sess_dir() { echo "${DEPLOYS_SESSIONS_DIR:-$HOME/.claude/sessions}"; }
-sess_projects() { echo "${DEPLOYS_CLAUDE_PROJECTS:-$HOME/.claude/projects}"; }
+sessions_conf() {  # the settings with their defaults
+  { cat "$SESSIONS_FILE" 2>/dev/null || echo '{}'; } | jq -c '(if type == "object" then . else {} end)
+    | {repos: ([.repos[]? | strings] | unique), prefix: (.prefix // "claude/"), wait: (.wait // 3), idle: (.idle // 20), hours: (.hours // 6)}' 2>/dev/null \
+    || echo '{"repos":[],"prefix":"claude/","wait":3,"idle":20,"hours":6}'
+}
+sessions_save() { jq . | atomic_write "$SESSIONS_FILE"; }
 
-# The thresholds: defaults, overridden by ~/.config/deploys/sessions.json. One JSON object. maxLocal and maxCloud are
-# high on purpose (20-30 sessions at once are fine; the app's own limit cannot be read from the Mac); the main hint is
-# a burst: more than bundleTo sessions started within burstMin minutes on one repo, which should have been one to
-# bundleTo sessions working the tasks one after another.
-sess_conf() {
-  local f='{}'
-  [ -f "$SESS_CONF" ] && f="$(jq -c 'if type == "object" then . else {} end' "$SESS_CONF" 2>/dev/null || echo '{}')"
-  jq -nc --argjson f "$f" '{maxLocal:30, maxCloud:30, idleMin:60, burstMin:10, bundleTo:3} + $f
-    | .maxLocal |= (if type == "number" and . >= 1 then floor else 30 end)
-    | .maxCloud |= (if type == "number" and . >= 1 then floor else 30 end)
-    | .idleMin |= (if type == "number" and . >= 1 then floor else 60 end)
-    | .burstMin |= (if type == "number" and . >= 1 then floor else 10 end)
-    | .bundleTo |= (if type == "number" and . >= 1 then floor else 3 end)'
+sessions_query() {
+  cat <<'GRAPHQL'
+query($owner:String!,$name:String!,$refs:String!){repository(owner:$owner,name:$name){
+ defaultBranchRef{name}
+ pullRequests(first:60,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url state headRefName createdAt updatedAt mergedAt closedAt
+  first:commits(first:1){nodes{commit{authoredDate}}} last:commits(last:1){nodes{commit{committedDate message}}}}}
+ refs(refPrefix:$refs,first:40,orderBy:{field:TAG_COMMIT_DATE,direction:DESC}){nodes{name target{... on Commit{committedDate authoredDate message}}}}}}
+GRAPHQL
 }
 
-# ps: `pid ppid pcpu rss etime args`, the fixture in tests.
-sess_ps() {
-  if [ -n "${DEPLOYS_SESSIONS_FIXTURE:-}" ]; then cat "$DEPLOYS_SESSIONS_FIXTURE/ps" 2>/dev/null
-  else LC_ALL=C ps -axo pid=,ppid=,pcpu=,rss=,etime=,args= 2>/dev/null; fi
-}
-
-sess_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
-
-# The session files as one JSON array (a broken or foreign file is skipped).
-sess_files() {
-  local d f; d="$(sess_dir)"
-  for f in "$d"/*.json; do
-    [ -f "$f" ] || continue
-    jq -c 'select(type == "object" and (.pid | type) == "number" and (.sessionId | type) == "string")
-      | {pid, sessionId, cwd: (.cwd // ""), title: (.name // ""), kind: (.kind // ""), entrypoint: (.entrypoint // ""),
-         state: (.status // ""), startedAt: ((.startedAt // 0) / 1000 | floor)}' "$f" 2>/dev/null
-  done | jq -sc '.'
-}
-
-# The live processes of those pids: JSON {pid: {start, claude, cpu, mb}} — start from etime, cpu and mb summed over
-# the process and everything under it (the shells, checks and tools it started).
-sess_procs() {  # sess_procs <pids, space separated> <now>
-  sess_ps | awk -v want=" $1 " -v now="$2" '
-    function secs(e,   d, n, t, i, s) { d = 0
-      if (index(e, "-")) { d = substr(e, 1, index(e, "-") - 1); e = substr(e, index(e, "-") + 1) }
-      n = split(e, t, ":"); s = 0; for (i = 1; i <= n; i++) s = s * 60 + t[i]
-      return d * 86400 + s }
-    { pid = $1; par[pid] = $2; cpu[pid] = $3 + 0; rss[pid] = $4 + 0; et[pid] = $5
-      a = $0; for (i = 1; i <= 5; i++) sub(/^[ \t]*[^ \t]+/, "", a); sub(/^[ \t]+/, "", a); args[pid] = a; seen[++n] = pid }
-    END {
-      for (i = 1; i <= n; i++) { p = seen[i]; q = p
-        for (k = 0; k < 64 && q != "" && q != 0; k++) {
-          if (index(want, " " q " ")) { tc[q] += cpu[p]; tr[q] += rss[p]; break }
-          q = par[q] } }
-      printf "{"; c = 0
-      for (i = 1; i <= n; i++) { p = seen[i]; if (!index(want, " " p " ")) continue
-        isc = (args[p] ~ /(^|\/)claude( |$)|claude-code|\/claude\.app\//) ? "true" : "false"
-        printf "%s\"%s\":{\"start\":%d,\"claude\":%s,\"cpu\":%.1f,\"mb\":%d}", (c++ ? "," : ""), p, now - secs(et[p]), isc, tc[p], tr[p] / 1024 }
-      print "}" }'
-}
-
-# Per session from its transcript: the last activity (the file's modification time) and when the task was created (the
-# first time stamp in it; the process may be younger after the app restarted its sessions). JSON {sessionId: {last, first}}.
-sess_activity() {  # stdin: lines "sessionId<TAB>cwd"
-  local pj sid cwd enc f m t first=1; pj="$(sess_projects)"
-  printf '{'
-  while IFS="$(printf '\t')" read -r sid cwd; do
-    case "$sid" in ""|*/*|*..*) continue ;; esac
-    enc="$(printf '%s' "$cwd" | sed 's/[^A-Za-z0-9-]/-/g')"
-    f="$pj/$enc/$sid.jsonl"
-    if [ ! -f "$f" ]; then for f in "$pj"/*/"$sid.jsonl"; do [ -f "$f" ] && break; done; fi
-    [ -f "$f" ] || continue
-    m="$(sess_mtime "$f")"; [ -n "$m" ] || continue
-    t="$(head -n 30 "$f" 2>/dev/null | grep -o '"timestamp":"[0-9T:.-]*Z"' | head -n 1 | cut -d'"' -f4)"
-    [ "$first" = 1 ] || printf ','; first=0
-    printf '"%s":{"last":%s,"first":"%s"}' "$sid" "$m" "$t"
-  done
-  printf '}\n'
-}
-
-# The whole picture as JSON. Pure jq over the three inputs, so the tests can feed it directly.
-sess_judge() {  # sess_judge <files> <procs> <activity> <conf> <now>
-  jq -nc --argjson files "$1" --argjson procs "$2" --argjson act "$3" --argjson conf "$4" --argjson now "$5" '
-    def norm: ascii_downcase | gsub("[^a-z0-9äöüß]+"; " ") | ltrimstr(" ") | rtrimstr(" ");
-    [ $files[]
-      | . as $s | ($procs[($s.pid | tostring)]) as $p
-      # alive, a claude process, and started no later than the session (else the pid was reused)
-      | select($p != null and $p.claude and ($s.startedAt == 0 or $p.start <= $s.startedAt + 5))
-      | ($act[$s.sessionId].last // ($s.startedAt | if . > 0 then . else null end)) as $last
-      | (($act[$s.sessionId].first // "") | sub("\\.[0-9]+Z$"; "Z") | (try fromdateiso8601 catch null)) as $created
-      | $s + {cpu: $p.cpu, mb: $p.mb, lastActivity: $last, created: ($created // (if $s.startedAt > 0 then $s.startedAt else null end)),
-              idleMin: (if $last then ([($now - $last) / 60 | floor, 0] | max) else null end),
-              folder: ($s.cwd | split("/") | map(select(. != "")) | last // "")} ]
-    | unique_by(.sessionId) | map(. + {repo: (.cwd | sub("/\\.claude/worktrees/[^/]+(/.*)?$"; ""))})
-    | sort_by(-(.lastActivity // 0)) as $list
-    | ([$list[] | select(.title | norm | length > 0)] | group_by(.title | norm) | map(select(length > 1))
-        | map({title: .[0].title, pids: map(.pid)})) as $dups
-    | ([$list[] | select(.cwd != "")] | group_by(.cwd) | map(select(length > 1))
-        | map({cwd: .[0].cwd, folder: .[0].folder, pids: map(.pid)})) as $same
-    # bursts: per repo, sessions in start order; a gap of more than burstMin minutes starts a new group
-    | ([$list[] | select(.repo != "" and .created != null)] | group_by(.repo)
-        | map(sort_by(.created) | reduce .[] as $x ([];
-            if length > 0 and ($x.created - .[-1][-1].created) <= $conf.burstMin * 60 then .[-1] += [$x] else . + [[$x]] end)
-          | .[] | select(length > $conf.bundleTo))
-        | map({repo: .[0].repo, folder: (.[0].repo | split("/") | map(select(. != "")) | last // ""), count: length,
-               keep: $conf.bundleTo, pids: map(.pid), extra: (.[$conf.bundleTo:] | map(.pid)),
-               from: .[0].created, to: .[-1].created})) as $bursts
-    | ([$dups[].pids[]]) as $dp | ([$same[].pids[]]) as $sp | ([$bursts[].pids[]]) as $bp | ([$bursts[].extra[]]) as $bx
-    | [$list[] | . + {duplicate: (.pid as $x | $dp | index([$x]) != null),
-                      sameFolder: (.pid as $x | $sp | index([$x]) != null),
-                      burst: (.pid as $x | $bp | index([$x]) != null),
-                      burstExtra: (.pid as $x | $bx | index([$x]) != null),
-                      idle: (.idleMin != null and .idleMin >= $conf.idleMin)}] as $out
-    | ($out | length) as $n
-    | {time: $now,
-       level: (if $n >= $conf.maxLocal then "yellow" else "green" end),
-       local: {count: $n, max: $conf.maxLocal, over: ($n >= $conf.maxLocal)},
-       cloud: {count: null, max: $conf.maxCloud, status: "unknown",
-               note: "Cloud sessions cannot be counted from this Mac: no local file or CLI command says which are running."},
-       idleMin: $conf.idleMin, burstMin: $conf.burstMin, bundleTo: $conf.bundleTo,
-       sessions: $out,
-       bursts: $bursts,
-       duplicates: $dups,
-       sameFolder: $same,
-       idle: [$out[] | select(.idle) | .pid],
-       hint: (if $n >= $conf.maxLocal or ($bursts | length) > 0 or ($dups | length) > 0 then "bundle tasks" else null end)}'
-}
-
-sess_snapshot() {
-  local now files pids procs act
-  now="$(sess_now)"
-  files="$(sess_files)"; [ -n "$files" ] || files='[]'
-  pids="$(jq -r '[.[].pid] | join(" ")' <<<"$files")"
-  procs="$(sess_procs "$pids" "$now")"; [ -n "$procs" ] || procs='{}'
-  act="$(jq -r '.[] | [.sessionId, .cwd] | @tsv' <<<"$files" | sess_activity)"
-  sess_judge "$files" "$procs" "$act" "$(sess_conf)" "$now"
-}
-
-sess_print() {
-  jq -r '
-    def age: if . == null then "?" elif . < 60 then "\(.) min" elif . < 2880 then "\(. / 60 | floor) h" else "\(. / 1440 | floor) d" end;
-    def pad($n): tostring | (. + (" " * $n)) | .[0:$n];
-    def mark: [(if .burstExtra then "started together: close" elif .burst then "started together" else empty end),
-               (if .duplicate then "twice" else empty end), (if .sameFolder then "same folder" else empty end),
-               (if .idle then "idle" else empty end)] | join(", ");
-    "Claude Code sessions on this Mac: \(.local.count) (yellow at \(.local.max)) · cloud: unknown" + (if .level == "yellow" then "  [YELLOW]" else "" end),
-    (if (.sessions | length) == 0 then "  none" else
-      (.sessions[] | "  \(.pid | pad(7))\(.idleMin | age | pad(8))\("\(.cpu) %" | pad(9))\("\(.mb) MB" | pad(9))\(if .state == "idle" then "waits" else .state end | pad(6)) \(if .title == "" then "(no title)" else .title end) — \(.folder)" + (mark | if . == "" then "" else "  [\(.)]" end))
-    end),
-    (if (.bursts | length) > 0 then "Started together, should have been bundled into \(.bundleTo) at most:",
-      (.bursts[] | "  \(.folder): \(.count) sessions within \(((.to - .from) / 60 | floor)) min (pids \(.pids | map(tostring) | join(", "))); extra: \(.extra | map(tostring) | join(", "))") else empty end),
-    (if (.duplicates | length) > 0 then "Same task twice:", (.duplicates[] | "  \(.title): \(.pids | map(tostring) | join(", "))") else empty end),
-    (if (.sameFolder | length) > 0 then "Two sessions in one folder:", (.sameFolder[] | "  \(.folder): \(.pids | map(tostring) | join(", "))") else empty end),
-    (if (.idle | length) > 0 then "Idle for over \(.idleMin) min: \(.idle | map(tostring) | join(", "))" else empty end),
-    (if .hint then "Hint: bundle tasks: tasks started together go to one to \(.bundleTo) sessions that work them one after another; close the extras and duplicates." else empty end),
-    (if .hint then "Closing is yours: deploys sessions stop <pid> --yes" else empty end),
-    "Cloud: unknown (nothing on this Mac says which cloud sessions are running; see docs/SESSIONS.md)."'
-}
-
-# deploys sessions stop <pid> --yes: SIGTERM to one session, after checking again that the pid is a live Claude Code
-# session of the list (not a reused pid). Without --yes it only says what it would do.
-sess_stop() {
-  local yes=0 pid="" a snap s
-  for a in "$@"; do case "$a" in --yes) yes=1 ;; -*) echo "Unknown option $a" >&2; return 2 ;; *) pid="$a" ;; esac; done
-  case "$pid" in ""|*[!0-9]*) echo "Usage: deploys sessions stop <pid> --yes" >&2; return 2 ;; esac
-  snap="$(sess_snapshot)" || return 1
-  s="$(jq -c --argjson p "$pid" '.sessions[] | select(.pid == $p)' <<<"$snap")"
-  [ -n "$s" ] || { echo "No running Claude Code session has pid $pid." >&2; return 1; }
-  if [ "$yes" != 1 ]; then
-    echo "Would end session $pid ($(jq -r 'if .title == "" then .folder else .title end' <<<"$s")). Its transcript file stays; the Claude app may show it as stopped. Add --yes."
-    return 0
+# sessions_fetch <owner/name> <prefix>: the raw answer of GitHub for one repo, or {"error": "…"}.
+sessions_fetch() {
+  local out refs="refs/heads/$2"
+  case "$refs" in */) ;; *) refs="refs/heads/" ;; esac   # GitHub takes only a prefix that ends with /
+  if out="$(gh api graphql -f query="$(sessions_query)" -f owner="${1%%/*}" -f name="${1#*/}" -f refs="$refs" 2>&1)" \
+     && jq -e '.data.repository' >/dev/null 2>&1 <<<"$out"; then
+    jq -c --arg refs "${refs#refs/heads/}" '.data.repository + {refsPrefix: $refs}' <<<"$out"
+  else
+    jq -cn --arg e "$(printf '%s' "$out" | head -c 300)" '{error: (if $e == "" then "no answer from gh" else $e end)}'
   fi
-  [ -z "${DEPLOYS_SESSIONS_FIXTURE:-}" ] || { echo "Ended session $pid (fixture: nothing sent)."; return 0; }
-  kill -TERM "$pid" 2>/dev/null || { echo "Could not end session $pid." >&2; return 1; }
-  echo "Ended session $pid."
 }
 
-# deploys sessions set max-local|max-cloud|idle-min <n>: writes ~/.config/deploys/sessions.json.
-sess_set() {
-  local k="${1:-}" v="${2:-}" key cur
-  case "$k" in max-local) key=maxLocal ;; max-cloud) key=maxCloud ;; idle-min) key=idleMin ;; burst-min) key=burstMin ;; bundle-to) key=bundleTo ;;
-    *) echo "Usage: deploys sessions set max-local|max-cloud|idle-min|burst-min|bundle-to <number>" >&2; return 2 ;; esac
-  case "$v" in ""|*[!0-9]*|0) echo "sessions set: $k needs a whole number of at least 1" >&2; return 2 ;; esac
-  mkdir -p "$(dirname "$SESS_CONF")"
-  cur='{}'; [ -f "$SESS_CONF" ] && cur="$(jq -c 'if type == "object" then . else {} end' "$SESS_CONF" 2>/dev/null || echo '{}')"
-  jq --arg k "$key" --argjson v "$v" '.[$k] = $v' <<<"$cur" > "$SESS_CONF.tmp" && mv "$SESS_CONF.tmp" "$SESS_CONF"
-  echo "sessions: $k = $v"
+# jq: the rows of one repo. In: {repo, data, now, conf}. A pull request or branch outside the window is left out.
+sessions_jq() {
+  cat <<'JQ'
+def t: if . == null then null else (sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) end;
+def link: (tostring | [scan("https://claude\\.ai/code/session_[A-Za-z0-9]+")][0]);
+.now as $now | .conf as $c | .repo as $repo | .data as $d
+| ($d.defaultBranchRef.name // "main") as $main
+| [$d.pullRequests.nodes[]? | select(($c.prefix == "") or (.headRefName | startswith($c.prefix)))] as $prs
+| ($prs | map(.headRefName)) as $withPr
+| ($now - $c.hours * 3600) as $from
+| ([ $prs[] |
+      (.last.nodes[0].commit.committedDate | t) as $pushed
+      | ([.createdAt, .updatedAt, .mergedAt, .closedAt] | map(t) | max) as $touched
+      | select($touched >= $from)
+      | (.first.nodes[0].commit.authoredDate | t) as $began
+      | (if .state == "MERGED" then "merged" elif .state == "CLOSED" then "closed"
+         elif ($now - ([(.updatedAt | t), $pushed] | max)) >= $c.idle * 60 then "stuck"
+         elif ($now - (.createdAt | t)) >= $c.wait * 60 then "waiting" else "open" end) as $s
+      | {repo: $repo, branch: .headRefName, state: $s, title, pr: .number, url, session: (.last.nodes[0].commit.message | link),
+         began: .first.nodes[0].commit.authoredDate, pushed: .last.nodes[0].commit.committedDate, opened: .createdAt,
+         ended: (.mergedAt // .closedAt),
+         minutes: (if $began == null then null else ((((.mergedAt // .closedAt) | t) // $now) - $began) / 60 | floor end),
+         idleMinutes: (if $s == "merged" or $s == "closed" then null else (($now - ([(.updatedAt | t), $pushed] | max)) / 60 | floor) end)} ]
+  + [ $d.refs.nodes[]? | ($d.refsPrefix + .name) as $b
+      | select($b != $main and (($withPr | index($b)) | not))
+      | (.target.committedDate | t) as $pushed | select($pushed != null and $pushed >= $from)
+      | (($now - $pushed) / 60 | floor) as $idle
+      | {repo: $repo, branch: $b, state: (if $idle >= $c.idle then "stuck" else "pushed" end), title: (.target.message | split("\n")[0]),
+         pr: null, url: null, session: (.target.message | link), began: .target.authoredDate, pushed: .target.committedDate,
+         opened: null, ended: null, minutes: ((($now - ((.target.authoredDate | t) // $pushed)) / 60) | floor), idleMinutes: $idle} ])
+JQ
+}
+
+sessions_report() {  # sessions_report <hours or ""> <repo or "">: the whole answer as JSON
+  local conf now repos r data rows='[]' errors='[]'
+  conf="$(sessions_conf)"; now="${DEPLOYS_NOW:-$(date +%s)}"
+  [ -z "$1" ] || conf="$(jq -c --argjson h "$1" '.hours = $h' <<<"$conf")"
+  if [ -n "$2" ]; then repos="$2"; else repos="$(jq -r '.repos[]' <<<"$conf")"; fi
+  for r in $repos; do
+    data="$(sessions_fetch "$r" "$(jq -r .prefix <<<"$conf")")"
+    if jq -e '.error' >/dev/null <<<"$data"; then
+      errors="$(jq -c --arg r "$r" --argjson d "$data" '. + [{repo: $r, error: $d.error}]' <<<"$errors")"; continue
+    fi
+    rows="$(jq -c --argjson rows "$rows" --arg r "$r" --argjson now "$now" --argjson c "$conf" \
+      "\$rows + ({repo: \$r, data: ., now: \$now, conf: \$c} | $(sessions_jq))" <<<"$data")"
+  done
+  jq -n --argjson rows "$rows" --argjson errors "$errors" --argjson conf "$conf" --argjson now "$now" '
+    ($rows | sort_by(.ended // .pushed // .opened // "") | reverse) as $r
+    | {at: ($now | todate), settings: ($conf | del(.repos)), repos: $conf.repos, errors: $errors,
+       summary: {merged: ([$r[] | select(.state == "merged")] | length),
+                 mergedLastHour: ([$r[] | select(.state == "merged" and ((.ended | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601) >= $now - 3600))] | length),
+                 open: ([$r[] | select(.state == "open" or .state == "pushed")] | length),
+                 waiting: ([$r[] | select(.state == "waiting")] | length), stuck: ([$r[] | select(.state == "stuck")] | length),
+                 closed: ([$r[] | select(.state == "closed")] | length)},
+       sessions: $r}'
+}
+
+sessions_print() {  # stdin: the JSON of sessions_report
+  jq -r '
+    def ago: if . == null then "" else "\(.) min" end;
+    if (.repos | length) == 0 and (.sessions | length) == 0 then
+      "No repo is watched. Add one: deploys sessions add <owner/name>"
+    else
+      "Cloud sessions of the last \(.settings.hours) h (\(.repos | join(", "))):",
+      "  \(.summary.mergedLastHour) merged in the last hour, \(.summary.waiting) waiting, \(.summary.stuck) stuck, \(.summary.open) open",
+      (.errors[] | "  \(.repo): not read (\(.error | split("\n")[0]))"),
+      (if (.sessions | length) == 0 then "  No session branch or pull request in this time." else empty end),
+      (.sessions[] | "  \(.state | ("        " + .)[-7:])  \(.branch)\(if .pr then "  #\(.pr)" else "" end)  \(.minutes | ago)\(if .idleMinutes then ", quiet \(.idleMinutes) min" else "" end)  \(.title // "" | .[0:60])")
+    end'
 }
 
 sessions_main() {
-  local sub="list" a rest=(); json="${json:-0}"
-  for a in "$@"; do case "$a" in --json) json=1 ;; *) rest+=("$a") ;; esac; done
-  if [ "${#rest[@]}" -gt 0 ]; then sub="${rest[0]}"; rest=("${rest[@]:1}"); fi
-  case "$sub" in
-    list|status)
-      local snap; snap="$(sess_snapshot)" || return 1
-      if [ "$json" = 1 ]; then echo "$snap"; else sess_print <<<"$snap"; fi ;;
-    stop) sess_stop ${rest[@]+"${rest[@]}"} ;;
-    set) sess_set ${rest[@]+"${rest[@]}"} ;;
-    config) sess_conf ;;
-    *) echo "Usage: deploys sessions [--json] | stop <pid> [--yes] | set max-local|max-cloud|idle-min|burst-min|bundle-to <n> | config" >&2; return 2 ;;
+  local hours="" repo="" conf
+  case "${1:-}" in
+    add|remove)
+      [[ "${2:-}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die_usage "deploys sessions $1 <owner/name>"
+      conf="$(sessions_conf)"
+      if [ "$1" = add ]; then jq --arg r "$2" '.repos = (.repos + [$r] | unique)' <<<"$conf" | sessions_save
+      else jq --arg r "$2" '.repos -= [$r]' <<<"$conf" | sessions_save; fi
+      echo "Watched repos: $(sessions_conf | jq -r '.repos | if length == 0 then "none" else join(", ") end')"; return ;;
+    repos)
+      if [ "${json:-0}" = 1 ]; then sessions_conf | jq .; else sessions_conf | jq -r '"Watched repos: \(.repos | if length == 0 then "none" else join(", ") end)",
+        "Branch prefix: \(if .prefix == "" then "(every branch)" else .prefix end), waiting after \(.wait) min, stuck after \(.idle) min, window \(.hours) h"'; fi
+      return ;;
+    set)
+      case "${2:-}" in
+        prefix) [[ "${3-}" =~ ^([A-Za-z0-9_.-]+/)*$ ]] || die_usage "deploys sessions set prefix <name/> (empty: every branch)"
+                sessions_conf | jq --arg v "${3-}" '.prefix = $v' | sessions_save ;;
+        wait|idle|hours) [[ "${3:-}" =~ ^[1-9][0-9]{0,3}$ ]] || die_usage "deploys sessions set $2 <number, 1-9999>"
+                sessions_conf | jq --arg k "$2" --argjson v "$3" '.[$k] = $v' | sessions_save ;;
+        *) die_usage "deploys sessions set prefix|wait|idle|hours <value>" ;;
+      esac
+      sessions_main repos; return ;;
   esac
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --hours) [[ "${2:-}" =~ ^[1-9][0-9]{0,2}$ ]] || die_usage "--hours takes 1 to 999"; hours="$2"; shift ;;
+      --repo) [[ "${2:-}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die_usage "--repo takes owner/name"; repo="$2"; shift ;;
+      *) die_usage "Unknown option $1. Usage: deploys sessions [--hours 6] [--repo <owner/name>] [--json] | add|remove <owner/name> | repos | set <key> <value>" ;;
+    esac
+    shift
+  done
+  command -v gh >/dev/null 2>&1 || die "deploys sessions needs the GitHub CLI (gh), logged in: gh auth login"
+  if [ "${json:-0}" = 1 ]; then sessions_report "$hours" "$repo"; else sessions_report "$hours" "$repo" | sessions_print; fi
 }
-
-# Run on its own: `bash lib/sessions.sh --json`.
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then sessions_main "$@"; exit $?; fi

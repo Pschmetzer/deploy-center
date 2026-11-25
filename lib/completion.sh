@@ -26,7 +26,8 @@ price:set unset
 budget:set off
 journal:verify export report
 idle:--days --json
-sessions:stop set config --json --yes
+localsessions:stop set config --json --yes
+sessions:add remove repos set --hours --repo --json
 creds:--max-age --json
 certs:--days --json
 domains:--warn --json

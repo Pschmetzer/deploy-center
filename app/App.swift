@@ -180,8 +180,8 @@ struct SettingsView: View {
                         "Aus deploys perf status: Speicherdruck, Swap, Last und die größten Verbraucher."))
             Toggle(L("Show the Claude Code session count", "Anzahl der Claude-Code-Sitzungen zeigen"), isOn: $sessionsIndicator)
                 .disabled(!showMenuBar)
-                .help(L("From deploys sessions: sessions on this Mac, the same task twice, idle ones. Ending one always asks first.",
-                        "Aus deploys sessions: Sitzungen auf diesem Mac, doppelte Aufgaben, untätige. Beenden fragt immer vorher."))
+                .help(L("From deploys localsessions: sessions on this Mac, the same task twice, idle ones. Ending one always asks first.",
+                        "Aus deploys localsessions: Sitzungen auf diesem Mac, doppelte Aufgaben, untätige. Beenden fragt immer vorher."))
             Toggle(L("No Dock icon (menu bar only)", "Kein Dock-Symbol (nur Menüleiste)"), isOn: $hideDock)
                 .disabled(!showMenuBar)
                 .help(showMenuBar ? "" : L("Needs the menu bar icon: without both there is no way back in.",
@@ -587,6 +587,8 @@ struct SettingsView: View {
         s.pendingDeployAll = true
     }
 
+    func applicationDidFinishLaunching(_ notification: Notification) { SessionsWatch.shared.start() }
+
     func attach(_ s: Store) {
         guard store !== s else { return }
         store = s
@@ -687,6 +689,8 @@ struct DeployCenterApp: App {
         WindowGroup(L("Project", "Projekt"), id: "project", for: String.self) { $key in
             ProjectWindow(store: store, key: key ?? "")
         }
+        // Claude Code cloud sessions on GitHub: done, waiting, stuck (app/Sessions.swift).
+        Window(L("Cloud Sessions", "Cloud-Sessions"), id: "sessions") { SessionsView() }
         Settings { SettingsView(store: store) }
         MenuBarExtra(isInserted: $showMenuBar) {
             MenuBarContent(store: store)
@@ -727,6 +731,7 @@ struct MenuBarContent: View {
     @AppStorage("showAll") private var showAll = false
     @AppStorage("perfIndicator") private var perfIndicator = true
     @AppStorage(SessionsMonitor.key) private var sessionsIndicator = true
+    @ObservedObject private var sessions = SessionsWatch.shared
 
     private func openMain() { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
 
@@ -839,6 +844,7 @@ struct MenuBarContent: View {
             openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)
         }
         .keyboardShortcut("o")
+        Button(sessions.menuTitle) { openWindow(id: "sessions"); NSApp.activate(ignoringOtherApps: true) }
         if w.projects > 0 && !store.observer {
             Button(L("Deploy everything with changes …", "Alles mit Änderungen deployen …")) {
                 openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true)

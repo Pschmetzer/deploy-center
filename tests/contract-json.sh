@@ -44,5 +44,5 @@ printf '{"type":"queue-operation","timestamp":"2026-01-01T00:00:00.000Z"}\n' > "
 printf '  501 1 1.0 102400 20:00 /opt/bin/claude\n  502 1 0.0 102400 20:00 /opt/bin/claude\n' > "$tmp/sessfx/ps"
 env -i HOME="$tmp/home" PATH="$tmp/bin:$jqdir:/usr/bin:/bin" DEPLOYS_CONFIG="$c" DEPLOYS_SESSIONS_DIR="$tmp/sess" \
   DEPLOYS_CLAUDE_PROJECTS="$tmp/proj" DEPLOYS_SESSIONS_FIXTURE="$tmp/sessfx" DEPLOYS_SESSIONS_NOW="$now" \
-  /bin/bash ./deploys sessions --json </dev/null > "$out/sessions.json"
-for f in guard autofix config window sessions; do jq -e . "$out/$f.json" >/dev/null || { echo "contract-json: $f.json is not JSON" >&2; exit 1; }; done
+  /bin/bash ./deploys localsessions --json </dev/null > "$out/localsessions.json"
+for f in guard autofix config window localsessions; do jq -e . "$out/$f.json" >/dev/null || { echo "contract-json: $f.json is not JSON" >&2; exit 1; }; done

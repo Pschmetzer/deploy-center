@@ -716,9 +716,9 @@ const tools = [
     run: (a) => textOf(a.consumers === true ? ["perf", "consumers", "--json"] : ["perf", "status", "--json"]),
   },
   {
-    name: "deploys_sessions",
+    name: "deploys_localsessions",
     description:
-      "The Claude Code sessions running on this Mac (deploys sessions --json): count and threshold (level green/yellow), per session pid, title, " +
+      "The Claude Code sessions running on this Mac (deploys localsessions --json): count and threshold (level green/yellow), per session pid, title, " +
       "folder, state, idle minutes, CPU and RAM; `bursts` (more than `bundleTo` sessions on one repo, each created within `burstMin` minutes of the one before: tasks " +
       "that belong in one to three sessions; `extra` are the ones beyond), `duplicates` (the same title twice), `sameFolder` (two sessions in one " +
       "folder), `idle` (no activity for over an hour) and `hint` (\"bundle tasks\"). 20-30 sessions at once are fine. Cloud sessions cannot be counted from the Mac: `cloud.count` " +
@@ -727,7 +727,7 @@ const tools = [
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Claude Code sessions on this Mac", ...READ },
     json: true,
-    run: () => textOf(["sessions", "--json"]),
+    run: () => textOf(["localsessions", "--json"]),
   },
   {
     name: "deploys_health",
@@ -748,6 +748,34 @@ const tools = [
       const args = ["health", "--days", String(checkRange(a.days, "days", 30, 365))];
       if (a.project !== undefined && a.project !== null) args.push("--project", checkProject(a.project));
       if (a.ci === false) args.push("--no-ci");
+      return textOf([...args, "--json"], { timeoutMs: SLOW_TIMEOUT_MS });
+    },
+  },
+  {
+    name: "deploys_sessions",
+    description:
+      "Claude Code cloud sessions seen on GitHub in the watched repos (deploys sessions --json): per session branch its state " +
+      "(merged = done and a slot is free, closed, open, waiting = pull request open for a few minutes, stuck = no change for a while, pushed = branch without pull request), " +
+      "the pull request link, the Claude session link from the commit trailer, and minutes since the first commit; plus a summary " +
+      "(mergedLastHour, waiting, stuck, open). Read-only: nothing is merged or closed. Use it to answer \"which cloud sessions are done, is there room to start new ones?\". " +
+      "The watched repos are set by the human (deploys sessions add <owner/name>).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hours: { type: "integer", minimum: 1, maximum: 168, default: 6, description: "How many hours to look back (1–168, default: the setting, 6)." },
+        repo: { type: "string", description: "Only this repo, owner/name (optional; default: every watched repo)." },
+      },
+      additionalProperties: false,
+    },
+    annotations: { title: "Claude cloud sessions on GitHub", ...READ },
+    json: true,
+    run: (a) => {
+      const args = ["sessions"];
+      if (a.hours !== undefined && a.hours !== null) args.push("--hours", String(checkRange(a.hours, "hours", 6, 168)));
+      if (a.repo !== undefined && a.repo !== null) {
+        if (typeof a.repo !== "string" || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(a.repo)) throw new Error("repo must be owner/name");
+        args.push("--repo", a.repo);
+      }
       return textOf([...args, "--json"], { timeoutMs: SLOW_TIMEOUT_MS });
     },
   },
