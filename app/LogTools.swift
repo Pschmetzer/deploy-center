@@ -84,7 +84,8 @@ enum LogTools {
 
     /// A ready prompt: what failed, where, and the log's tail around the first error. Secrets masked.
     static func claudePrompt(name: String, repo: String?, ref: String?, sha: String?, message: String?, log: String) -> String {
-        let lines = log.components(separatedBy: "\n").map { clean($0) }
+        // Mask first, cut after: a slice that starts inside a private key block would leave the key unmasked.
+        let lines = maskSecrets(log).components(separatedBy: "\n").map { clean($0) }
         let from = Swift.max(0, (firstErrorLine(lines) ?? Swift.max(0, lines.count - 40)) - 10)
         let excerpt = maskSecrets(lines[from..<Swift.min(lines.count, from + 80)].joined(separator: "\n"))
         var head = "The deploy of \"\(name)\" failed."
