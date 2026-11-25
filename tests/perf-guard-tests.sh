@@ -170,6 +170,15 @@ expect "idle stop: nothing on first sight" "$(wc -c < "$tmp/docker.calls" | tr -
 rm -f "$DEPLOYS_CONFIG/perf/last-docker"
 DEPLOYS_PERF_NOW=$((t0 + 7300)) DEPLOYS_PERF_NOTIFY_CMD=true perf tick
 expect "idle stop after 2 h: only the idle stack" "$(cut -d' ' -f2 "$tmp/docker.calls" | tr '\n' ' ')" "bbbbbbbbbbbb aaaaaaaaaaaa "
+# shop is running again (the fixture still shows it up) after that idle stop: kept for 24 h, not stopped again
+: > "$tmp/docker.calls"; rm -f "$DEPLOYS_CONFIG/perf/last-docker"
+DEPLOYS_PERF_NOW=$((t0 + 7400)) DEPLOYS_PERF_NOTIFY_CMD=true perf tick
+expect "a stack started again after an idle stop is not stopped again" "$(wc -c < "$tmp/docker.calls" | tr -d ' ')" "0"
+expect "it is forgotten as stopped" "$(jq -r 'has("shop")' "$DEPLOYS_CONFIG/perf/docker-stopped.json")" "false"
+expect "and logged" "$(grep -c 'kept shop: started again after an idle stop' "$DEPLOYS_CONFIG/perf/clean.log")" "1"
+rm -f "$DEPLOYS_CONFIG/perf/last-docker"
+DEPLOYS_PERF_NOW=$((t0 + 7400 + 3600 * 23)) DEPLOYS_PERF_NOTIFY_CMD=true perf tick
+expect "still left alone 23 h later" "$(wc -c < "$tmp/docker.calls" | tr -d ' ')" "0"
 echo '{"docker":{"autoStop":false}}' > "$DEPLOYS_CONFIG/perf.json"; : > "$tmp/docker.calls"; rm -f "$DEPLOYS_CONFIG/perf/last-docker" "$DEPLOYS_CONFIG/perf/docker-seen.json"
 DEPLOYS_PERF_NOW=$((t0 + 99999)) perf tick
 expect "idle stop is off by default" "$(wc -c < "$tmp/docker.calls" | tr -d ' ')" "0"
