@@ -89,6 +89,7 @@ expect "branch without PR, 30 min: stuck" "$(st claude/lost)" stuck
 expect "a branch with a PR is one row" "$(jq '[.sessions[] | select(.branch == "claude/one")] | length' <<<"$j")" 1
 expect "old branch left out"         "$(st claude/ancient)" ""
 expect "session link from the trailer" "$(jq -r '.sessions[] | select(.branch == "claude/one") | .session' <<<"$j")" https://claude.ai/code/session_01ABCdef
+expect "last commit subject" "$(jq -r '.sessions[] | select(.branch == "claude/pushed") | .lastCommit' <<<"$j")" "wip: pushed"
 expect "minutes from the first authored commit to the merge" "$(jq -r '.sessions[] | select(.branch == "claude/one") | .minutes' <<<"$j")" 42
 expect "summary" "$(jq -c '.summary' <<<"$j")" '{"merged":2,"mergedLastHour":1,"open":2,"waiting":1,"stuck":2,"closed":1}'
 expect "newest first" "$(jq -r '.sessions[0].branch' <<<"$j")" claude/fresh

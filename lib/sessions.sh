@@ -71,6 +71,7 @@ def link: (tostring | [scan("https://claude\\.ai/code/session_[A-Za-z0-9]+")][0]
          elif ($now - (.createdAt | t)) >= $c.wait * 60 then "waiting" else "open" end) as $s
       | {repo: $repo, branch: .headRefName, state: $s, title, pr: .number, url, session: (.last.nodes[0].commit.message | link),
          began: .first.nodes[0].commit.authoredDate, pushed: .last.nodes[0].commit.committedDate, opened: .createdAt,
+         lastCommit: ((.last.nodes[0].commit.message // "") | split("\n")[0]),
          ended: (.mergedAt // .closedAt),
          minutes: (if $began == null then null else ((((.mergedAt // .closedAt) | t) // $now) - $began) / 60 | floor end),
          idleMinutes: (if $s == "merged" or $s == "closed" then null else (($now - ([(.updatedAt | t), $pushed] | max)) / 60 | floor) end)} ]
@@ -80,6 +81,7 @@ def link: (tostring | [scan("https://claude\\.ai/code/session_[A-Za-z0-9]+")][0]
       | (($now - $pushed) / 60 | floor) as $idle
       | {repo: $repo, branch: $b, state: (if $idle >= $c.idle then "stuck" else "pushed" end), title: (.target.message | split("\n")[0]),
          pr: null, url: null, session: (.target.message | link), began: .target.authoredDate, pushed: .target.committedDate,
+         lastCommit: ((.target.message // "") | split("\n")[0]),
          opened: null, ended: null, minutes: ((($now - ((.target.authoredDate | t) // $pushed)) / 60) | floor), idleMinutes: $idle} ])
 JQ
 }
@@ -118,7 +120,7 @@ sessions_print() {  # stdin: the JSON of sessions_report
       "  \(.summary.mergedLastHour) merged in the last hour, \(.summary.waiting) waiting, \(.summary.stuck) stuck, \(.summary.open) open",
       (.errors[] | "  \(.repo): not read (\(.error | split("\n")[0]))"),
       (if (.sessions | length) == 0 then "  No session branch or pull request in this time." else empty end),
-      (.sessions[] | "  \(.state | ("        " + .)[-7:])  \(.branch)\(if .pr then "  #\(.pr)" else "" end)  \(.minutes | ago)\(if .idleMinutes then ", quiet \(.idleMinutes) min" else "" end)  \(.title // "" | .[0:60])")
+      (.sessions[] | "  \(.state | ("        " + .)[-7:])  \(.branch)\(if .pr then "  #\(.pr)" else "" end)  \(.minutes | ago)\(if .idleMinutes then ", quiet \(.idleMinutes) min" else "" end)  \(.title // "" | .[0:60])\(if .pushed then "  (pushed \(.pushed[11:16]) UTC: \(.lastCommit // "" | .[0:50]))" else "" end)")
     end'
 }
 

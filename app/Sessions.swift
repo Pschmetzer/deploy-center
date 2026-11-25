@@ -12,7 +12,7 @@ struct SessionsReport: Decodable, Equatable {
     struct Row: Decodable, Equatable, Identifiable {
         let repo: String; let branch: String; let state: String; let title: String?
         let pr: Int?; let url: String?; let session: String?
-        let began: String?; let ended: String?; let minutes: Int?; let idleMinutes: Int?
+        let began: String?; let pushed: String?; let lastCommit: String?; let ended: String?; let minutes: Int?; let idleMinutes: Int?
         var id: String { repo + "#" + branch }
     }
     let settings: Settings; let repos: [String]; let errors: [RepoError]; let summary: Summary; let sessions: [Row]
@@ -57,6 +57,9 @@ enum SessionsNews {
     @Published private(set) var loading = false
     @Published private(set) var checkedAt: Date?
     private var timer: Timer?
+    /// Minutes still to skip: nothing watched waits for "add" or the window; an error waits longer each time.
+    private var skip = 0
+    private var failures = 0
     private let seenKey = "sessionsSeen"
 
     /// The menu bar line: "Cloud sessions: 2 done, 1 waiting" when something is there.
@@ -72,7 +75,14 @@ enum SessionsNews {
     func start() {
         guard timer == nil else { return }
         Task { await refresh() }
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in Task { @MainActor in await SessionsWatch.shared.refresh() } }
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in Task { @MainActor in await SessionsWatch.shared.tick() } }
+    }
+
+    /// The minute timer: no call while nothing is watched, fewer calls after errors (up to every 30 min).
+    func tick() async {
+        if report?.repos.isEmpty == true { return }
+        if skip > 0 { skip -= 1; return }
+        await refresh()
     }
 
     func refresh() async {
@@ -80,10 +90,11 @@ enum SessionsNews {
         loading = true; defer { loading = false }
         do {
             let r = try await Tool.json(["sessions", "--json"], as: SessionsReport.self, timeout: 45)
-            report = r; error = nil; checkedAt = Date()
+            report = r; error = nil; checkedAt = Date(); failures = 0
             tell(r)
         } catch {
             self.error = (error as? ToolError)?.message ?? error.localizedDescription
+            failures += 1; skip = min(30, 1 << min(failures, 5)) - 1
         }
     }
 
@@ -200,6 +211,10 @@ struct SessionRow: View {
                 Text(row.title ?? row.branch).lineLimit(1)
                 Text((multiRepo ? row.repo + " · " : "") + row.branch + " · " + stateText + detail)
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                if let c = row.lastCommit, !c.isEmpty {
+                    Text(L("Last commit", "Letzter Commit") + (pushedAt.map { L(", pushed ", ", gepusht ") + uiTime($0) } ?? "") + ": " + c)
+                        .font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+                }
             }
             Spacer()
             if let s = row.session, let u = URL(string: s) {
@@ -213,6 +228,7 @@ struct SessionRow: View {
         .padding(.vertical, 2)
     }
 
+    private var pushedAt: Date? { row.pushed.flatMap { ISO8601DateFormatter().date(from: $0) } }
     private var stateText: String {
         switch row.state {
         case "merged": return L("merged", "gemergt")
