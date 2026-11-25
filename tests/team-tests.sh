@@ -40,6 +40,10 @@ case "$path" in
     [ "$repo" != "${GH_DOWN:-}" ] || { echo "gh: Server Error (HTTP 500)" >&2; exit 1; }
     [ -f "$FIX/files/$repo/$file" ] || { echo "gh: Not Found (HTTP 404)" >&2; exit 1; }
     jq -n --rawfile c "$FIX/files/$repo/$file" '{sha:"f1x", content:($c | @base64)}' | answer; exit 0 ;;
+  repos/*/collaborators/*/permission)
+    who="${path#*/collaborators/}"; who="${who%/permission}"
+    r=write; [ ! -f "$FIX/perm/$who" ] || r="$(cat "$FIX/perm/$who")"
+    jq -n --arg r "$r" '{role_name:$r}' | answer; exit 0 ;;
   repos/acme/shop/commits/main|repos/acme/shop/commits/release)
     [ -n "$GH_HEAD" ] || exit 1; echo "{\"sha\":\"$GH_HEAD\"}" | answer; exit 0 ;;
   # The commit checked before a pinned production deploy: on the branch (providers/vercel.sh).
@@ -185,6 +189,10 @@ fresh
   expect "an approving review counts" "$(n aaaa111aaaa111aaaa111aaaa111aaaa111aaaa)" "dev-two"
   expect "the deployer's own review and a review later turned to changes do not count" "$(n bbbb222bbbb222bbbb222bbbb222bbbb222bbbb)" ""
   expect "a label counts only when its person added it" "$(n cccc333cccc333cccc333cccc333cccc333cccc)" "dev-four"
+  mkdir -p "$FIX/perm"; echo triage > "$FIX/perm/dev-two"
+  expect "an approval from an account without write access does not count" "$(n aaaa111aaaa111aaaa111aaaa111aaaa111aaaa)" ""
+  expect "a label from an account without write access does not count" "$(n dddd444dddd444dddd444dddd444dddd444dddd)" ""
+  rm -f "$FIX/perm/dev-two"
   expect "a label on an open issue naming the commit counts" "$(n dddd444dddd444dddd444dddd444dddd444dddd)" "dev-two"
   out="$(team_gate render api acme/shop main aaaa111aaaa111aaaa111aaaa111aaaa111aaaa 2>&1)"; rc=$?
   expect "two needed, one there: refused" "$rc:$(echo "$out" | grep -c 'needs 2 approval')" "1:1"

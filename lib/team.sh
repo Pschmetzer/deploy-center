@@ -258,8 +258,17 @@ team_journal() {  # team_journal <json object>
 # and a label deploy-approved-by:<user> on that PR, or on an open issue that names the commit
 # (its first 7 characters), added by <user> themself (read from the issue's events: anyone may
 # add a label with someone else's name, and that does not count).
+# Whether <login> may push to <repo> (admin, maintain or write). An approval from a triage or
+# read-only account is no approval; a permission that cannot be read does not count either.
+team_can_write() {
+  local role
+  role="$(gh api "repos/$1/collaborators/$2/permission" --jq '.role_name // .permission // ""' 2>/dev/null | head -n 1)"
+  case "$role" in admin|maintain|write) return 0 ;; esac
+  return 1
+}
+
 team_approvals() {
-  local repo="$1" sha="$2" me="$3" prs issues have='[]' n raw e
+  local repo="$1" sha="$2" me="$3" prs issues have='[]' n raw e short
   # GitHub not readable is not "no approvals": the answer says so ({error}), and team_gate stops.
   e="$(mktemp)"
   if ! raw="$(gh api "repos/$repo/commits/$sha/pulls" 2>"$e")" || ! prs="$(jq -c '[.[] | {number, url:.html_url, head:(.head.sha // null), labels:[.labels[]?.name]}]' <<< "$raw" 2>/dev/null)"; then
@@ -281,7 +290,9 @@ team_approvals() {
        | $have + map({user:.user.login, via:"review on PR #\($n)", url:(.html_url // null)})' 2>/dev/null || echo "$have")"
   done
   # Labels: on those PRs, and on open issues that name the commit.
-  issues="$(gh api --paginate "repos/$repo/issues?state=open&per_page=100" 2>/dev/null | jq -s -c --arg s "${sha:0:7}" \
+  # An issue names the commit by at least 12 characters (7 collide too easily).
+  short="${sha:0:12}"
+  issues="$(gh api --paginate "repos/$repo/issues?state=open&per_page=100" 2>/dev/null | jq -s -c --arg s "$short" \
     '[add // [] | .[] | select(((.title // "") + " " + (.body // "")) | contains($s)) | {number, url:.html_url, labels:[.labels[]?.name]}]' 2>/dev/null)" || issues='[]'
   [ -n "$issues" ] || issues='[]'
   local item num lbl who by
@@ -294,7 +305,13 @@ team_approvals() {
     [ "$(printf '%s' "$by" | tr '[:upper:]' '[:lower:]')" = "$(printf '%s' "$who" | tr '[:upper:]' '[:lower:]')" ] || continue
     have="$(jq -c --arg u "$who" --arg via "label on #$num" --arg url "$item" '. + [{user:$u, via:$via, url:$url}]' <<< "$have")"
   done < <(jq -s -r 'add | unique_by(.number) | .[] | . as $i | .labels[] | select(startswith("deploy-approved-by:")) | "\($i.number)\t\($i.url)\t\(.)"' <(echo "$prs") <(echo "$issues"))
-  jq -n -c --argjson have "$have" --argjson prs "$prs" '{have:($have | unique_by(.user | ascii_downcase)), prs:[$prs[] | {number, url}]}'
+  # Only people who may push count, reviews and labels alike.
+  local kept='[]' u
+  for u in $(jq -r '.[].user' <<< "$have" | sort -u); do
+    team_can_write "$repo" "$u" || continue
+    kept="$(jq -c --arg u "$u" --argjson have "$have" '. + [$have[] | select(.user == $u)]' <<< "$kept")"
+  done
+  jq -n -c --argjson have "$kept" --argjson prs "$prs" '{have:($have | unique_by(.user | ascii_downcase)), prs:[$prs[] | {number, url}]}'
 }
 
 # Whether <project> may go live, and with which commit. Prints the commit to deploy (pinned, so
