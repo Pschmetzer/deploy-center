@@ -3,6 +3,8 @@
 ## Unreleased
 
 - MCP: four more read-only tools over the journal commands: `deploys_health`, `deploys_weeks`, `deploys_streak` and `deploys_when`.
+- Fix: `deploys changed`, `plan` and `ai` hung for minutes with a few hundred projects on the macOS bash 3.2: a whitespace check on the whole list was quadratic. It is a glob match now (`nonblank`).
+- Tooling: `scripts/bench.sh` closes stdin and stops a run after `BENCH_TIMEOUT` seconds (default 120), and the CI step has a 10 minute limit; a hanging benchmark no longer cancels the whole test job.
 - Two-person rule: an approval (review or `deploy-approved-by:` label) only counts from an account that may push to the repo (admin, maintain, write); triage and read-only accounts, and accounts whose permission cannot be read, no longer count. An issue counts for a commit only when it names at least 12 characters of its sha (7 matched by accident).
 - Tests: the VS Code test that registers the commands no longer fails now and then on Linux (the temp folder was removed while the CLI still wrote into it); removing it is retried.
 - Fix: `deploys fly set-key` saved a `FlyV1 …` token with its space unquoted, so the keychain kept only `FlyV1`; it is quoted now.
