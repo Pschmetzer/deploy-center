@@ -73,6 +73,10 @@ case "\$*" in
   "plan --json") echo '{"estimate":true,"total":{"builds":2,"usd":1.2,"unpriced":0,"minutes":6},"projects":[{"platform":"vercel","name":"app-web","action":"would-deploy","usd":0.8},{"platform":"render","name":"api","action":"would-deploy","usd":0.4},{"platform":"vercel","name":"site","action":"would-skip","usd":null}]}' ;;
   "idle --days "*" --json") echo "[{\"platform\":\"render\",\"name\":\"old-api\",\"lastAt\":1,\"days\":\$3}]" ;;
   "certs --days "*" --json") echo "[{\"platform\":\"vercel\",\"name\":\"app-web\",\"host\":\"app-web.example.invalid\",\"daysLeft\":5,\"expiring\":true}]" ;;
+  "domains --warn "*" --json") echo "{\"warnDays\":\$3,\"domains\":[{\"platform\":\"vercel\",\"name\":\"app-web\",\"host\":\"www.example.invalid\",\"daysLeft\":9,\"state\":\"warn\"}],\"problems\":1}" ;;
+  "forecast --json") echo '{"month":"2026-11","spentUsd":4.2,"projectedUsd":9.5,"estimate":true,"warning":null}' ;;
+  "env-diff app-web --json") echo '{"project":"app-web","platform":"vercel","same":false,"onlyProduction":["API_URL"],"onlyPreview":[]}' ;;
+  "preview app-web --json") echo '{"project":"app-web","verdict":"ok","commits":[{"message":"fix: typo"}]}' ;;
   "creds --max-age "*" --json") echo '[{"platform":"vercel","label":"Vercel","source":"keychain","accepted":true,"keyAgeDays":120,"rotate":true}]' ;;
   "journal report --month "*) printf '# Deploy Center: %s\n\n3 deploys.\n' "\$4" ;;
   "journal report") printf '# Deploy Center: this month\n\nNo journal yet.\n' ;;

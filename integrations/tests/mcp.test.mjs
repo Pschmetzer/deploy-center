@@ -71,7 +71,7 @@ function start(env = {}, { elicit = null } = {}) {
   return s;
 }
 
-const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_explain", "deploys_freeze", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_providers", "deploys_recovery", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status", "deploys_timeline"];
+const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci", "deploys_cost", "deploys_creds", "deploys_diff", "deploys_digest", "deploys_doctor", "deploys_domains", "deploys_env_diff", "deploys_explain", "deploys_forecast", "deploys_freeze", "deploys_guard_status", "deploys_history", "deploys_idle", "deploys_journal_report", "deploys_journal_search", "deploys_journal_verify", "deploys_ledger", "deploys_list", "deploys_logs", "deploys_notes", "deploys_plan", "deploys_preview", "deploys_providers", "deploys_recovery", "deploys_risk", "deploys_rollback_preview", "deploys_simulate", "deploys_status", "deploys_timeline"];
 
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
@@ -207,6 +207,22 @@ check("certs refuses more than 365 days", r.error === true || /days must be/.tes
 writeFileSync(calls, "");
 r = await s.call("deploys_creds", { max_age: 30 });
 check("creds passes max_age and shows no key", !r.error && callLog().trim() === "creds --max-age 30 --json" && JSON.parse(r.text)[0]?.rotate === true && !/key"/.test(r.text.replace(/keyAgeDays/g, "")), r.text + callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_domains", { warn: 14 });
+check("domains passes warn and returns JSON", !r.error && callLog().trim() === "domains --warn 14 --json" && JSON.parse(r.text).problems === 1, r.text + callLog());
+r = await s.call("deploys_domains", { warn: 0 });
+check("domains refuses warn 0", r.error === true || /warn must be/.test(r.text), r.text);
+writeFileSync(calls, "");
+r = await s.call("deploys_forecast");
+check("forecast runs read-only with --json", !r.error && callLog().trim() === "forecast --json" && JSON.parse(r.text).estimate === true, r.text + callLog());
+writeFileSync(calls, "");
+r = await s.call("deploys_env_diff", { project: "app-web" });
+check("env_diff passes the project, names only", !r.error && callLog().trim() === "env-diff app-web --json" && JSON.parse(r.text).onlyProduction[0] === "API_URL", r.text + callLog());
+r = await s.call("deploys_env_diff", { project: "--yes" });
+check("env_diff refuses an option as project", r.error === true, r.text);
+writeFileSync(calls, "");
+r = await s.call("deploys_preview", { project: "app-web" });
+check("preview is framed as untrusted data", !r.error && callLog().trim() === "preview app-web --json" && /untrusted-data/.test(r.text), r.text + callLog());
 writeFileSync(calls, "");
 r = await s.call("deploys_journal_report", { month: "2026-03" });
 check("journal report passes the month", !r.error && /2026-03/.test(r.text) && callLog().trim() === "journal report --month 2026-03", r.text + callLog());
