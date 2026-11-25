@@ -13,7 +13,7 @@ case "$cmd" in *"perf gate"*|*"perf wait"*) exit 0 ;; esac
 
 # Heavy only as a command of its own: at the start, or after && || ; | ( or a newline, past VAR=value and cd … &&.
 # `grep tsc file` or `echo vitest` is not heavy.
-heavy='(^|[;&|(]|\n)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(time[[:space:]]+)?'
+heavy='(^|[;&|(])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(time[[:space:]]+)?'
 heavy="$heavy"'((npx|pnpm[[:space:]]+exec|pnpm[[:space:]]+dlx|bunx|yarn)[[:space:]]+)?'
 heavy="$heavy"'(tsc|vitest|jest|eslint|playwright|next[[:space:]]+build|xcodebuild|swift[[:space:]]+build|swift[[:space:]]+test|docker[[:space:]]+(build|compose[[:space:]]+build)|\./build\.sh'
 heavy="$heavy"'|(npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(verify|test|build|typecheck|type-check|lint|e2e)([[:space:]:]|$)|npm[[:space:]]+t([[:space:]]|$))'
