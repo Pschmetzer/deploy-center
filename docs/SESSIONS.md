@@ -1,9 +1,10 @@
 # Session counter
 
-Running many Claude Code sessions in parallel is easy to overdo: the same task ends up running twice, sessions sit
-idle for hours, and the cloud session limit is reached. `deploys sessions` counts the sessions on this Mac, flags
-twins and idle ones, and once there are too many it suggests bundling tasks: one session that works several tasks one
-after another instead of one session per task. It never closes a session by itself.
+Twenty or thirty Claude Code sessions at once are fine. What is not: ten tasks started at the same moment as ten
+sessions, when one to three sessions working them one after another would do, or the same task running twice.
+`deploys sessions` counts the sessions on this Mac, finds tasks that were started together on one repo and should have
+been bundled, flags twins and idle sessions, and lists the extras so you can close them. It never closes a session by
+itself.
 
 German: [SESSIONS.de.md](SESSIONS.de.md)
 
@@ -20,18 +21,23 @@ What is flagged:
 
 | Flag | Means |
 | --- | --- |
+| started together | More than `bundle-to` (default 3) sessions created within `burst-min` (default 10) minutes on one repository (its worktrees count as the repository). The ones beyond the first three are marked "close": those tasks belong in the first sessions. |
 | twice | Two sessions with the same title (case, spaces and punctuation ignored): most likely the same task started twice. |
 | same folder | Two sessions working in one folder (the same worktree): they may overwrite each other. Different worktrees of one repository are fine. |
 | idle | No activity for longer than `idle-min` (default 60 minutes). |
 
-The count turns yellow at `max-local` (default 8). With a yellow count, a twin or an idle session, the hint is
-"bundle tasks".
+The count turns yellow only near a limit: at `max-local` (default 30). The app's own session limit cannot be read on the
+Mac, so this is a setting. With tasks started together, a twin or a yellow count, the hint is "bundle tasks". When a
+task was created comes from the first time stamp of its transcript, not from the process start: after the desktop app
+restarted all its sessions at once they are not "started together".
 
 ## Thresholds
 
 ```bash
-deploys sessions set max-local 8    # yellow from this many sessions on this Mac
-deploys sessions set max-cloud 4    # kept for the cloud count, see below
+deploys sessions set max-local 30   # yellow from this many sessions on this Mac
+deploys sessions set max-cloud 30   # kept for the cloud count, see below
+deploys sessions set bundle-to 3    # how many sessions tasks started together may use
+deploys sessions set burst-min 10   # "together": created within this many minutes on one repository
 deploys sessions set idle-min 60    # idle after this many minutes without activity
 ```
 
@@ -39,9 +45,9 @@ They are stored in `~/.config/deploys/sessions.json`.
 
 ## In the menu bar
 
-The menu shows a line "Claude Code: 9 on this Mac · cloud: unknown" with a green or yellow dot. With a hint there is a
-"Bundle tasks" menu that lists the twins, the sessions in one folder and the idle ones; a click on one asks first and
-then ends it. Nothing is ended without that click. Off with Settings → General → "Show the Claude Code session count".
+The menu shows a line "Claude Code: 24 on this Mac · cloud: unknown" with a green or yellow dot. Below it a "Bundle
+tasks" menu names each group started together ("shop: 6 started within 4 min – 3 at most") and lists the extras, then
+the twins, the sessions in one folder and the idle ones; a click on one asks first and then ends it. Nothing is ended without that click. Off with Settings → General → "Show the Claude Code session count".
 
 ## For Claude Code
 
@@ -56,8 +62,8 @@ All read-only:
   session id, folder, title and state. Only the `.json` files are read, never the files next to them.
 - `ps`: whether the pid is alive and a Claude process, and that it started before the session (so a pid that was
   reused by another process is not counted); CPU and RAM of the session and everything it started.
-- `~/.claude/projects/*/<session id>.jsonl`: the transcript; its modification time is the last activity. Without a
-  transcript the session's start counts.
+- `~/.claude/projects/*/<session id>.jsonl`: the transcript; its modification time is the last activity, its first
+  time stamp when the task was created. Without a transcript the process start counts for both.
 
 ## Cloud sessions: unknown
 

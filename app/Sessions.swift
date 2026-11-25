@@ -1,6 +1,6 @@
 // Deploy Center — The session counter in the menu: how many Claude Code sessions run on this Mac, a green or yellow
-// dot against the threshold, and with a hint a "Bundle tasks" menu with the same task running twice, two sessions in
-// one folder and idle ones. The figures come from `deploys sessions --json` (lib/sessions.sh). Read-only: a session is
+// dot against a high threshold (20-30 sessions are fine), and a "Bundle tasks" menu: sessions started together on one
+// repo beyond the first few (they should have been one to three sessions), the same task twice, two in one folder, idle. The figures come from `deploys sessions --json` (lib/sessions.sh). Read-only: a session is
 // ended only after a click and a confirmation (`deploys sessions stop <pid> --yes`). Cloud sessions: unknown.
 
 import AppKit
@@ -11,11 +11,16 @@ struct SessionsSnapshot: Decodable, Equatable {
     struct Cloud: Decodable, Equatable { let count: Int?; let max: Int; let status: String }
     struct Twin: Decodable, Equatable { let title: String; let pids: [Int] }
     struct Folder: Decodable, Equatable { let cwd: String; let folder: String; let pids: [Int] }
+    /// More than `keep` sessions started within burstMin minutes on one repo; `extra` are the ones beyond `keep`.
+    struct Burst: Decodable, Equatable { let repo: String; let folder: String; let count: Int; let keep: Int; let pids: [Int]; let extra: [Int]; let from: Int; let to: Int }
     let level: String
     let local: Count
     let cloud: Cloud
     let idleMin: Int
+    let burstMin: Int
+    let bundleTo: Int
     let sessions: [ClaudeSession]
+    let bursts: [Burst]
     let duplicates: [Twin]
     let sameFolder: [Folder]
     let idle: [Int]
@@ -34,6 +39,8 @@ struct ClaudeSession: Decodable, Equatable, Identifiable {
     let mb: Int
     let duplicate: Bool
     let sameFolder: Bool
+    let burst: Bool
+    let burstExtra: Bool
     let idle: Bool
     var id: Int { pid }
 }
@@ -50,6 +57,13 @@ enum SessionsText {
                      : L("Yellow from \(s.local.max)", "Gelb ab \(s.local.max)")
     }
 
+    /// "Shop: 6 started within 4 min – should be 3 at most"
+    static func burst(_ b: SessionsSnapshot.Burst) -> String {
+        let min = max(0, (b.to - b.from) / 60)
+        return L("\(Demo.mask(b.folder)): \(b.count) started within \(min) min – \(b.keep) at most",
+                 "\(Demo.mask(b.folder)): \(b.count) innerhalb von \(min) min gestartet – höchstens \(b.keep)")
+    }
+
     static func age(_ m: Int?) -> String {
         guard let m else { return "?" }
         if m < 60 { return "\(m) min" }
@@ -57,16 +71,18 @@ enum SessionsText {
         return L("\(m / 1440) d", "\(m / 1440) T")
     }
 
-    /// The sessions worth closing, each once, in this order: the same task twice, two in one folder, idle.
+    /// The sessions worth closing, each once, in this order: started together beyond the first few, the same task
+    /// twice, two in one folder, idle.
     static func candidates(_ s: SessionsSnapshot) -> [ClaudeSession] {
-        let order: (ClaudeSession) -> Int = { $0.duplicate ? 0 : ($0.sameFolder ? 1 : 2) }
-        return s.sessions.filter { $0.duplicate || $0.sameFolder || $0.idle }
+        let order: (ClaudeSession) -> Int = { $0.burstExtra ? 0 : ($0.duplicate ? 1 : ($0.sameFolder ? 2 : 3)) }
+        return s.sessions.filter { $0.burstExtra || $0.duplicate || $0.sameFolder || $0.idle }
             .sorted { (order($0), -($0.idleMin ?? 0)) < (order($1), -($1.idleMin ?? 0)) }
     }
 
     /// Why a session is in the list: "twice", "same folder", "idle 3 h".
     static func reason(_ c: ClaudeSession) -> String {
         var r: [String] = []
+        if c.burstExtra { r.append(L("started together", "zusammen gestartet")) }
         if c.duplicate { r.append(L("twice", "doppelt")) }
         if c.sameFolder { r.append(L("same folder", "selber Ordner")) }
         if c.idle { r.append(L("idle \(age(c.idleMin))", "untätig \(age(c.idleMin))")) }
@@ -130,6 +146,7 @@ final class SessionsMonitor: ObservableObject {
 /// The lines in the menu: the count with its dot, and with a hint the "Bundle tasks" menu.
 struct SessionsMenuSection: View {
     @ObservedObject var mon = SessionsMonitor.shared
+    private func burstLine(_ b: SessionsSnapshot.Burst) -> String { "   " + SessionsText.burst(b) }
 
     var body: some View {
         if let s = mon.snapshot, let lvl = mon.level {
@@ -137,10 +154,12 @@ struct SessionsMenuSection: View {
             Label { Text(SessionsText.summary(s)) } icon: { Image(nsImage: PerfMonitor.dot(lvl)) }
             Text(SessionsText.threshold(s)).font(.caption)
             let list = SessionsText.candidates(s)
-            if s.hint != nil {
-                Menu(L("Bundle tasks (\(s.duplicates.count) twice, \(s.idle.count) idle)", "Aufgaben bündeln (\(s.duplicates.count) doppelt, \(s.idle.count) untätig)")) {
-                    Text(L("Give one session several tasks in a row instead of one session per task.",
-                           "Einer Sitzung mehrere Aufgaben nacheinander geben statt einer Sitzung pro Aufgabe."))
+            if s.hint != nil || !list.isEmpty {
+                let extra = s.bursts.reduce(0) { $0 + $1.extra.count }
+                Menu(L("Bundle tasks (\(extra) started together, \(s.duplicates.count) twice)", "Aufgaben bündeln (\(extra) zusammen gestartet, \(s.duplicates.count) doppelt)")) {
+                    Text(L("Tasks started together belong in one to \(s.bundleTo) sessions that work them one after another.",
+                           "Zusammen gestartete Aufgaben gehören in eine bis \(s.bundleTo) Sitzungen, die sie nacheinander abarbeiten."))
+                    ForEach(s.bursts, id: \.pids) { b in Text(burstLine(b)) }
                     if !list.isEmpty { Divider() }
                     ForEach(list.prefix(15)) { c in
                         Button(L("End ", "Beenden: ") + SessionsText.line(c) + " …") { Task { await mon.close(c) } }

@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # lib/sessions.sh — `deploys sessions [--json]`: the Claude Code sessions running on this Mac, with folder, title,
-# idle time, CPU and RAM; same task twice, two sessions in one folder and sessions idle for over an hour are flagged,
-# and over the threshold the hint is to bundle tasks. Read-only, except `deploys sessions stop <pid> --yes`, which
+# idle time, CPU and RAM. The hint is to bundle tasks: more than bundleTo sessions started within burstMin minutes on
+# one repo, or the same task twice; two sessions in one folder and idle ones are flagged too. Read-only, except `deploys sessions stop <pid> --yes`, which
 # ends one session after a click or a typed --yes. Bash 3.2.
 #
 # Sources (read-only, docs/SESSIONS.md):
@@ -21,14 +21,19 @@ sess_now() { if [ -n "${DEPLOYS_SESSIONS_NOW:-}" ]; then echo "$DEPLOYS_SESSIONS
 sess_dir() { echo "${DEPLOYS_SESSIONS_DIR:-$HOME/.claude/sessions}"; }
 sess_projects() { echo "${DEPLOYS_CLAUDE_PROJECTS:-$HOME/.claude/projects}"; }
 
-# The thresholds: defaults, overridden by ~/.config/deploys/sessions.json. One JSON object.
+# The thresholds: defaults, overridden by ~/.config/deploys/sessions.json. One JSON object. maxLocal and maxCloud are
+# high on purpose (20-30 sessions at once are fine; the app's own limit cannot be read from the Mac); the main hint is
+# a burst: more than bundleTo sessions started within burstMin minutes on one repo, which should have been one to
+# bundleTo sessions working the tasks one after another.
 sess_conf() {
   local f='{}'
   [ -f "$SESS_CONF" ] && f="$(jq -c 'if type == "object" then . else {} end' "$SESS_CONF" 2>/dev/null || echo '{}')"
-  jq -nc --argjson f "$f" '{maxLocal:8, maxCloud:4, idleMin:60} + $f
-    | .maxLocal |= (if type == "number" and . >= 1 then floor else 8 end)
-    | .maxCloud |= (if type == "number" and . >= 1 then floor else 4 end)
-    | .idleMin |= (if type == "number" and . >= 1 then floor else 60 end)'
+  jq -nc --argjson f "$f" '{maxLocal:30, maxCloud:30, idleMin:60, burstMin:10, bundleTo:3} + $f
+    | .maxLocal |= (if type == "number" and . >= 1 then floor else 30 end)
+    | .maxCloud |= (if type == "number" and . >= 1 then floor else 30 end)
+    | .idleMin |= (if type == "number" and . >= 1 then floor else 60 end)
+    | .burstMin |= (if type == "number" and . >= 1 then floor else 10 end)
+    | .bundleTo |= (if type == "number" and . >= 1 then floor else 3 end)'
 }
 
 # ps: `pid ppid pcpu rss etime args`, the fixture in tests.
@@ -72,9 +77,10 @@ sess_procs() {  # sess_procs <pids, space separated> <now>
       print "}" }'
 }
 
-# The last activity per session: the transcript's modification time. JSON {sessionId: epoch}.
+# Per session from its transcript: the last activity (the file's modification time) and when the task was created (the
+# first time stamp in it; the process may be younger after the app restarted its sessions). JSON {sessionId: {last, first}}.
 sess_activity() {  # stdin: lines "sessionId<TAB>cwd"
-  local pj sid cwd enc f m first=1; pj="$(sess_projects)"
+  local pj sid cwd enc f m t first=1; pj="$(sess_projects)"
   printf '{'
   while IFS="$(printf '\t')" read -r sid cwd; do
     case "$sid" in ""|*/*|*..*) continue ;; esac
@@ -83,8 +89,9 @@ sess_activity() {  # stdin: lines "sessionId<TAB>cwd"
     if [ ! -f "$f" ]; then for f in "$pj"/*/"$sid.jsonl"; do [ -f "$f" ] && break; done; fi
     [ -f "$f" ] || continue
     m="$(sess_mtime "$f")"; [ -n "$m" ] || continue
+    t="$(head -n 30 "$f" 2>/dev/null | grep -o '"timestamp":"[0-9T:.-]*Z"' | head -n 1 | cut -d'"' -f4)"
     [ "$first" = 1 ] || printf ','; first=0
-    printf '"%s":%s' "$sid" "$m"
+    printf '"%s":{"last":%s,"first":"%s"}' "$sid" "$m" "$t"
   done
   printf '}\n'
 }
@@ -97,18 +104,30 @@ sess_judge() {  # sess_judge <files> <procs> <activity> <conf> <now>
       | . as $s | ($procs[($s.pid | tostring)]) as $p
       # alive, a claude process, and started no later than the session (else the pid was reused)
       | select($p != null and $p.claude and ($s.startedAt == 0 or $p.start <= $s.startedAt + 5))
-      | ($act[$s.sessionId] // ($s.startedAt | if . > 0 then . else null end)) as $last
-      | $s + {cpu: $p.cpu, mb: $p.mb, lastActivity: $last,
+      | ($act[$s.sessionId].last // ($s.startedAt | if . > 0 then . else null end)) as $last
+      | (($act[$s.sessionId].first // "") | sub("\\.[0-9]+Z$"; "Z") | (try fromdateiso8601 catch null)) as $created
+      | $s + {cpu: $p.cpu, mb: $p.mb, lastActivity: $last, created: ($created // (if $s.startedAt > 0 then $s.startedAt else null end)),
               idleMin: (if $last then ([($now - $last) / 60 | floor, 0] | max) else null end),
               folder: ($s.cwd | split("/") | map(select(. != "")) | last // "")} ]
-    | unique_by(.sessionId) | sort_by(-(.lastActivity // 0)) as $list
+    | unique_by(.sessionId) | map(. + {repo: (.cwd | sub("/\\.claude/worktrees/[^/]+(/.*)?$"; ""))})
+    | sort_by(-(.lastActivity // 0)) as $list
     | ([$list[] | select(.title | norm | length > 0)] | group_by(.title | norm) | map(select(length > 1))
         | map({title: .[0].title, pids: map(.pid)})) as $dups
     | ([$list[] | select(.cwd != "")] | group_by(.cwd) | map(select(length > 1))
         | map({cwd: .[0].cwd, folder: .[0].folder, pids: map(.pid)})) as $same
-    | ([$dups[].pids[]]) as $dp | ([$same[].pids[]]) as $sp
+    # bursts: per repo, sessions in start order; a gap of more than burstMin minutes starts a new group
+    | ([$list[] | select(.repo != "" and .created != null)] | group_by(.repo)
+        | map(sort_by(.created) | reduce .[] as $x ([];
+            if length > 0 and ($x.created - .[-1][-1].created) <= $conf.burstMin * 60 then .[-1] += [$x] else . + [[$x]] end)
+          | .[] | select(length > $conf.bundleTo))
+        | map({repo: .[0].repo, folder: (.[0].repo | split("/") | map(select(. != "")) | last // ""), count: length,
+               keep: $conf.bundleTo, pids: map(.pid), extra: (.[$conf.bundleTo:] | map(.pid)),
+               from: .[0].created, to: .[-1].created})) as $bursts
+    | ([$dups[].pids[]]) as $dp | ([$same[].pids[]]) as $sp | ([$bursts[].pids[]]) as $bp | ([$bursts[].extra[]]) as $bx
     | [$list[] | . + {duplicate: (.pid as $x | $dp | index([$x]) != null),
                       sameFolder: (.pid as $x | $sp | index([$x]) != null),
+                      burst: (.pid as $x | $bp | index([$x]) != null),
+                      burstExtra: (.pid as $x | $bx | index([$x]) != null),
                       idle: (.idleMin != null and .idleMin >= $conf.idleMin)}] as $out
     | ($out | length) as $n
     | {time: $now,
@@ -116,13 +135,13 @@ sess_judge() {  # sess_judge <files> <procs> <activity> <conf> <now>
        local: {count: $n, max: $conf.maxLocal, over: ($n >= $conf.maxLocal)},
        cloud: {count: null, max: $conf.maxCloud, status: "unknown",
                note: "Cloud sessions cannot be counted from this Mac: no local file or CLI command says which are running."},
-       idleMin: $conf.idleMin,
+       idleMin: $conf.idleMin, burstMin: $conf.burstMin, bundleTo: $conf.bundleTo,
        sessions: $out,
+       bursts: $bursts,
        duplicates: $dups,
        sameFolder: $same,
        idle: [$out[] | select(.idle) | .pid],
-       hint: (if $n >= $conf.maxLocal or ($dups | length) > 0 or ($same | length) > 0 or ([$out[] | select(.idle)] | length) > 0
-              then "bundle tasks" else null end)}'
+       hint: (if $n >= $conf.maxLocal or ($bursts | length) > 0 or ($dups | length) > 0 then "bundle tasks" else null end)}'
 }
 
 sess_snapshot() {
@@ -139,16 +158,19 @@ sess_print() {
   jq -r '
     def age: if . == null then "?" elif . < 60 then "\(.) min" elif . < 2880 then "\(. / 60 | floor) h" else "\(. / 1440 | floor) d" end;
     def pad($n): tostring | (. + (" " * $n)) | .[0:$n];
-    def mark: [(if .duplicate then "twice" else empty end), (if .sameFolder then "same folder" else empty end),
+    def mark: [(if .burstExtra then "started together: close" elif .burst then "started together" else empty end),
+               (if .duplicate then "twice" else empty end), (if .sameFolder then "same folder" else empty end),
                (if .idle then "idle" else empty end)] | join(", ");
     "Claude Code sessions on this Mac: \(.local.count) (yellow at \(.local.max)) · cloud: unknown" + (if .level == "yellow" then "  [YELLOW]" else "" end),
     (if (.sessions | length) == 0 then "  none" else
       (.sessions[] | "  \(.pid | pad(7))\(.idleMin | age | pad(8))\("\(.cpu) %" | pad(9))\("\(.mb) MB" | pad(9))\(if .state == "idle" then "waits" else .state end | pad(6)) \(if .title == "" then "(no title)" else .title end) — \(.folder)" + (mark | if . == "" then "" else "  [\(.)]" end))
     end),
+    (if (.bursts | length) > 0 then "Started together, should have been bundled into \(.bundleTo) at most:",
+      (.bursts[] | "  \(.folder): \(.count) sessions within \(((.to - .from) / 60 | floor)) min (pids \(.pids | map(tostring) | join(", "))); extra: \(.extra | map(tostring) | join(", "))") else empty end),
     (if (.duplicates | length) > 0 then "Same task twice:", (.duplicates[] | "  \(.title): \(.pids | map(tostring) | join(", "))") else empty end),
     (if (.sameFolder | length) > 0 then "Two sessions in one folder:", (.sameFolder[] | "  \(.folder): \(.pids | map(tostring) | join(", "))") else empty end),
     (if (.idle | length) > 0 then "Idle for over \(.idleMin) min: \(.idle | map(tostring) | join(", "))" else empty end),
-    (if .hint then "Hint: bundle tasks: give one session several tasks in a row instead of one session per task; close duplicates and idle ones." else empty end),
+    (if .hint then "Hint: bundle tasks: tasks started together go to one to \(.bundleTo) sessions that work them one after another; close the extras and duplicates." else empty end),
     (if .hint then "Closing is yours: deploys sessions stop <pid> --yes" else empty end),
     "Cloud: unknown (nothing on this Mac says which cloud sessions are running; see docs/SESSIONS.md)."'
 }
@@ -174,8 +196,8 @@ sess_stop() {
 # deploys sessions set max-local|max-cloud|idle-min <n>: writes ~/.config/deploys/sessions.json.
 sess_set() {
   local k="${1:-}" v="${2:-}" key cur
-  case "$k" in max-local) key=maxLocal ;; max-cloud) key=maxCloud ;; idle-min) key=idleMin ;;
-    *) echo "Usage: deploys sessions set max-local|max-cloud|idle-min <number>" >&2; return 2 ;; esac
+  case "$k" in max-local) key=maxLocal ;; max-cloud) key=maxCloud ;; idle-min) key=idleMin ;; burst-min) key=burstMin ;; bundle-to) key=bundleTo ;;
+    *) echo "Usage: deploys sessions set max-local|max-cloud|idle-min|burst-min|bundle-to <number>" >&2; return 2 ;; esac
   case "$v" in ""|*[!0-9]*|0) echo "sessions set: $k needs a whole number of at least 1" >&2; return 2 ;; esac
   mkdir -p "$(dirname "$SESS_CONF")"
   cur='{}'; [ -f "$SESS_CONF" ] && cur="$(jq -c 'if type == "object" then . else {} end' "$SESS_CONF" 2>/dev/null || echo '{}')"
@@ -194,7 +216,7 @@ sessions_main() {
     stop) sess_stop ${rest[@]+"${rest[@]}"} ;;
     set) sess_set ${rest[@]+"${rest[@]}"} ;;
     config) sess_conf ;;
-    *) echo "Usage: deploys sessions [--json] | stop <pid> [--yes] | set max-local|max-cloud|idle-min <n> | config" >&2; return 2 ;;
+    *) echo "Usage: deploys sessions [--json] | stop <pid> [--yes] | set max-local|max-cloud|idle-min|burst-min|bundle-to <n> | config" >&2; return 2 ;;
   esac
 }
 

@@ -1,9 +1,9 @@
 # Sitzungszähler
 
-Viele Claude-Code-Sitzungen parallel sind schnell zu viele: Dieselbe Aufgabe läuft doppelt, Sitzungen stehen
-stundenlang still, und das Limit für Cloud-Sitzungen ist erreicht. `deploys sessions` zählt die Sitzungen auf diesem
-Mac, markiert doppelte und untätige und schlägt ab einer Grenze vor, Aufgaben zu bündeln: eine Sitzung, die mehrere
-Aufgaben nacheinander abarbeitet, statt einer Sitzung pro Aufgabe. Sie beendet nie selbst eine Sitzung.
+20 oder 30 Claude-Code-Sitzungen gleichzeitig sind in Ordnung. Nicht in Ordnung: zehn Aufgaben, die im selben Moment
+als zehn Sitzungen starten, wo eine bis drei Sitzungen sie nacheinander abarbeiten könnten, oder dieselbe Aufgabe
+doppelt. `deploys sessions` zählt die Sitzungen auf diesem Mac, findet zusammen gestartete Aufgaben auf einem Repo,
+markiert doppelte und untätige und listet die überzähligen zum Schließen. Sie beendet nie selbst eine Sitzung.
 
 Englisch, mit allen Details: [SESSIONS.md](SESSIONS.md)
 
@@ -15,18 +15,22 @@ deploys sessions --json          # dasselbe für Skripte, die App und den MCP-Se
 deploys sessions stop 4242 --yes # diese Sitzung beenden; das Transkript bleibt, sie lässt sich fortsetzen
 ```
 
-Markiert wird: derselbe Titel zweimal (doppelte Aufgabe), zwei Sitzungen im selben Ordner, und Sitzungen ohne
-Aktivität seit mehr als 60 Minuten. Ab 8 Sitzungen wird die Zahl gelb.
+Markiert wird: mehr als drei Sitzungen, die innerhalb von 10 Minuten auf einem Repo gestartet wurden (die
+überzähligen zum Schließen), derselbe Titel zweimal, zwei Sitzungen im selben Ordner und Sitzungen ohne Aktivität seit
+mehr als 60 Minuten. Gelb wird die Zahl erst ab 30 Sitzungen.
 
 ```bash
-deploys sessions set max-local 8    # gelb ab so vielen Sitzungen auf diesem Mac
+deploys sessions set max-local 30   # gelb ab so vielen Sitzungen auf diesem Mac
+deploys sessions set bundle-to 3    # so viele Sitzungen dürfen zusammen gestartete Aufgaben nutzen
+deploys sessions set burst-min 10   # „zusammen“: innerhalb so vieler Minuten auf einem Repo
 deploys sessions set idle-min 60    # untätig nach so vielen Minuten
 ```
 
 ## In der Menüleiste
 
-Im Menü steht „Claude Code: 9 auf diesem Mac · Cloud: unbekannt“ mit grünem oder gelbem Punkt. Mit Hinweis gibt es
-das Menü „Aufgaben bündeln“ mit den doppelten, den Sitzungen im selben Ordner und den untätigen; ein Klick fragt nach
+Im Menü steht „Claude Code: 24 auf diesem Mac · Cloud: unbekannt“ mit grünem oder gelbem Punkt. Darunter das Menü
+„Aufgaben bündeln“ mit den zusammen gestarteten Gruppen und ihren überzähligen Sitzungen, den doppelten, den Sitzungen im
+selben Ordner und den untätigen; ein Klick fragt nach
 und beendet dann die Sitzung. Ohne diesen Klick wird nichts beendet.
 
 ## Cloud-Sitzungen: unbekannt

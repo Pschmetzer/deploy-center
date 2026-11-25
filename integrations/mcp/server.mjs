@@ -719,10 +719,11 @@ const tools = [
     name: "deploys_sessions",
     description:
       "The Claude Code sessions running on this Mac (deploys sessions --json): count and threshold (level green/yellow), per session pid, title, " +
-      "folder, state, idle minutes, CPU and RAM; `duplicates` (the same title twice: likely the same task), `sameFolder` (two sessions in one " +
-      "folder), `idle` (no activity for over an hour) and `hint` (\"bundle tasks\"). Cloud sessions cannot be counted from the Mac: `cloud.count` " +
-      "is null and `cloud.status` \"unknown\". Read-only. Check it before starting new sessions: when the level is yellow or there is a hint, " +
-      "give an existing session the task instead of starting a new one. Ending a session stays the human's click.",
+      "folder, state, idle minutes, CPU and RAM; `bursts` (more than `bundleTo` sessions created within `burstMin` minutes on one repo: tasks " +
+      "that belong in one to three sessions; `extra` are the ones beyond), `duplicates` (the same title twice), `sameFolder` (two sessions in one " +
+      "folder), `idle` (no activity for over an hour) and `hint` (\"bundle tasks\"). 20-30 sessions at once are fine. Cloud sessions cannot be counted from the Mac: `cloud.count` " +
+      "is null and `cloud.status` \"unknown\". Read-only. Check it before starting several sessions at once: " +
+      "tasks started together go to one to three sessions that work them one after another, not one session each. Ending a session stays the human's click.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     annotations: { title: "Claude Code sessions on this Mac", ...READ },
     json: true,
