@@ -314,7 +314,7 @@ struct PerfPanel: View {
             let running = perf.docker.filter { $0.running > 0 }
             if !running.isEmpty || !perf.stopped.isEmpty {
                 Divider()
-                Text("Docker").font(.subheadline.weight(.semibold))
+                Text(L("Docker", "Docker")).font(.subheadline.weight(.semibold))
                 ForEach(running) { d in
                     HStack {
                         Text(Demo.mask(d.stack) + " – \(PerfText.gb(d.memMB))" + (d.active ? L(" (in use)", " (in Benutzung)") : L(" (idle)", " (ungenutzt)")))
