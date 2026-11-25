@@ -14,6 +14,12 @@ struct Words {
     func n(_ n: Int, _ one: (String, String), _ many: (String, String)) -> String {
         "\(n) " + (n == 1 ? self(one.0, one.1) : self(many.0, many.1))
     }
+    /// Numbers, money and times in the language of the words; the region still sets the formats.
+    var locale: Locale {
+        var c = Locale.Components(locale: .current)
+        c.languageComponents = .init(identifier: german ? "de" : "en")
+        return Locale(components: c)
+    }
     /// After this long without a new snapshot the numbers are greyed and marked as old.
     static let staleAfter: TimeInterval = 3 * 3600
 }
