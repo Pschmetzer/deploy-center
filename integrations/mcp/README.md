@@ -112,6 +112,7 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_env_diff(project)` | `deploys env-diff <project> --json` | Variable names only in production or only in preview. Names, never values. Read-only. |
 | `deploys_preview(project)` | `deploys preview <project> --json` | What a production deploy would do and a verdict. Framed as untrusted data. Starts nothing. |
 | `deploys_perf(consumers?)` | `deploys perf status --json` (or `perf consumers --json`) | How full the Mac is (green/yellow/red), the biggest consumers, and whether a heavy check may start now. Read-only. |
+| `deploys_sessions()` | `deploys sessions --json` | The Claude Code sessions on this Mac: count against the threshold, the same task twice, two in one folder, idle ones and the hint to bundle tasks. Cloud sessions: unknown. Read-only. |
 | `deploys_health(days?, project?, ci?)` | `deploys health --days <n> [--project p] [--no-ci] --json` | 0–100 health per project, worst first. Read-only. |
 | `deploys_weeks(days?, project?)` | `deploys weeks --days <n> --json` | The last N days against the N before: deploys, failure rate, rollbacks. Read-only. |
 | `deploys_streak(days?, project?)` | `deploys streak --days <n> --json` | Deploys in a row without a failure, now and longest. Read-only. |

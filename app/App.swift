@@ -27,6 +27,7 @@ struct SettingsView: View {
     @AppStorage("remindFailures") private var remindFailures = false
     @AppStorage("showMenuBar") private var showMenuBar = true
     @AppStorage("perfIndicator") private var perfIndicator = true
+    @AppStorage(SessionsMonitor.key) private var sessionsIndicator = true
     @AppStorage("hideDock") private var hideDock = false
     @AppStorage("notifications") private var notifications = true
     @AppStorage("checkUpdates") private var checkUpdates = true
@@ -177,6 +178,10 @@ struct SettingsView: View {
                 .disabled(!showMenuBar)
                 .help(L("From deploys perf status: memory pressure, swap, load and the biggest consumers.",
                         "Aus deploys perf status: Speicherdruck, Swap, Last und die größten Verbraucher."))
+            Toggle(L("Show the Claude Code session count", "Anzahl der Claude-Code-Sitzungen zeigen"), isOn: $sessionsIndicator)
+                .disabled(!showMenuBar)
+                .help(L("From deploys sessions: sessions on this Mac, the same task twice, idle ones. Ending one always asks first.",
+                        "Aus deploys sessions: Sitzungen auf diesem Mac, doppelte Aufgaben, untätige. Beenden fragt immer vorher."))
             Toggle(L("No Dock icon (menu bar only)", "Kein Dock-Symbol (nur Menüleiste)"), isOn: $hideDock)
                 .disabled(!showMenuBar)
                 .help(showMenuBar ? "" : L("Needs the menu bar icon: without both there is no way back in.",
@@ -699,7 +704,7 @@ struct DeployCenterApp: App {
             // drawn into the icon (PerfMonitor.icon) instead of standing next to it.
             Image(nsImage: PerfMonitor.icon(active ? "paperplane.fill" : (failed ? "exclamationmark.triangle.fill" : (overBudget ? "dollarsign.circle.fill" : "paperplane")),
                                             level: perfIndicator ? perf.level : nil))
-                .task { appDelegate.attach(store); store.boot(); PerfMonitor.shared.start() }
+                .task { appDelegate.attach(store); store.boot(); PerfMonitor.shared.start(); SessionsMonitor.shared.start() }
                 .modifier(OpensSettingsOnRequest(store: store))
                 .accessibilityLabel("Deploy Center")
                 .accessibilityValue(active ? L("deploying", "deployt gerade")
@@ -721,6 +726,7 @@ struct MenuBarContent: View {
     @AppStorage("onlyChanged") private var onlyChanged = false
     @AppStorage("showAll") private var showAll = false
     @AppStorage("perfIndicator") private var perfIndicator = true
+    @AppStorage(SessionsMonitor.key) private var sessionsIndicator = true
 
     private func openMain() { openWindow(id: "main"); NSApp.activate(ignoringOtherApps: true) }
 
@@ -807,6 +813,7 @@ struct MenuBarContent: View {
         }
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
         if perfIndicator { PerfMenuSection() }
+        if sessionsIndicator { SessionsMenuSection() }
         if tipOn { Text(L("Tip: ", "Tipp: ") + Tips.tip()).foregroundStyle(.secondary) }
         // Stopping needs no confirmation in the window either; it is the same cancel as the row's.
         let active = store.allItems.filter { $0.state.isActive }.sorted { $0.name < $1.name }

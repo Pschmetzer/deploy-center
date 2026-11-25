@@ -26,6 +26,7 @@ price:set unset
 budget:set off
 journal:verify export report
 idle:--days --json
+sessions:stop set config --json --yes
 creds:--max-age --json
 certs:--days --json
 domains:--warn --json

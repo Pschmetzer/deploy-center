@@ -22,6 +22,7 @@ tests/bughunt-tests.sh
 tests/preview-tests.sh
 tests/perf-guard-tests.sh
 tests/perf-tests.sh
+tests/sessions-tests.sh
 tests/app-tests.sh mac full
 ios/Tests/run.sh mac full
 ios/test.sh mac full

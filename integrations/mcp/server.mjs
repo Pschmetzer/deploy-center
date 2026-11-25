@@ -716,6 +716,19 @@ const tools = [
     run: (a) => textOf(a.consumers === true ? ["perf", "consumers", "--json"] : ["perf", "status", "--json"]),
   },
   {
+    name: "deploys_sessions",
+    description:
+      "The Claude Code sessions running on this Mac (deploys sessions --json): count and threshold (level green/yellow), per session pid, title, " +
+      "folder, state, idle minutes, CPU and RAM; `duplicates` (the same title twice: likely the same task), `sameFolder` (two sessions in one " +
+      "folder), `idle` (no activity for over an hour) and `hint` (\"bundle tasks\"). Cloud sessions cannot be counted from the Mac: `cloud.count` " +
+      "is null and `cloud.status` \"unknown\". Read-only. Check it before starting new sessions: when the level is yellow or there is a hint, " +
+      "give an existing session the task instead of starting a new one. Ending a session stays the human's click.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: { title: "Claude Code sessions on this Mac", ...READ },
+    json: true,
+    run: () => textOf(["sessions", "--json"]),
+  },
+  {
     name: "deploys_health",
     description:
       "A 0–100 health score per project, worst first, from the local journal and the CI verdicts (deploys health --json). Read-only. `ci: false` skips reading CI, which is faster. Use it to answer \"which project needs attention?\".",

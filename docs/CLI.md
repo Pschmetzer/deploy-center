@@ -146,6 +146,9 @@ deploys perf clean [--yes] [--dev]      # orphaned dev processes and test browse
 deploys perf reap [--all] [--yes] [--pid N]   # hung and orphaned process trees by class (PERF.md)
 deploys perf consumers | docker | stop <stack> --yes | wake <stack>   # Docker stacks, simulators, caches
 deploys perf install [--clean] [--docker] --yes | uninstall | hook   # the launchd agent; the Claude Code hook entry
+deploys sessions [--json]               # Claude Code sessions on this Mac: title, folder, idle time, CPU, RAM; twins and idle ones (SESSIONS.md)
+deploys sessions stop <pid> --yes       # end one session (the transcript stays); without --yes only what it would do
+deploys sessions set max-local 8 | max-cloud 4 | idle-min 60   # when the count turns yellow, when a session counts as idle
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE-IN-APP.md
 deploys scan start owner/repo           # Claude Code looks for bugs and opens one fix PR (SCAN.md)
 deploys scan status | list | log <id>   # installed and logged in, the newest scans, one report

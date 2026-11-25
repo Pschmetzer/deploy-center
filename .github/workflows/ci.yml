@@ -129,6 +129,8 @@ jobs:
         run: bash tests/perf-guard-tests.sh
       - name: Speed tests (the list is printed as before the speed changes)
         run: bash tests/perf-tests.sh
+      - name: Session counter tests (deploys sessions)
+        run: bash tests/sessions-tests.sh
       - name: Benchmark, 200 projects (reports only, never fails the build)
         continue-on-error: true
         timeout-minutes: 10
@@ -252,6 +254,8 @@ jobs:
         run: bash tests/perf-guard-tests.sh
       - name: Speed tests
         run: bash tests/perf-tests.sh
+      - name: Session counter tests
+        run: bash tests/sessions-tests.sh
 
   integrations:
     # integrations/tests/run.sh: Action, digest, statuspage, badge, notify, hooks, the Claude Code

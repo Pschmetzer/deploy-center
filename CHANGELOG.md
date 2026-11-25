@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Session counter: `deploys sessions [--json]` lists the Claude Code sessions on this Mac (title, folder, idle time, CPU, RAM), flags the same task running twice, two sessions in one folder and sessions idle for over an hour, and hints to bundle tasks from 8 sessions (`deploys sessions set max-local`). The menu shows the count with a green or yellow dot and a "Bundle tasks" menu; ending a session always asks first (`deploys sessions stop <pid> --yes`). Read-only MCP tool `deploys_sessions`. Cloud sessions cannot be counted from the Mac and show as "unknown" ([docs/SESSIONS.md](docs/SESSIONS.md)).
+
 ## 0.14.0 - 2026-11-25
 
 ### Highlights

@@ -72,6 +72,7 @@ case "\$*" in
   "simulate --days "*" --json") jq --argjson d "\$3" '.days = \$d' "$here/../tests/fixtures/savings/simulate-report.json" ;;
   "plan --json") echo '{"estimate":true,"total":{"builds":2,"usd":1.2,"unpriced":0,"minutes":6},"projects":[{"platform":"vercel","name":"app-web","action":"would-deploy","usd":0.8},{"platform":"render","name":"api","action":"would-deploy","usd":0.4},{"platform":"vercel","name":"site","action":"would-skip","usd":null}]}' ;;
   "idle --days "*" --json") echo "[{\"platform\":\"render\",\"name\":\"old-api\",\"lastAt\":1,\"days\":\$3}]" ;;
+  "sessions --json") echo '{"level":"yellow","local":{"count":9,"max":8,"over":true},"cloud":{"count":null,"status":"unknown"},"duplicates":[],"hint":"bundle tasks"}' ;;
   "certs --days "*" --json") echo "[{\"platform\":\"vercel\",\"name\":\"app-web\",\"host\":\"app-web.example.invalid\",\"daysLeft\":5,\"expiring\":true}]" ;;
   "domains --warn "*" --json") echo "{\"warnDays\":\$3,\"domains\":[{\"platform\":\"vercel\",\"name\":\"app-web\",\"host\":\"www.example.invalid\",\"daysLeft\":9,\"state\":\"warn\"}],\"problems\":1}" ;;
   "forecast --json") echo '{"month":"2026-11","spentUsd":4.2,"projectedUsd":9.5,"estimate":true,"warning":null}' ;;
