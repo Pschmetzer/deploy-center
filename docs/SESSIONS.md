@@ -14,14 +14,14 @@ German: [SESSIONS.de.md](SESSIONS.de.md)
 deploys sessions                 # every session: pid, idle time, CPU, RAM, state, title and folder; twins, idle ones, the hint
 deploys sessions --json          # the same for scripts, the app and the MCP server (deploys_sessions)
 deploys sessions stop 4242       # what ending that session would do
-deploys sessions stop 4242 --yes # end it (SIGTERM); its transcript stays and it can be resumed
+deploys sessions stop 4242 --yes # end it (SIGTERM); its transcript file stays, the Claude app may show it as stopped
 ```
 
 What is flagged:
 
 | Flag | Means |
 | --- | --- |
-| started together | More than `bundle-to` (default 3) sessions created within `burst-min` (default 10) minutes on one repository (its worktrees count as the repository). The ones beyond the first three are marked "close": those tasks belong in the first sessions. |
+| started together | More than `bundle-to` (default 3) sessions on one repository, each created within `burst-min` (default 10) minutes of the one before (its worktrees count as the repository). The ones beyond the first three are marked "close": those tasks belong in the first sessions. |
 | twice | Two sessions with the same title (case, spaces and punctuation ignored): most likely the same task started twice. |
 | same folder | Two sessions working in one folder (the same worktree): they may overwrite each other. Different worktrees of one repository are fine. |
 | idle | No activity for longer than `idle-min` (default 60 minutes). |
@@ -37,7 +37,7 @@ restarted all its sessions at once they are not "started together".
 deploys sessions set max-local 30   # yellow from this many sessions on this Mac
 deploys sessions set max-cloud 30   # kept for the cloud count, see below
 deploys sessions set bundle-to 3    # how many sessions tasks started together may use
-deploys sessions set burst-min 10   # "together": created within this many minutes on one repository
+deploys sessions set burst-min 10   # "together": each created within this many minutes of the one before, on one repository
 deploys sessions set idle-min 60    # idle after this many minutes without activity
 ```
 

@@ -128,8 +128,9 @@ final class SessionsMonitor: ObservableObject {
     func close(_ c: ClaudeSession) async {
         let a = NSAlert()
         a.messageText = L("End the session “\(SessionsText.name(c))”?", "Sitzung „\(SessionsText.name(c))“ beenden?")
-        a.informativeText = L("\(SessionsText.reason(c).capitalized). Its transcript stays and it can be resumed later. Unsaved work in that session is lost.",
-                              "\(SessionsText.reason(c).capitalized). Das Transkript bleibt, sie lässt sich später fortsetzen. Ungesicherte Arbeit in der Sitzung geht verloren.")
+        let why = SessionsText.reason(c), cap = why.prefix(1).uppercased() + why.dropFirst()
+        a.informativeText = L("\(cap). Its transcript file stays; the Claude app may show the session as stopped. Work it has not saved is lost.",
+                              "\(cap). Die Transkript-Datei bleibt; die Claude-App zeigt die Sitzung evtl. als gestoppt. Nicht gesicherte Arbeit geht verloren.")
         // The safe answer is the default (Return); ending is the second button.
         a.addButton(withTitle: L("Keep running", "Weiterlaufen lassen"))
         a.addButton(withTitle: L("End session", "Sitzung beenden")).hasDestructiveAction = true

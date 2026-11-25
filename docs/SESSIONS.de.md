@@ -12,17 +12,17 @@ Englisch, mit allen Details: [SESSIONS.md](SESSIONS.md)
 ```bash
 deploys sessions                 # jede Sitzung: PID, untätig seit, CPU, RAM, Zustand, Titel und Ordner; doppelte, untätige, Hinweis
 deploys sessions --json          # dasselbe für Skripte, die App und den MCP-Server (deploys_sessions)
-deploys sessions stop 4242 --yes # diese Sitzung beenden; das Transkript bleibt, sie lässt sich fortsetzen
+deploys sessions stop 4242 --yes # diese Sitzung beenden; die Transkript-Datei bleibt, die Claude-App zeigt sie evtl. als gestoppt
 ```
 
-Markiert wird: mehr als drei Sitzungen, die innerhalb von 10 Minuten auf einem Repo gestartet wurden (die
+Markiert wird: mehr als drei Sitzungen auf einem Repo, jede höchstens 10 Minuten nach der vorigen gestartet (die
 überzähligen zum Schließen), derselbe Titel zweimal, zwei Sitzungen im selben Ordner und Sitzungen ohne Aktivität seit
 mehr als 60 Minuten. Gelb wird die Zahl erst ab 30 Sitzungen.
 
 ```bash
 deploys sessions set max-local 30   # gelb ab so vielen Sitzungen auf diesem Mac
 deploys sessions set bundle-to 3    # so viele Sitzungen dürfen zusammen gestartete Aufgaben nutzen
-deploys sessions set burst-min 10   # „zusammen“: innerhalb so vieler Minuten auf einem Repo
+deploys sessions set burst-min 10   # „zusammen“: jede höchstens so viele Minuten nach der vorigen, auf einem Repo
 deploys sessions set idle-min 60    # untätig nach so vielen Minuten
 ```
 

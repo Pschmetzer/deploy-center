@@ -719,7 +719,7 @@ const tools = [
     name: "deploys_sessions",
     description:
       "The Claude Code sessions running on this Mac (deploys sessions --json): count and threshold (level green/yellow), per session pid, title, " +
-      "folder, state, idle minutes, CPU and RAM; `bursts` (more than `bundleTo` sessions created within `burstMin` minutes on one repo: tasks " +
+      "folder, state, idle minutes, CPU and RAM; `bursts` (more than `bundleTo` sessions on one repo, each created within `burstMin` minutes of the one before: tasks " +
       "that belong in one to three sessions; `extra` are the ones beyond), `duplicates` (the same title twice), `sameFolder` (two sessions in one " +
       "folder), `idle` (no activity for over an hour) and `hint` (\"bundle tasks\"). 20-30 sessions at once are fine. Cloud sessions cannot be counted from the Mac: `cloud.count` " +
       "is null and `cloud.status` \"unknown\". Read-only. Check it before starting several sessions at once: " +

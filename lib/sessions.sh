@@ -185,7 +185,7 @@ sess_stop() {
   s="$(jq -c --argjson p "$pid" '.sessions[] | select(.pid == $p)' <<<"$snap")"
   [ -n "$s" ] || { echo "No running Claude Code session has pid $pid." >&2; return 1; }
   if [ "$yes" != 1 ]; then
-    echo "Would end session $pid ($(jq -r 'if .title == "" then .folder else .title end' <<<"$s")). The transcript stays; it can be resumed. Add --yes."
+    echo "Would end session $pid ($(jq -r 'if .title == "" then .folder else .title end' <<<"$s")). Its transcript file stays; the Claude app may show it as stopped. Add --yes."
     return 0
   fi
   [ -z "${DEPLOYS_SESSIONS_FIXTURE:-}" ] || { echo "Ended session $pid (fixture: nothing sent)."; return 0; }

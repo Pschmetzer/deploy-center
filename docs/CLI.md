@@ -147,7 +147,7 @@ deploys perf reap [--all] [--yes] [--pid N]   # hung and orphaned process trees 
 deploys perf consumers | docker | stop <stack> --yes | wake <stack>   # Docker stacks, simulators, caches
 deploys perf install [--clean] [--docker] --yes | uninstall | hook   # the launchd agent; the Claude Code hook entry
 deploys sessions [--json]               # Claude Code sessions on this Mac: tasks started together on one repo, twins, idle ones (SESSIONS.md)
-deploys sessions stop <pid> --yes       # end one session (the transcript stays); without --yes only what it would do
+deploys sessions stop <pid> --yes       # end one session (its transcript file stays); without --yes only what it would do
 deploys sessions set max-local 30 | bundle-to 3 | burst-min 10 | idle-min 60   # yellow count, what counts as started together, idle
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE-IN-APP.md
 deploys scan start owner/repo           # Claude Code looks for bugs and opens one fix PR (SCAN.md)
