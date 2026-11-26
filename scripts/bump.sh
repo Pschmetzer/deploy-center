@@ -54,6 +54,10 @@ if [ -f site/index.html ]; then
   sed -i.bak -e "s/Version $cur_re ·/Version $new ·/" -e "s/\"softwareVersion\": \"$cur_re\"/\"softwareVersion\": \"$new\"/" -e "s#/download/v$cur_re/DeployCenter-$cur_re-#/download/v$new/DeployCenter-$new-#" site/index.html
   rm -f site/index.html.bak
 fi
+# Workflow examples pin the action to a release tag; they must follow every release, or users copy an old one.
+for ex in $(grep -rlE 'deploy-center/integrations/action@v[0-9]+\.[0-9]+\.[0-9]+' examples integrations/*/examples 2>/dev/null); do
+  sed -i.bak -E "s#(deploy-center/integrations/action@v)[0-9]+\.[0-9]+\.[0-9]+#\1$new#" "$ex" && rm -f "$ex.bak"
+done
 # The MCP server and the Claude Code plugin ship inside the app, so they carry its version.
 # (The VS Code and Raycast extensions are published on their own, with their own changelogs.)
 set_json_version() {
