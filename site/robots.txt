@@ -2,6 +2,7 @@
 User-agent: *
 Allow: /
 Disallow: /docs/search-index.json
+Disallow: /install/
 
 User-agent: GPTBot
 User-agent: OAI-SearchBot
@@ -20,5 +21,6 @@ User-agent: MistralAI-User
 User-agent: cohere-ai
 Allow: /
 Disallow: /docs/search-index.json
+Disallow: /install/
 
 Sitemap: https://deploycenter.app/sitemap.xml
