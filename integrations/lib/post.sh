@@ -26,7 +26,7 @@ webhook_urls() {
   [ -z "${DEPLOYS_NOTIFY_URLS:-}" ] || printf '%s\n' "$DEPLOYS_NOTIFY_URLS" | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | sed '/^$/d'
   if [ -n "$f" ]; then
     [ -f "$f" ] || { echo "DEPLOYS_NOTIFY_URL_FILE: $f is not a file" >&2; return 1; }
-    mode="$(stat -f %Lp "$f" 2>/dev/null || stat -c %a "$f" 2>/dev/null)" || mode=""
+    mode="$(stat -c %a "$f" 2>/dev/null || stat -f %Lp "$f" 2>/dev/null)" || mode=""
     case "$mode" in *[1-7]?|*[1-7]) echo "DEPLOYS_NOTIFY_URL_FILE: $f must not be readable by group or others (chmod 600)" >&2; return 1 ;; esac
     u="$(head -n 1 "$f" | tr -d '\r')"; [ -z "$u" ] || printf '%s\n' "$u"
   fi
@@ -190,16 +190,27 @@ webhook_event_body() {
 }
 
 webhook_send() {
-  local url="$1" format="$2" f extra=()
+  local url="$1" format="$2" f extra=() h
   # http:// only to this machine (a local ntfy, a test server): elsewhere a token in the URL
   # (Telegram, Slack, Discord) would cross the network in clear text.
   case "$url" in
     https://*) ;;
     http://localhost|http://localhost[:/]*|http://127.0.0.1|http://127.0.0.1[:/]*|http://\[::1\]|http://\[::1\][:/]*) ;;
+    http://*)
+      # A ntfy or Matrix server in your own network: allowed by name, only for the hosts you list.
+      h="${url#http://}"; h="${h%%[/?#]*}"; h="${h%%:*}"
+      case ",${DEPLOYS_NOTIFY_ALLOW_HTTP_HOSTS:-}," in *",$h,"*) [ -n "$h" ] || { echo "DEPLOYS_NOTIFY_URL has no host" >&2; return 1; } ;;
+        *) echo "DEPLOYS_NOTIFY_URL must start with https:// (http:// only for localhost)${DEPLOYS_NOTIFY_ALLOW_HTTP_HOSTS:+, or a host in DEPLOYS_NOTIFY_ALLOW_HTTP_HOSTS}" >&2; return 1 ;; esac ;;
     *) echo "DEPLOYS_NOTIFY_URL must start with https:// (http:// only for localhost)" >&2; return 1 ;;
   esac
   case "$url" in *'"'*|*'\'*|*$'\n'*) echo "DEPLOYS_NOTIFY_URL has characters a URL cannot have" >&2; return 1 ;; esac
-  f="$(mktemp)" || return 1
+  f="$(umask 077; mktemp)" || return 1
+  # Ctrl-C or a timeout kill must not leave the message text in $TMPDIR; the caller's own traps come back after.
+  local old_int old_term; old_int="$(trap -p INT)"; old_term="$(trap -p TERM)"
+  # shellcheck disable=SC2064
+  trap "rm -f '$f' '$f.resp'; exit 130" INT
+  # shellcheck disable=SC2064
+  trap "rm -f '$f' '$f.resp'; exit 143" TERM
   if [ "$format" = pushover ]; then
     jq -c --arg k "${DEPLOYS_PUSHOVER_TOKEN:-}" --arg us "${DEPLOYS_PUSHOVER_USER:-}" '{token:$k, user:$us} + .' <<<"$WEBHOOK_BODY" > "$f"
   else printf '%s' "$WEBHOOK_BODY" > "$f"; fi
@@ -208,6 +219,8 @@ webhook_send() {
     extra=(-H "Title: Deploy Center")
     # The Actions header is "view, label, url" separated by , and ;: a , or ; in the label becomes a
     # space, in the URL it is percent-encoded, or the action would silently be dropped.
+    # Click: a tap on the message opens the link (without it, the default tap does nothing).
+    case "${WEBHOOK_LINK:-}" in https://*) extra+=(-H "Click: ${WEBHOOK_LINK}") ;; esac
     if [ -n "${WEBHOOK_LINK:-}" ]; then
       ntfy_label="${WEBHOOK_LABEL//[,;]/ }"; ntfy_url="${WEBHOOK_LINK//,/%2C}"; ntfy_url="${ntfy_url//;/%3B}"
       extra+=(-H "Actions: view, ${ntfy_label}, ${ntfy_url}")
@@ -255,9 +268,17 @@ $(printf 'header = "X-Deploy-Center-Key-Id: %s"' "$DEPLOYS_NOTIFY_KEY_ID")"
   # curl reads the URL from its config on stdin (-K -), so the token is not in the process list.
   # Bounded: a hanging webhook must not hold a cron job or workflow until its limit; 408, 429 and 5xx
   # are retried a few times (not --retry-all-errors: a POST that was delivered and then timed out would be sent twice). `|| rc=$?` so a caller's set -e still reaches the rm.
-  local rc=0
+  local rc=0 fail_opt=(-f)
+  # --fail-with-body (curl 7.76, macOS ships 8.x) keeps the answer text of an error; older curl only fails.
+  if curl --help all 2>/dev/null </dev/null | grep -q -- '--fail-with-body'; then fail_opt=(--fail-with-body); fi
   { printf 'url = "%s"\n' "$url"; [ -z "$secret_header" ] || printf '%s\n' "$secret_header"; [ -z "$sig_headers" ] || printf '%s\n' "$sig_headers"; } \
-    | curl -fsS -K - --connect-timeout 5 --max-time 20 --retry 3 \
-        -X POST -H "Content-Type: $WEBHOOK_TYPE" ${extra[@]+"${extra[@]}"} --data-binary "@$f" -o /dev/null || rc=$?
-  rm -f "$f"; return "$rc"
+    | curl "${fail_opt[@]}" -sS -K - --connect-timeout 5 --max-time 20 --retry 3 \
+        -X POST -H "Content-Type: $WEBHOOK_TYPE" ${extra[@]+"${extra[@]}"} --data-binary "@$f" -o "$f.resp" || rc=$?
+  # Slack ("invalid_blocks"), Discord and Teams say what is wrong in the body: the first line, short, without anything that looks like a token.
+  if [ "$rc" != 0 ] && [ -s "$f.resp" ]; then
+    echo "response: $(head -n 1 "$f.resp" | cut -c1-200 | sed -E 's/[A-Za-z0-9_-]{24,}/[masked]/g')" >&2
+  fi
+  rm -f "$f" "$f.resp"
+  trap - INT TERM; [ -z "$old_int" ] || eval "$old_int"; [ -z "$old_term" ] || eval "$old_term"
+  return "$rc"
 }
