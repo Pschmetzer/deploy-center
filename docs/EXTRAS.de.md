@@ -13,6 +13,17 @@ deploys more heatmap        # die Anwendung eines Befehls
 deploys more --json         # für Skripte
 ```
 
+## heatmap und trend: das Journal als Bild
+
+```bash
+deploys heatmap                      # 12 Wochen, Montag oben: · keine, ░ wenige, ▒ einige, ▓ viele, █ am meisten, ! ein Fehlschlag an dem Tag
+deploys heatmap --weeks 26 --project web
+deploys trend                        # je Projekt eine Sparkline: Deploys pro Tag der letzten 30 Tage, Fehlschläge darunter
+deploys trend web --days 14 --json
+```
+
+Gezählt wie bei [`deploys digest`](CLI.md), in UTC. Gelesen wird nur das Journal.
+
 ## Einen neuen hinzufügen
 
 `lib/x-<name>.sh` neben `deploys` legen. Die Datei definiert `x_<name>_main` (Bindestriche im Namen werden zu Unterstrichen)

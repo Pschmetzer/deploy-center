@@ -13,6 +13,17 @@ deploys more heatmap        # the usage of one
 deploys more --json         # for scripts
 ```
 
+## heatmap and trend: the journal as a picture
+
+```bash
+deploys heatmap                      # 12 weeks, Monday on top: · none, ░ few, ▒ some, ▓ many, █ most, ! a failure that day
+deploys heatmap --weeks 26 --project web
+deploys trend                        # one sparkline per project: deploys a day for 30 days, failures marked below
+deploys trend web --days 14 --json
+```
+
+Counted as [`deploys digest`](CLI.md) counts, in UTC. Only the journal is read.
+
 ## Adding one
 
 Put `lib/x-<name>.sh` next to `deploys`. It defines `x_<name>_main` (dashes in the name become underscores) and says what it
