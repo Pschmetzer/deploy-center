@@ -103,6 +103,16 @@ prefix of the title (`feat:`, `fix(scope):`, `docs:` …). A `!` after the type,
 under "Breaking changes". A title without a prefix goes under "Other"; dependency-bot commits are listed apart. Authors are left out
 unless you ask. Nothing is written or deployed.
 
+## outages: the list behind the median
+
+```bash
+deploys outages                        # every failure period of the last 90 days, longest first
+deploys outages --project web --csv    # for a spreadsheet
+```
+
+An outage starts with the first failure after a start and ends with the next start of the same project; failures in a row are
+one outage, and one with no start after it is "still failing". [`deploys recovery`](CLI.md) gives the median, this the list.
+
 ## Adding one
 
 Put `lib/x-<name>.sh` next to `deploys`. It defines `x_<name>_main` (dashes in the name become underscores) and says what it

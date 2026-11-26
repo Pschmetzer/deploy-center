@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New: `deploys outages [--days 90] [--project p] [--limit 20] [--csv|--json]` lists every failure period (from the first failure to the next start of that project, or still open), longest first, from the journal ([docs/EXTRAS.md](docs/EXTRAS.md)).
 - New: `deploys changelog <project>` writes what waits to deploy as a changelog grouped by kind of change (breaking changes, features, fixes, performance, documentation …) from the commit titles' `feat:`/`fix:` prefixes, dependency-bot commits apart, authors only with `--authors` (`--format md|text`, `--json`); it changes and deploys nothing ([docs/EXTRAS.md](docs/EXTRAS.md)).
 - New: `deploys checklist` keeps your own "before you deploy" points per project (and `*` for all) in `checklists.json` (`checklist add|remove`; a reminder only, nothing waits for it or reads it as a gate), and `deploys lint` checks the settings files (window, budget, slo, checklists, and valid JSON for the rest) for syntax and the fields each expects, exit 1 on a problem ([docs/EXTRAS.md](docs/EXTRAS.md)).
 - New: `deploys backup [--out file]` puts the settings files of the config folder (window, rules, budget, prices, ignored, groups, guard, providers, clean, nightly, prepare, autofix limits, slo, checklists) in one file, never the journal, keys or auto-deploy allowances, and names a file it leaves out; `deploys restore <file>` shows what would change and writes only with `--yes` (not in observer mode), keeping the old files in `restore-backup-<time>/` ([docs/EXTRAS.md](docs/EXTRAS.md)).

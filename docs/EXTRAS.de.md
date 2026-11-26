@@ -103,6 +103,16 @@ des Titels (`feat:`, `fix(scope):`, `docs:` …). Ein `!` hinter der Art oder �
 changes". Ein Titel ohne Präfix kommt unter „Other"; Commits von Abhängigkeits-Bots stehen für sich. Autoren fehlen, solange du sie nicht
 verlangst. Es wird nichts geschrieben oder deployt.
 
+## outages: die Liste hinter dem Median
+
+```bash
+deploys outages                        # jede Fehlschlag-Phase der letzten 90 Tage, die längste zuerst
+deploys outages --project web --csv    # für eine Tabelle
+```
+
+Eine Störung beginnt mit dem ersten Fehlschlag nach einem Start und endet mit dem nächsten Start desselben Projekts; mehrere Fehlschläge
+in Folge sind eine Störung, und eine ohne späteren Start steht als „still failing". [`deploys recovery`](CLI.md) nennt den Median, das hier die Liste.
+
 ## Einen neuen hinzufügen
 
 `lib/x-<name>.sh` neben `deploys` legen. Die Datei definiert `x_<name>_main` (Bindestriche im Namen werden zu Unterstrichen)
