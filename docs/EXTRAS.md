@@ -75,6 +75,21 @@ purpose, so restoring one would switch a safeguard off) and schedules (they belo
 JSON, or looks like it holds a secret, is left out and named. `restore` refuses any file name that is not on that list, and `--yes`
 is refused in observer mode.
 
+## checklist and lint: your own points, your own files
+
+```bash
+deploys checklist add web "run the migration dry run"
+deploys checklist add '*' "tell support before a Friday deploy"    # * = every project
+deploys checklist web                                              # the points for web, then the ones for all
+deploys checklist remove web 1
+deploys lint                                                       # window, budget, slo, checklists and the rest: valid, and the right fields?
+```
+
+A checklist is a reminder: nothing waits for a tick and no deploy command reads it, so it cannot hold a deploy back or let one
+through (use [rules and the deploy window](SAFE-DEPLOY.md) for that). `add` and `remove` change `checklists.json` and are refused
+in observer mode; a point that looks like a secret is refused. `deploys lint` names the file, the rule and the problem
+(`rule 2: "from" must be HH:MM`) and exits 1; `deploys doctor` checks tools and access, `lint` checks your files.
+
 ## Adding one
 
 Put `lib/x-<name>.sh` next to `deploys`. It defines `x_<name>_main` (dashes in the name become underscores) and says what it

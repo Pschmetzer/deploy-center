@@ -75,6 +75,21 @@ checklists und sessions (`.json`). Nie enthalten: das Journal, Caches, Schlüsse
 oder nach einem Geheimnis aussieht, bleibt draußen und wird genannt. `restore` lehnt jeden Dateinamen ab, der nicht auf der Liste steht,
 und `--yes` ist im Beobachtermodus verweigert.
 
+## checklist und lint: eigene Punkte, eigene Dateien
+
+```bash
+deploys checklist add web "Migration als Trockenlauf geprüft"
+deploys checklist add '*' "Support vor einem Freitags-Deploy informieren"    # * = jedes Projekt
+deploys checklist web                                                       # die Punkte für web, dann die für alle
+deploys checklist remove web 1
+deploys lint                                                                # window, budget, slo, checklists und der Rest: gültig, mit den richtigen Feldern?
+```
+
+Eine Checkliste ist eine Erinnerung: nichts wartet auf einen Haken und kein Deploy-Befehl liest sie, sie hält also keinen Deploy
+zurück und lässt keinen durch (dafür gibt es [Regeln und das Deploy-Fenster](SAFE-DEPLOY.md)). `add` und `remove` ändern
+`checklists.json` und sind im Beobachtermodus verweigert; ein Punkt, der nach einem Geheimnis aussieht, wird abgelehnt. `deploys lint` nennt Datei, Regel und
+Problem (`rule 2: "from" must be HH:MM`) und endet mit 1; `deploys doctor` prüft Werkzeuge und Zugang, `lint` deine Dateien.
+
 ## Einen neuen hinzufügen
 
 `lib/x-<name>.sh` neben `deploys` legen. Die Datei definiert `x_<name>_main` (Bindestriche im Namen werden zu Unterstrichen)
