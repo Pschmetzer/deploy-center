@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { age, costLine, describe, mergeProjects, parseArray, platformLabel, statusText, summarize, followStep } from "../src/model";
+import { safeExternalUrl, age, costLine, describe, mergeProjects, parseArray, platformLabel, statusText, summarize, followStep } from "../src/model";
 
 test("parseArray keeps an array, refuses anything else", () => {
   assert.deepEqual(parseArray('[{"a":1}]'), [{ a: 1 }]);
@@ -135,4 +135,14 @@ test("costLine: the estimate for the tooltip, empty without one", () => {
   assert.equal(costLine({ builds: 0, usd: 0 }), "");
   assert.equal(costLine({ builds: 1, usd: null }), "");
   assert.equal(costLine(null), "");
+});
+
+test("safeExternalUrl: https and local http only", () => {
+  assert.equal(safeExternalUrl("https://example.test/a?b=1"), "https://example.test/a?b=1");
+  assert.equal(safeExternalUrl("http://localhost:3000/x"), "http://localhost:3000/x");
+  assert.equal(safeExternalUrl("http://127.0.0.1/"), "http://127.0.0.1/");
+  for (const bad of ["javascript:alert(1)", "file:///etc/passwd", "vscode://x/y", "http://example.test/", "https://", "https://a.test/ b", "https://a.test/\"x", "ftp://a.test", "", null, undefined, 5, "https://a.test/\u0000"]) {
+    assert.equal(safeExternalUrl(bad), null, String(bad));
+  }
+  assert.equal(safeExternalUrl("https://a.test/" + "x".repeat(3000)), null);
 });
