@@ -371,3 +371,45 @@ team_gate() {
   } >&2
   exit 1
 }
+
+# The shared window of deploy-center.json (docs/TEAM.md) is the other way round: when deploys
+# are allowed, {"days":["mon",…], "from":"09:00", "to":"16:00", "tz":"Europe/Berlin"} (or a
+# list of them: any one open is enough). Outside it is closed. A window.json-style {"deny":…}
+# that reaches a project through overrides is the local window, checked by window_json.
+TEAM_WINDOW_RULE='def hm: split(":") | (.[0] | tonumber) * 60 + ((.[1] // "0") | tonumber);
+  def on($d; $dt): ((.days == null) or (.days | map(ascii_downcase | .[0:3]) | index($d)))
+      and ((.dates == null) or (.dates | index($dt)));
+  def prev($dt): (($dt + "T00:00:00Z") | fromdateiso8601 - 86400) as $y
+      | {date: ($y | strftime("%Y-%m-%d")), day: ($y | strftime("%a") | ascii_downcase)};
+  def open1: ($nows[.tz // ""] // $nows[""]) as $n | ($n.time | hm) as $t | prev($n.date) as $p
+      | ((.from // "00:00") | hm) as $f | ((.to // "24:00") | hm) as $u
+      | if $f <= $u then on($n.day; $n.date) and $t >= $f and $t < $u
+        else (on($n.day; $n.date) and $t >= $f) or (on($p.day; $p.date) and $t < $u) end;
+  def says: "\((.days // ["every day"]) | join(", ")) \(.from // "00:00")–\(.to // "24:00")\(if .tz then " " + .tz else "" end)";
+  (if type == "array" then . else [.] end) as $w
+  | if any($w[]; open1) then {denied:false} else {denied:true, reason:"outside the shared deploy window (\($w | map(says) | join("; ")))"} end'
+TEAM_EFF_CACHE=""
+team_eff_once() { if [ -z "$TEAM_EFF_CACHE" ]; then TEAM_EFF_CACHE="$(team_effective 2>/dev/null)" || TEAM_EFF_CACHE='{}'; fi; echo "$TEAM_EFF_CACHE"; }
+# team_window_denied <name>: why the shared window of that project is closed now, or nothing.
+team_window_denied() {
+  team_on || return 0
+  local n="${1#*:}" w now
+  is_provider "${1%%:*}" || n="$1"
+  w="$(team_eff_once | jq -c --arg n "$n" '.projects[$n].window.value // null | if type == "object" and has("deny") then null else . end' 2>/dev/null)"
+  [ -n "$w" ] && [ "$w" != null ] || return 0
+  # DEPLOYS_NOW counts only with DEPLOYS_TESTING=1, as in now_parts.
+  local testnow=""; [ -z "${DEPLOYS_NOW:-}" ] || [ "${DEPLOYS_TESTING:-}" != 1 ] || testnow=1
+  # Every window reads the clock in its own zone ("" = this machine's).
+  local nows='{}' z
+  while IFS= read -r z; do
+    # An unknown zone would silently read as UTC: refused instead.
+    if [ -n "$z" ] && [ -z "$testnow" ] && [ ! -f "/usr/share/zoneinfo/$z" ]; then
+      echo "the shared deploy window of $n names an unknown time zone \"$z\""; return 0
+    fi
+    if [ -n "$testnow" ] || [ -z "$z" ]; then now="$(now_parts)"
+    else now="$(TZ="$z" LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]')"; fi
+    nows="$(jq -c --arg z "$z" --arg d "${now%% *}" --arg t "$(echo "$now" | cut -d' ' -f2)" --arg dt "${now##* }" \
+      '. + {($z): {day:$d, time:$t, date:$dt}}' <<<"$nows")"
+  done < <(echo "$w" | jq -r '(if type == "array" then . else [.] end)[] | (.tz // "")' | sort -u)
+  echo "$w" | jq -r --argjson nows "$nows" "$TEAM_WINDOW_RULE"' | if .denied then .reason else empty end' 2>/dev/null || echo "the shared deploy window of $n could not be read"
+}
