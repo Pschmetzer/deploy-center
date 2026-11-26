@@ -169,4 +169,20 @@ expect "scheduler: a ping after a job that worked" "$(grep -c 'ping.example.test
 PATH="$tmp/bin:$PATH" DEPLOYS_PING_URL="http://ping.example.test/abc" DEPLOYS="$tmp/bin/deploys" DEPLOYS_INTEGRATIONS="$PWD/integrations" bash "$sch" --jobs "$tmp/ping.conf" --once >/dev/null 2>&1
 expect "scheduler: an http ping URL is refused" "$(grep -c 'ping.example.test' "$CALLS")" 0
 
+# --- notify: link and zone are checked; a bad post says why; http hosts by name ---
+nt="integrations/notify/notify.sh"
+printf '[]' > "$tmp/empty.json"
+nrun() { DEPLOYS="$tmp/bin/deploys" "$@" 2>&1; }
+expect "notify: a javascript: link is refused" "$(DEPLOYS_NOTIFY_URL=https://hooks.example.test/x bash "$nt" --dry-run --link 'javascript:alert(1)' "$tmp/empty.json" >/dev/null 2>&1; echo $?)" 1
+expect "notify: an https link passes the check" "$(DEPLOYS_NOTIFY_URL=https://hooks.example.test/x bash "$nt" --dry-run --link 'https://x.example.test/a' "$tmp/empty.json" 2>&1 | grep -c 'must be an https')" 0
+expect "notify: an unknown zone is refused" "$(DEPLOYS_NOTIFY_TZ=Mars/Base bash "$nt" --dry-run "$tmp/empty.json" 2>&1 | grep -c 'not a time zone')" 1
+. integrations/lib/post.sh
+WEBHOOK_BODY='{"text":"x"}' WEBHOOK_TYPE=application/json
+printf '#!/bin/bash\n[ -t 0 ] || cat >/dev/null; for a in "$@"; do [ "$p" = -o ] && echo "{\"error\":\"invalid_blocks\"}" > "$a"; p="$a"; done; exit 22\n' > "$tmp/bin/curl"; chmod +x "$tmp/bin/curl"
+out="$(PATH="$tmp/bin:$PATH" webhook_send https://hooks.example.test/x slack 2>&1)"
+case "$out" in *invalid_blocks*) ok "post: a rejected post shows the answer" ;; *) fail "post: a rejected post shows the answer" "[$out]" ;; esac
+expect "post: no temp file is left after a failed post" "$(mkdir -p "$tmp/t"; TMPDIR="$tmp/t" PATH="$tmp/bin:$PATH" webhook_send https://hooks.example.test/x slack >/dev/null 2>&1; ls "$tmp/t" | wc -l | tr -d ' ')" 0
+out="$(PATH="$tmp/bin:$PATH" webhook_send http://ntfy.lan.example/topic ntfy 2>&1)"; case "$out" in *must\ start\ with\ https*) ok "post: http to an unlisted host is refused" ;; *) fail "post: http refused" "[$out]" ;; esac
+out="$(DEPLOYS_NOTIFY_ALLOW_HTTP_HOSTS=ntfy.lan.example PATH="$tmp/bin:$PATH" webhook_send http://ntfy.lan.example/topic ntfy 2>&1)"; case "$out" in *must\ start*) fail "post: an allowed http host" "[$out]" ;; *) ok "post: http to an allowed host goes out" ;; esac
+
 [ "$fails" = 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

@@ -102,4 +102,54 @@ sqlrisk() { echo "{\"files\":[{\"filename\":\"$1\"}]}" | jq -c "${RISK_DEF%;}; "
 expect "risk: a numbered .sql is a migration" "$(sqlrisk 20260101_add_users.sql)" '{"mig":true,"cfg":false}'
 expect "risk: a seed .sql in a test folder is not red" "$(sqlrisk test/seed.sql | jq -r .mig)" "false"
 
+# --- key_of: the command's complaint is shown (masked); hook_head encodes the ref ---
+out="$(unset RENDER_API_KEY; RENDER_API_KEY_CMD='echo "vault is locked, token=ghp_abcdefghijklmnop1234" >&2' key_of render 2>&1)"
+case "$out" in *"printed no key. It said: vault is locked"*) ok "key_of: the command's stderr line is named" ;; *) fail "key_of: stderr line" "[$out]" ;; esac
+expect "key_of: and its token is masked" "$(printf '%s' "$out" | grep -c ghp_)" "0"
+printf '#!/bin/bash\necho "$*" >> "%s/gh.args"\n' "$tmp" > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
+. ./providers/hook.sh; PATH="$tmp/bin:$PATH" hook_head acme/shop 'feat/a#b?c%d' >/dev/null 2>&1
+expect "hook_head: # ? % in a branch are encoded" "$(cat "$tmp/gh.args")" "api repos/acme/shop/commits/feat%2Fa%23b%3Fc%25d"
+
+# --- deploys help <command> ---
+expect "help <cmd> is <cmd> --help" "$(cli help freeze 2>&1 | head -n 1 | cut -c1-25)" "  deploys freeze [status]"
+cli help nosuchcmd >/dev/null 2>&1; expect "help <unknown> is a usage error" "$?" "2"
+
+# --- deploys lock / unlock: refused like a closed window, --force goes ahead ---
+export DEPLOYS_LOCKS="$tmp/project-locks.json"; rm -f "$DEPLOYS_LOCKS"
+LOCKS_FILE="$DEPLOYS_LOCKS"
+cli lock >/dev/null 2>&1; expect "lock: nothing locked lists nothing and exits 0" "$?" "0"
+cli lock web >/dev/null 2>&1; expect "lock: a lock needs a reason (usage, 2)" "$?" "2"
+expect "lock: locking says so" "$(DEPLOYS_LOCKS="$DEPLOYS_LOCKS" cli lock web "migration running" 2>&1 | head -n 1)" "web is locked: migration running. Starts are refused until: deploys unlock web"
+expect "lock: --json lists it" "$(DEPLOYS_LOCKS="$DEPLOYS_LOCKS" cli lock --json | jq -r '.web.reason')" "migration running"
+expect "lock_denied names the lock" "$(lock_denied web | grep -c '^web is locked: migration running (since ')" "1"
+expect "lock_denied: platform:name is the same project" "$(lock_denied vercel:web | cut -c1-12)" "web is locke"
+expect "lock_denied: another project is free" "$(lock_denied api)" ""
+( forced=0 window_checked=""; freeze_check web ) >/dev/null 2>&1; expect "freeze_check refuses a locked project" "$?" "1"
+( forced=1 window_checked=""; freeze_check web; [ -n "$frozen" ] ) >/dev/null 2>&1; expect "freeze_check --force goes ahead and notes it" "$?" "0"
+( forced=0 window_checked=""; freeze_check api ) >/dev/null 2>&1; expect "freeze_check lets another project through" "$?" "0"
+DEPLOYS_LOCKS="$DEPLOYS_LOCKS" cli unlock web >/dev/null 2>&1
+expect "unlock opens it again" "$(lock_denied web)" ""
+cli lock 'a;b' x >/dev/null 2>&1; expect "lock: a strange name is refused" "$?" "2"
+
+# --- selfupdate_newer and http_notfound_hint (no test named them before) ---
+newer() { selfupdate_newer "$1" "$2" && echo yes || echo no; }
+expect "selfupdate_newer: 0.10.0 is newer than 0.9.10" "$(newer 0.10.0 0.9.10)" yes
+expect "selfupdate_newer: 0.9.10 is not newer than 0.10.0" "$(newer 0.9.10 0.10.0)" no
+expect "selfupdate_newer: the same version is not newer" "$(newer 0.14.0 0.14.0)" no
+expect "selfupdate_newer: 1.0 against 0.99.9" "$(newer 1.0 0.99.9)" yes
+expect "selfupdate_newer: a missing part counts as 0" "$(newer 0.14 0.14.0)" no
+expect "http_notfound_hint: a service id" "$(http_notfound_hint /v1/services/srv-1)" ' (not found: no service "srv-1"; renamed or deleted?)'
+expect "http_notfound_hint: a path under /api/" "$(http_notfound_hint /api/)" ' (not found: the path /api/; renamed or deleted?)'
+expect "http_notfound_hint: a bare versioned path" "$(http_notfound_hint /v1/projects)" ' (not found: the path /v1/projects; renamed or deleted?)'
+
+# --- lib/perfdocker.sh: databases stop last and start first (a fake docker logs the calls) ---
+printf '#!/bin/bash\necho "docker $*" >> "%s/docker.log"\nexit 0\n' "$tmp" > "$tmp/bin/docker"; chmod +x "$tmp/bin/docker"
+stack='{"stack":"shop","ids":"web1 web2 db1","dbIds":"db1"}'
+: > "$tmp/docker.log"; PATH="$tmp/bin:$PATH" perfdocker_act stop "$stack" >/dev/null 2>&1
+expect "perfdocker: stop takes the web containers first, the database last" "$(grep -v inspect "$tmp/docker.log" | tr '\n' '|')" "docker stop web1 web2|docker stop db1|"
+: > "$tmp/docker.log"; DEPLOYS_PERF_DB_WAIT=0 PATH="$tmp/bin:$PATH" perfdocker_act start "$stack" >/dev/null 2>&1
+expect "perfdocker: start brings the database up first" "$(grep -v inspect "$tmp/docker.log" | tr '\n' '|')" "docker start db1|docker start web1 web2|"
+: > "$tmp/docker.log"; PATH="$tmp/bin:$PATH" perfdocker_act stop '{"stack":"x","ids":"a b","dbIds":""}' >/dev/null 2>&1
+expect "perfdocker: a stack without a database is one stop" "$(grep -v inspect "$tmp/docker.log" | tr '\n' '|')" "docker stop a b|"
+
 [ "$fails" = 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

@@ -310,7 +310,7 @@ hook_off() {
 hook_head() {
   local repo="$1" ref="$2"
   type -P gh >/dev/null 2>&1 && [ -z "${DEPLOYS_NO_GITHUB:-}" ] || return 0
-  gh api "repos/$repo/commits/$ref" 2>/dev/null \
+  gh api "repos/$repo/commits/$(jq -rn --arg r "$ref" '$r|@uri')" 2>/dev/null \
     | jq -c '{sha, msg:(.commit.message | split("\n")[0])}' 2>/dev/null || true
 }
 

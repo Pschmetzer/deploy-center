@@ -63,6 +63,8 @@
 #   deploys window [--json]                   is the deploy window (window.json) open now?
 #   deploys freeze [status] [--json]          the closed times of window.json and whether deploys are closed now
 #   deploys freeze add <days> <from> [<to>] [--reason "why"] | remove <n> | clear   e.g. freeze add fri 15:00
+#   deploys lock <p> "why" | lock [list] [--json]   close one project for starts until it is unlocked (no time window)
+#   deploys unlock <p>                        open a locked project again
 #   deploys digest [--days 7] [--json] [--no-savings]   the last week from the journal: deploys, failures, savings
 #   deploys timeline [--days 3] [--project <p>] [--limit 50]   what happened, newest day first (from the journal)
 #   deploys recovery [--days 30] [--project <p>]   how long a failure lasted until the next deploy
@@ -453,7 +455,7 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions; do
+for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions locks; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done
@@ -643,8 +645,11 @@ key_of() {
   for v in $("${p}_meta" | grep -Eo '"keyEnv"[[:space:]]*:[[:space:]]*\[[^]]*\]' | sed -E 's/"keyEnv"[[:space:]]*://' | grep -o '[A-Za-z_][A-Za-z0-9_]*'); do
     c="${v}_CMD"
     [ -n "${!c:-}" ] || continue
-    k="$(with_timeout 20 bash -c "${!c}" </dev/null 2>/dev/null | head -n 1 | tr -d '\r')" || k=""
-    [ -n "$k" ] || { echo "Error: $c printed no key." >&2; return 1; }
+    local ke why=""; ke="$(umask 077; mktemp)"
+    k="$(with_timeout 20 bash -c "${!c}" </dev/null 2>"$ke" | head -n 1 | tr -d '\r')" || k=""
+    # The command's own complaint ("1Password is locked", "no agent"), masked, so "printed no key" has a reason.
+    why="$(tail -n 1 "$ke" 2>/dev/null | cut -c1-200 | af_mask 2>/dev/null)" || why=""; rm -f "$ke"
+    [ -n "$k" ] || { echo "Error: $c printed no key.${why:+ It said: $why}" >&2; return 1; }
     case "$k" in *[\"\\]*) echo "Error: $c printed a key with a character that cannot be in one (quote or backslash)." >&2; return 1;; esac
     printf '%s' "$k"; return 0
   done
@@ -1233,6 +1238,7 @@ window_json() {
 frozen=""; window_checked=""
 # The shared window of deploy-center.json (docs/TEAM.md): TEAM_WINDOW_RULE and team_window_denied are in lib/team.sh.
 # Without that file there is no shared window and nothing to read.
+declare -F lock_denied >/dev/null || lock_denied() { :; }
 declare -F team_window_denied >/dev/null || { team_window_denied() { :; }; team_eff_once() { echo '{}'; }; }
 # freeze_check [<name>...]: the local window, then the shared window of each project named.
 freeze_check() {
@@ -1248,6 +1254,7 @@ freeze_check() {
   for n in "$@"; do
     [ -n "$n" ] || continue
     why="$(team_window_denied "$n")"
+    [ -n "$why" ] || why="$(lock_denied "$n")"
     [ -n "$why" ] || continue
     [ "$forced" = 1 ] || die "No deploys of $n now: $why. To deploy anyway: --force \"why\""
     frozen="${frozen:+$frozen; }$n: $why"
@@ -2828,6 +2835,8 @@ provider_verbs() {
 }
 case "${1:-}" in
   -h|--help|help)
+    # `deploys help <command>` is `deploys <command> --help`.
+    if [ "${1:-}" = help ] && [ -n "${2:-}" ]; then exec "$SELF" "$2" --help; fi
     sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//'
     # The providers that are on, with every command each one takes (their own ones too).
     echo "Provider commands (deploys <p> <command>; the providers that are on here):"
@@ -3060,7 +3069,8 @@ case "${1:-} ${2:-}" in
     count="$(echo "$members" | grep -c .)"; i=0
     # Production starts wait for the deploy window, as `<p> deploy` and deploy-changed do. Asked once
     # for the whole group, before anything starts: a window must not stop a group halfway.
-    [ -n "$pv" ] || freeze_check $members
+    # No globbing: a member named "*" must not expand to the files of the current folder.
+    if [ -z "$pv" ]; then set -f; freeze_check $members; set +f; fi
     # --json: one project is one object (as always); a group is one array of the starts, also when
     # it stops halfway (what started is in it). A watch in between talks on stderr then.
     GROUP_STARTS='[]'
@@ -3879,6 +3889,9 @@ case "${1:-} ${2:-}" in
     sed -n '/^# Exit codes: /,/^#$/p' "$SELF" | sed 's/^# \{0,1\}//'
     echo "Every command: the table is in docs/CLI.md (Exit codes)." ;;
 
+  "lock"|"lock "*|"unlock "*)
+    declare -F locks_main >/dev/null || die "$1 needs lib/locks.sh next to deploys."
+    locks_main "$@" ;;
   "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*|"local-sessions "*|"clean "*)
     case "$1" in env-diff) _f=envdiff_main ;; group) _f=groups_main ;; local-sessions) _f=localsessions_main ;; *) _f="${1}_main" ;; esac
     declare -F "$_f" >/dev/null || die "$1 needs its file in lib/ next to deploys."
@@ -4125,7 +4138,7 @@ case "${1:-} ${2:-}" in
     start() {  # start <platform> <name> <sha or empty> <reason> [<id>]
       local st sha="$3" why="$4" note shut
       # The shared deploy window of this project (deploy-center.json): closed means skipped, unless --force.
-      shut="$(team_window_denied "$2")"
+      shut="$(team_window_denied "$2")"; [ -n "$shut" ] || shut="$(lock_denied "$2")"
       if [ -n "$shut" ]; then
         if [ "$forced" != 1 ]; then skip=$((skip+1)); say "$1" "$2" skipped "$shut (--force \"why\" to deploy anyway)"; return 0; fi
         frozen="${frozen:+$frozen; }$2: $shut"
