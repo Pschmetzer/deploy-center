@@ -157,3 +157,6 @@ completed, bad configs), the ids of both feeds and German texts, with a fixed cl
 SHA or repo is published. Not tested yet: a run against real accounts, and the example workflow on
 GitHub.
 All add-ons at a glance: [what is tested](../README.md#what-is-tested-and-what-is-not).
+## Settings
+
+`STATUSPAGE_RETRY_WAIT` (seconds, default 2) is the pause before the second try of a site check. The site checks send the user agent `deploy-center-statuspage`, so a site's owner can tell and allow them. The journal is read from `DEPLOYS_JOURNAL`, else the app's folder on a Mac and `$DEPLOYS_CONFIG/journal.jsonl` elsewhere (as the CLI writes it).

@@ -102,4 +102,12 @@ sqlrisk() { echo "{\"files\":[{\"filename\":\"$1\"}]}" | jq -c "${RISK_DEF%;}; "
 expect "risk: a numbered .sql is a migration" "$(sqlrisk 20260101_add_users.sql)" '{"mig":true,"cfg":false}'
 expect "risk: a seed .sql in a test folder is not red" "$(sqlrisk test/seed.sql | jq -r .mig)" "false"
 
+# --- key_of: the command's complaint is shown (masked); hook_head encodes the ref ---
+out="$(unset RENDER_API_KEY; RENDER_API_KEY_CMD='echo "vault is locked, token=ghp_abcdefghijklmnop1234" >&2' key_of render 2>&1)"
+case "$out" in *"printed no key. It said: vault is locked"*) ok "key_of: the command's stderr line is named" ;; *) fail "key_of: stderr line" "[$out]" ;; esac
+expect "key_of: and its token is masked" "$(printf '%s' "$out" | grep -c ghp_)" "0"
+printf '#!/bin/bash\necho "$*" >> "%s/gh.args"\n' "$tmp" > "$tmp/bin/gh"; chmod +x "$tmp/bin/gh"
+. ./providers/hook.sh; PATH="$tmp/bin:$PATH" hook_head acme/shop 'feat/a#b?c%d' >/dev/null 2>&1
+expect "hook_head: # ? % in a branch are encoded" "$(cat "$tmp/gh.args")" "api repos/acme/shop/commits/feat%2Fa%23b%3Fc%25d"
+
 [ "$fails" = 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
