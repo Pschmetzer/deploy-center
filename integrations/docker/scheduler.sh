@@ -165,8 +165,10 @@ due() {  # due <index> <epoch> <hhmm> <weekday> <day>
 
 # TERM or INT: the running job, the heartbeat ticker and a half-written output go; the exit status is the signal's (143, 130).
 cur_job="" cur_tmp="" hb_pid=""
+# Children first: without `timeout` (which signals its group) a job's own child would live on.
+kill_tree() { local c; for c in $(pgrep -P "$1" 2>/dev/null); do kill_tree "$c"; done; kill -TERM "$1" 2>/dev/null || true; }
 cleanup() {
-  [ -z "$cur_job" ] || { kill -TERM "$cur_job" 2>/dev/null || true; wait "$cur_job" 2>/dev/null || true; }
+  [ -z "$cur_job" ] || { kill_tree "$cur_job"; wait "$cur_job" 2>/dev/null || true; }
   [ -z "$cur_tmp" ] || rm -f "$cur_tmp"
   [ -z "$hb_pid" ] || kill "$hb_pid" 2>/dev/null || true
 }

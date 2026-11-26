@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Log masking: a password or secret without spaces keeps what follows a `;` or `,` again (`password=x;next`); only a value with spaces takes the rest of the line.
+- Docker scheduler: stopping it also ends the job's own child processes where there is no `timeout`.
 - Link `deploycenter://log?project=name` (or `platform:name`) opens that project's build log, read only like `select`; scripts and notes can point straight at a failure. The outage banner also watches GitLab's status page, but only while one of your projects lives on gitlab.com.
 - Quiet hours are read in one place (`QuietHours`), so notifications, reminders and the digest cannot disagree about them.
 - VS Code: an address from the CLI's output (the deploy, the preview, the dashboard) is opened in the browser only when it is `https://` (or `http://` to this machine): no `javascript:`, `file:` or custom scheme.
