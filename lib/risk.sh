@@ -13,7 +13,7 @@ RISK_DEF='def re_mig: "(^|/)(migrations?|migrate|prisma|drizzle|alembic|flyway|l
   def re_runtime: "(^|/)(\\.nvmrc|\\.node-version|\\.python-version|\\.tool-versions|runtime\\.txt|\\.ruby-version)$";
   def re_gen: "(^|/)(package-lock\\.json|npm-shrinkwrap\\.json|pnpm-lock\\.yaml|yarn\\.lock|bun\\.lockb?|Pipfile\\.lock|poetry\\.lock|uv\\.lock|Gemfile\\.lock|Cargo\\.lock|go\\.sum|composer\\.lock|pdm\\.lock|mix\\.lock|pubspec\\.lock|Package\\.resolved|deno\\.lock)$|\\.snap$|(^|/)__generated__/|\\.min\\.[a-z]+$";
   def re_env: "(^|/)\\.env($|\\.(?!(example|sample|template|dist)$))";
-  def re_cfg: "\\.sql$|(^|/)(vercel\\.json|render\\.yaml|Dockerfile|docker-compose\\.ya?ml|Procfile|(next|vite|nuxt|astro|svelte|remix)\\.config\\.[a-z]+|netlify\\.toml|_redirects|_headers|wrangler\\.(toml|jsonc?)|amplify\\.yml|nixpacks\\.toml|fly\\.toml|railway\\.(json|toml)|firebase\\.json|app\\.yaml|serverless\\.yml|Makefile|\\.gitlab-ci\\.yml)$|^\\.do/app\\.yaml$|^\\.github/(workflows|actions)/";
+  def re_cfg: "^(?!(?:.*/)?[0-9]+[_-][^/]*\\.sql$)(?!.*(?:migrations?|migrate|prisma|drizzle|alembic|flyway|liquibase)/).*\\.sql$|(^|/)(vercel\\.json|render\\.yaml|Dockerfile|docker-compose\\.ya?ml|Procfile|(next|vite|nuxt|astro|svelte|remix)\\.config\\.[a-z]+|netlify\\.toml|_redirects|_headers|wrangler\\.(toml|jsonc?)|amplify\\.yml|nixpacks\\.toml|fly\\.toml|railway\\.(json|toml)|firebase\\.json|app\\.yaml|serverless\\.yml|Makefile|\\.gitlab-ci\\.yml)$|^\\.do/app\\.yaml$|^\\.github/(workflows|actions)/";
   def risky_files: [(.files // [])[] | .filename | select(test(re_mig) or test(re_lock) or test(re_runtime) or test(re_env) or test(re_cfg))];
   def risk:
   [(.files // [])[] | .filename] as $f
