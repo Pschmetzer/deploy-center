@@ -592,6 +592,17 @@ for (name, c) in [("warning", Contrast.warning), ("error", Contrast.error), ("su
 }
 check(abs(Contrast.ratio(Contrast.RGB(r: 0, g: 0, b: 0), Contrast.white) - 21) < 0.01, "contrast: black on white is 21:1")
 check(Contrast.ratio(Contrast.RGB(r: 0.204, g: 0.78, b: 0.349), Contrast.white) < 4.5, "contrast: the system green is not enough (why the colors exist)")
+// The health card reads every project at every redraw: the cache decodes UserDefaults once (ideas E19, E88)
+HistoryCache.clear()
+for i in 0..<40 { HistoryCache.save([DeployRecord(id: "d\(i)", state: "READY", at: sNow, finishedAt: sNow.addingTimeInterval(60))], for: "H/\(i)") }
+let hcBefore = HistoryCache.decodeCount
+let hcProjects = (0..<40).map { PhoneProject(provider: .vercel, id: "\($0)", name: "n\($0)") }
+var hcAverage: (score: Int, projects: Int)?
+for _ in 0..<5 { hcAverage = PhoneHealth.average(hcProjects, history: { HistoryCache.load("H/" + String($0.dropFirst("Vercel/".count))) }, now: sNow) }
+check(HistoryCache.decodeCount == hcBefore, "history cache: no decode while the cache is warm")
+check(HistoryCache.load("H/39") != nil && HistoryCache.load("H/0") != nil, "history cache: the 40 projects are all there")
+_ = hcAverage
+HistoryCache.clear()
 
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)

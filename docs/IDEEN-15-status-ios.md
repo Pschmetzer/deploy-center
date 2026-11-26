@@ -15,3 +15,6 @@ Nummern wie in `docs/IDEEN-15.md`, Abschnitt "E. iPhone/iPad-App". ✅ = gebaut 
 | 46 | ✅ | Ersparnis im `spoken(w)` des Widgets (kein Test: die Funktion liegt in der Widget-Datei) |
 | 48 | ✅ | Health-Karte nennt "gut / beobachten / schlecht" |
 | 50 | ✅ | Abbrechen im Scanner mindestens 44 pt |
+| 19 | ✅ | `HistoryCache` hält den Cache im Speicher (ein Decode), Test zählt |
+| 20 | ✅ | `HistoryCache.save` schreibt UserDefaults auf einer Hintergrund-Queue (Datei im Application Support bewusst nicht: UserDefaults bleibt Quelle der Wahrheit) |
+| 88 | ✅ | Test `decodeCount` |
