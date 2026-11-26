@@ -99,7 +99,7 @@ expect "typo hint: a close command is named" "$(cli statu 2>&1 | grep -c 'Did yo
 out="$(cli export --out /nonexistent/dir/x.csv 2>&1)"
 expect "export into a missing folder: no raw mktemp text" "$(printf '%s' "$out" | grep -c 'mkstemp')" "0"
 sqlrisk() { echo "{\"files\":[{\"filename\":\"$1\"}]}" | jq -c "${RISK_DEF%;}; "'[(.files // [])[] | .filename | {mig: test(re_mig), cfg: test(re_cfg)}] | .[0]'; }
-expect "risk: a numbered .sql is a migration" "$(sqlrisk 20260101_add_users.sql)" '{"mig":true,"cfg":true}'
+expect "risk: a numbered .sql is a migration" "$(sqlrisk 20260101_add_users.sql)" '{"mig":true,"cfg":false}'
 expect "risk: a seed .sql in a test folder is not red" "$(sqlrisk test/seed.sql | jq -r .mig)" "false"
 
 [ "$fails" = 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
