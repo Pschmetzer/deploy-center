@@ -101,6 +101,10 @@ enum FailureCauses {
     static let key = "failureCauses"
     static let keepDays = 14.0
     struct Entry: Codable, Equatable { let cause: String; let at: Double }
+    /// "vercel/shop": a frontend on one host and a service of the same name on another are two projects.
+    static func key(platform: String, name: String) -> String { platform + "/" + name }
+    /// The name part of a key, for the screen.
+    static func name(of key: String) -> String { key.split(separator: "/", maxSplits: 1).last.map(String.init) ?? key }
 
     static func load(_ d: UserDefaults = .standard) -> [String: Entry] {
         guard let data = d.data(forKey: key), let m = try? JSONDecoder().decode([String: Entry].self, from: data) else { return [:] }
@@ -163,14 +167,14 @@ struct ErrorHintCard: View {
 struct FailureGroupsCard: View {
     @ObservedObject var store: Store
     var body: some View {
-        let failed = store.items.values.flatMap { $0 }.filter(\.failed).map(\.name)
+        let failed = store.items.values.flatMap { $0 }.filter(\.failed).map { FailureCauses.key(platform: $0.platform.cli, name: $0.name) }
         let groups = ErrorPatterns.group(FailureCauses.current(failed: failed))
         if !groups.isEmpty {
             Section(L("Failed builds with the same cause", "Fehlgeschlagene Builds mit gleicher Ursache")) {
                 ForEach(groups, id: \.pattern.id) { g in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(L("\(g.projects.count) projects: ", "\(g.projects.count) Projekte: ") + g.pattern.title).font(.callout.weight(.semibold))
-                        Text(g.projects.map { Demo.mask($0) }.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
+                        Text(g.projects.map { Demo.mask(FailureCauses.name(of: $0)) }.joined(separator: ", ")).font(.caption).foregroundStyle(.secondary)
                         Text(g.pattern.hint).font(.caption)
                         HStack {
                             if let c = g.pattern.command { Text(c).font(.caption.monospaced()).textSelection(.enabled) }

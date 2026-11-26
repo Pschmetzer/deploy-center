@@ -27,9 +27,9 @@ enum Speech {
     /// "3 projects wait, 1 failed, 2 running" – only the parts that are not zero.
     nonisolated static func summary(waiting: Int, failed: Int, running: Int) -> String {
         var parts: [String] = []
-        if waiting > 0 { parts.append(L("\(waiting) projects wait", "\(waiting) Projekte warten")) }
+        if waiting > 0 { parts.append(waiting == 1 ? L("1 project waits", "1 Projekt wartet") : L("\(waiting) projects wait", "\(waiting) Projekte warten")) }
         if failed > 0 { parts.append(L("\(failed) failed", "\(failed) fehlgeschlagen")) }
-        if running > 0 { parts.append(L("\(running) running", "\(running) laufen")) }
+        if running > 0 { parts.append(running == 1 ? L("1 running", "1 läuft") : L("\(running) running", "\(running) laufen")) }
         return parts.isEmpty ? L("Nothing waits, nothing failed.", "Nichts wartet, nichts ist fehlgeschlagen.") : parts.joined(separator: ", ") + "."
     }
 }
