@@ -76,3 +76,11 @@ To send it every day, schedule the script with launchd or cron, or in CI with th
 Not tested yet: a real post to each service. The payloads are checked with `--dry-run` and with a
 stand-in curl.
 All add-ons at a glance: [what is tested](../README.md#what-is-tested-and-what-is-not).
+## More settings
+
+| Variable | Meaning |
+| --- | --- |
+| `DEPLOYS_NOTIFY_LINK` | the link of the "Open" button and line (same as `--link`): `https://` only, no quotes or spaces |
+| `DEPLOYS_NOTIFY_ALLOW_HTTP_HOSTS` | comma-separated host names that may be reached over `http://` (a ntfy or Matrix server in your own network); `localhost` always may |
+
+A rejected post prints the first line of the answer (Slack's `invalid_blocks`, a Discord JSON error), shortened and without anything that looks like a token. A zone name in `DEPLOYS_NOTIFY_TZ` that this machine does not know is refused instead of reading the clock as UTC. ntfy messages also carry a `Click` header: a tap opens the link.

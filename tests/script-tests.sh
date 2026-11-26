@@ -601,7 +601,7 @@ unset DEPLOYS_JOURNAL
 # risk: the rule, then the command and the lists.
 risk_of() { jq -c "$RISK_DEF"' risk | [.level, (.reasons | map(.kind))]' <<< "$1"; }
 expect "risk: a small code change is green" "$(risk_of '{"files":[{"filename":"src/a.ts","additions":3,"deletions":1}]}')" '["green",[]]'
-expect "risk: migrations are red" "$(risk_of '{"files":[{"filename":"prisma/migrations/1/migration.sql"},{"filename":"db/x.sql"}]}')" '["red",["migrations"]]'
+expect "risk: migrations are red" "$(risk_of '{"files":[{"filename":"prisma/migrations/1/migration.sql"},{"filename":"db/x.sql"}]}')" '["red",["migrations","config"]]'
 expect "risk: lockfile, .env and config are yellow" \
   "$(risk_of '{"files":[{"filename":"pnpm-lock.yaml"},{"filename":"apps/web/.env.production"},{"filename":"vercel.json"}]}')" '["yellow",["lockfile","env","config"]]'
 expect "risk: .envrc-like names are not .env files" "$(risk_of '{"files":[{"filename":"docs/environment.md"}]}')" '["green",[]]'

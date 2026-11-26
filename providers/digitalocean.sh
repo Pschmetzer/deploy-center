@@ -143,15 +143,18 @@ digitalocean_fetch() {
 
 # Every app, all pages (links.pages.next is set while there are more).
 digitalocean_apps() {
-  local page=1 all="[]" chunk
+  local page=1 pages="" chunk
   while :; do
     chunk="$(digitalocean_call GET "/v2/apps?page=$page&per_page=100")" || return 1
-    all="$(jq -s '.[0] + (.[1].apps // [])' <(echo "$all") <(echo "$chunk"))"
+    # An HTML error page with status 200 is no list: a reason, not an empty list.
+    echo "$chunk" | jq -e 'type == "object" and ((.apps // []) | type == "array")' >/dev/null 2>&1 || { echo "DigitalOcean: page $page of the apps is not a list" >&2; return 1; }
+    pages="$pages$(echo "$chunk" | jq -c '.apps // []')"$'\n'
     [ "$(echo "$chunk" | jq -r '.links.pages.next // empty')" = "" ] && break
     page=$((page + 1))
-    [ "$page" -gt 50 ] && break
+    [ "$page" -le 50 ] || { echo "DigitalOcean: more than 50 pages of apps; the list stops here" >&2; break; }
   done
-  echo "$all"
+  # Joined once at the end, not page by page (that grows with every page).
+  printf '%s' "$pages" | jq -sc 'add // []'
 }
 
 # An app by name (spec.name), id, live domain or one of its domains.
