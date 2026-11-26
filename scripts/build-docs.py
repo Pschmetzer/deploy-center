@@ -28,6 +28,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SITE = os.path.join(ROOT, "site")
 OUT = os.path.join(SITE, "docs")
+OUT_DE = os.path.join(SITE, "de", "docs")   # the German docs (docs/*.de.md), built here, not in git
 ASSETS = os.path.join(ROOT, "scripts", "docs-assets")
 BASE = "https://deploycenter.app"
 REPO = "https://github.com/Pschmetzer/deploy-center"
@@ -426,6 +427,8 @@ class Page:
         self.body = ""
         self.headings = []
         self.faq = []        # (question, answer text) for FAQPage
+        self.lang = "en"
+        self.alt = None      # the url of the same page in the other language, if there is one
 
 
 def page_list():
@@ -439,6 +442,66 @@ def page_list():
     return pages
 
 
+def german_pages(pages):
+    """A German twin for every docs page that has a docs/<NAME>.de.md: /de/docs/<slug>/. Pages without one stay English only."""
+    out = []
+    for p in pages:
+        if not p.source.startswith("docs/") or not p.source.endswith(".md") or p.source.endswith(".de.md"):
+            continue
+        de = p.source[:-3] + ".de.md"
+        if not os.path.isfile(os.path.join(ROOT, de)):
+            continue
+        q = Page(p.slug, p.label, GROUPS_DE.get(p.group, p.group), de, "")
+        q.lang, q.url, q.alt, q.twin = "de", f"/de/docs/{p.slug}/", p.url, p
+        p.alt = q.url
+        out.append(q)
+    return out
+
+
+# Hand-written descriptions of the German pages (what a search result shows); a page not listed here takes its first paragraph.
+DESC_DE = {
+    "auto-deploy": "Auto-Deploy bei Vercel, Render und anderen Hosts ausschalten, damit nicht jeder Push baut, und wieder einschalten.",
+    "autofix": "Ein fehlgeschlagener Build geht an eine Claude-Code-Routine, die einen Fix-Pull-Request öffnet. Nichts wird von selbst gemergt.",
+    "claude-code": "Deploy Center und Claude Code zusammen: MCP-Server, Plugin, Skills und ein Push-Hinweis, damit der Agent pusht und du deployst.",
+    "claude": "Claude in der App: einen Fehler erklären, Release-Notes schreiben, prüfen, ob ein Deploy sicher ist. Aus, bis du es einschaltest.",
+    "cli": "Die wichtigsten Befehle der deploys-CLI auf Deutsch: was wartet, deployen, Rollback, Kosten. Maßgeblich ist die englische Doku.",
+    "deploy-from-app": "Projekte anhaken, Live deployen drücken, bestätigen: was die App dabei tut und wie du einen Deploy abbrichst.",
+    "faq": "Häufige Fragen zu Deploy Center auf Deutsch: Kosten, Daten, Hosts, Claude, Rückweg und Team.",
+    "first-start": "Was beim ersten Öffnen von Deploy Center zu sehen ist und was jeder Schritt tut. Nichts davon ändert ein Projekt.",
+    "git-hosts": "Wie deploys einen Git-Host nach wartenden Commits fragt: Repo-Name, Funktionen eines Hosts, Token-Regel und Tests.",
+    "gitlab": "GitLab als Quelle für wartende Commits und Merge Requests: Token einrichten und was Deploy Center dort liest.",
+    "glossary": "Die Begriffe von Deploy Center auf Deutsch: Auto-Deploy, Guard, Journal, Preview, Rollback und mehr.",
+    "guard": "Der Wächter schaltet Auto-Deploy wieder aus, wenn jemand es einschaltet, und lässt es für eine Weile zu, wenn du es willst.",
+    "journal": "Jeder Deploy, jedes Rollback und jeder Abbruch steht in einem Journal auf deinem Mac: ansehen, exportieren, Monatsbericht.",
+    "local-sessions": "Der Sitzungszähler zeigt, welche Claude-Code-Sitzungen auf diesem Mac laufen, wie viel sie brauchen und welche hängen.",
+    "migrating": "Eine Checkliste für den Umstieg von „jeder Push deployt“ auf „ein Deploy am Tag, wenn du es willst“.",
+    "perf": "Der Leistungswächter zeigt, wie voll der Mac ist, und lässt schwere Prüfungen warten, bis wieder Platz ist.",
+    "providers": "Wie sich eine Plattform einhängt: eine Datei in providers/, ihre Funktionen, die Metadaten und die Vertragstests.",
+    "safe-deploy": "Sicher deployen: Fenster, Freigaben, CI-Prüfung, Seitencheck mit automatischem Rollback und Risiko-Bewertung.",
+    "safe-start": "Drei Schritte: erst nur ansehen, dann ein Projekt ändern, dann alle. Jeder Schritt lässt sich zurücknehmen.",
+    "scan": "Der Bug-Scan lässt Claude ein Repo durchsuchen und einen Fix-Pull-Request öffnen. Auch der nächtliche Sicherheitscheck.",
+    "search": "Das Suchfeld filtert beim Tippen nach Namen, Repos, Notizen, Branch und Commit-Text; Suchen lassen sich speichern.",
+    "security-model": "Was Deploy Center liest, speichert und sendet: keine eigenen Server, Keys im Schlüsselbund, nichts ohne Klick.",
+    "settings": "Jeder Reiter der Einstellungen mit einem Beispiel: Allgemein, Plattformen, Deploy, Kosten, Claude, iPhone und Team.",
+    "team": "Team-Modus ohne Server: gemeinsame Konfiguration im Repo, Beobachter-Modus und eine Zwei-Personen-Regel für Production.",
+    "troubleshooting": "Fehlermeldungen von Deploy Center und der deploys-CLI und was dagegen hilft (Kurzfassung, Deutsch).",
+    "uninstall": "Deinstallieren: was bleibt, wo Keys und Einstellungen liegen, wie du Auto-Deploy zurückholst und Zugänge widerrufst.",
+    "widgets-ios": "Mac-Widgets und iPhone-App: was sie zeigen, wie sie Daten bekommen und welche Entscheidungen dahinterstehen.",
+}
+GROUPS_DE = {"Start": "Start", "Using it": "Benutzen", "Hosts": "Hosts", "Reference": "Nachschlagen", "Integrations": "Integrationen"}
+# The words around a page, per language.
+UI = {
+    "en": {"skip": "Skip to content", "docs": "Docs", "guides": "Guides", "guides_url": "/guides/", "menu": "Docs menu",
+           "home": "Docs home", "home_crumb": "Home", "toc": "On this page", "updated": "Last updated",
+           "edit": "Edit on GitHub", "search": "Search the docs", "search_ph": "Search docs", "theme": "Switch to light mode",
+           "download": "Download", "docs_url": "/docs/", "locale": "en_US"},
+    "de": {"skip": "Zum Inhalt springen", "docs": "Doku", "guides": "Anleitungen", "guides_url": "/de/anleitungen/",
+           "menu": "Doku-Menü", "home": "Doku-Start", "home_crumb": "Start", "toc": "Auf dieser Seite",
+           "updated": "Zuletzt geändert", "edit": "Auf GitHub bearbeiten", "search": "", "search_ph": "",
+           "theme": "Zum hellen Modus wechseln", "download": "Herunterladen", "docs_url": "/de/docs/", "locale": "de_DE"},
+}
+MONTHS_DE = ["Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober",
+             "November", "Dezember"]
 _md_anchor_cache = {}
 
 
@@ -591,9 +654,15 @@ def build_pages(pages):
         p.body = conv.convert(md)
         p.headings = conv.headings
         p.title = conv.h1 or p.label
+        if p.lang == "de":
+            p.label = re.split(r"\s*[:(]", p.title)[0].strip() or p.title
         if not p.description:
-            m = re.search(r"<p>(.*?)</p>", p.body, re.S)
-            p.description = re.sub(r"<[^>]+>", "", html.unescape(m.group(1))) if m else p.title
+            paras = [re.sub(r"<[^>]+>", "", html.unescape(x)) for x in re.findall(r"<p>(.*?)</p>", p.body, re.S)]
+            if p.lang == "de":  # the first paragraph is the note that this is the German version
+                paras = [x for x in paras if not x.startswith("Die deutsche Fassung") and not x.startswith("Eine kurze deutsche")] or paras
+            p.description = DESC_DE.get(p.slug) or (paras[0] if paras else p.title)
+            if p.lang == "de" and len(p.description) > 160:
+                p.description = p.description[:157].rsplit(" ", 1)[0].rstrip(" ,;:.") + "…"
         if p.slug == "faq":
             for q, a in re.findall(r'<h[23] id="[^"]*">(.*?)<a class="anchor".*?</h[23]>\s*(.*?)(?=<h[23] |\Z)', p.body, re.S):
                 text = lambda s: re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", "", s))).strip()
@@ -611,7 +680,7 @@ def esc(s):
 
 def sidebar(pages, current):
     out = []
-    for g in GROUPS:
+    for g in (GROUPS if current.lang == "en" else [GROUPS_DE[x] for x in GROUPS]):
         items = [p for p in pages if p.group == g]
         if not items:
             continue
@@ -626,9 +695,10 @@ def sidebar(pages, current):
 def toc(page):
     if len(page.headings) < 2:
         return ""
+    label = UI[page.lang]["toc"]
     items = "".join(f'<li class="l{lvl}"><a href="#{hid}">{esc(text)}</a></li>' for lvl, hid, text in page.headings)
-    return (f'<details class="toc" id="toc" open><summary>On this page</summary>'
-            f'<nav aria-label="On this page"><p class="group">On this page</p><ul>{items}</ul></nav></details>')
+    return (f'<details class="toc" id="toc" open><summary>{label}</summary>'
+            f'<nav aria-label="{label}"><p class="group">{label}</p><ul>{items}</ul></nav></details>')
 
 
 def jsonld(page, crumbs):
@@ -642,7 +712,7 @@ def jsonld(page, crumbs):
         "description": page.description,
         "url": url,
         "mainEntityOfPage": url,
-        "inLanguage": "en",
+        "inLanguage": page.lang,
         "datePublished": page.published,
         "dateModified": page.updated,
         "author": org,
@@ -663,7 +733,8 @@ def jsonld(page, crumbs):
 
 
 def render(page, pages, assets):
-    crumbs = [("Home", "/"), ("Docs", "/docs/")]
+    ui = UI[page.lang]
+    crumbs = [(ui["home_crumb"], "/"), (ui["docs"], ui["docs_url"])]
     if page.slug:
         if page.group == "Integrations" and page.slug != "integrations":
             crumbs.append(("Integrations", "/docs/integrations/"))
@@ -672,13 +743,26 @@ def render(page, pages, assets):
         (f'<li><a href="{h}">{esc(n)}</a></li>' if k < len(crumbs) - 1 else f'<li aria-current="page">{esc(n)}</li>')
         for k, (n, h) in enumerate(crumbs))
     title = page_title(page)
-    edit = (f' · <a href="{REPO}/edit/{BRANCH}/{page.source}" rel="noopener">Edit on GitHub</a>'
+    edit = (f' · <a href="{REPO}/edit/{BRANCH}/{page.source}" rel="noopener">{ui["edit"]}</a>'
             if page.source else "")
     ud = datetime.date.fromisoformat(page.updated)
-    updated = f"{ud:%B} {ud.day}, {ud.year}"  # not %-d: Windows has no such flag
+    updated = (f"{ud:%B} {ud.day}, {ud.year}" if page.lang == "en"  # not %-d: Windows has no such flag
+               else f"{ud.day}. {MONTHS_DE[ud.month - 1]} {ud.year}")
+    alts = ""
+    if page.alt:
+        en_url, de_url = (page.url, page.alt) if page.lang == "en" else (page.alt, page.url)
+        alts = (f'<link rel="alternate" hreflang="en" href="{BASE}{en_url}">\n<link rel="alternate" hreflang="de" href="{BASE}{de_url}">\n'
+                f'<link rel="alternate" hreflang="x-default" href="{BASE}{en_url}">\n')
+    search = (f'''<div class="search" role="search">
+    <label class="sr" for="q">{ui["search"]}</label>
+    <input id="q" type="search" placeholder="{ui["search_ph"]}" autocomplete="off" spellcheck="false" aria-controls="results">
+    <div class="sr" id="rstatus" role="status" aria-live="polite"></div>
+    <kbd>/</kbd>
+    <ul id="results" hidden></ul>
+  </div>''' if page.lang == "en" else "")
     toc_html = toc(page)
     return f"""<!doctype html>
-<html lang="en">
+<html lang="{page.lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -690,7 +774,7 @@ def render(page, pages, assets):
 <meta name="theme-color" content="#0b0d12" media="(prefers-color-scheme: dark)">
 <meta name="theme-color" content="#fbfbfd" media="(prefers-color-scheme: light)">
 <link rel="canonical" href="{BASE}{page.url}">
-<meta property="og:type" content="article">
+{alts}<meta property="og:type" content="article">
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:title" content="{esc(page.title)}">
 <meta property="og:description" content="{esc(page.description)}">
@@ -700,7 +784,7 @@ def render(page, pages, assets):
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="{OG_ALT}">
-<meta property="og:locale" content="en_US">
+<meta property="og:locale" content="{ui["locale"]}">
 <meta property="article:published_time" content="{page.published}">
 <meta property="article:modified_time" content="{page.updated}">
 <meta property="article:author" content="{BASE}/">
@@ -717,33 +801,27 @@ def render(page, pages, assets):
 <script type="application/ld+json">{jsonld(page, crumbs)}</script>
 </head>
 <body>
-<a class="skip" href="#content">Skip to content</a>
+<a class="skip" href="#content">{ui["skip"]}</a>
 <header class="top"><div class="bar">
   <a class="brand" href="/"><img src="/img/icon-64.png" alt="" width="26" height="26">Deploy Center</a>
-  <a class="section" href="/docs/">Docs</a>
-  <div class="search" role="search">
-    <label class="sr" for="q">Search the docs</label>
-    <input id="q" type="search" placeholder="Search docs" autocomplete="off" spellcheck="false" aria-controls="results">
-    <div class="sr" id="rstatus" role="status" aria-live="polite"></div>
-    <kbd>/</kbd>
-    <ul id="results" hidden></ul>
-  </div>
-  <a class="nav" href="/guides/">Guides</a>
+  <a class="section" href="{ui["docs_url"]}">{ui["docs"]}</a>
+  {search}
+  <a class="nav" href="{ui["guides_url"]}">{ui["guides"]}</a>
   <a class="gh" href="{REPO}" rel="noopener">GitHub<span aria-hidden="true"> ★</span></a>
-  <button class="theme" type="button" aria-label="Switch to light mode" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
-  <a class="dl" href="{REPO}/releases/latest">Download</a>
+  <button class="theme" type="button" aria-label="{ui["theme"]}" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+  <a class="dl" href="{REPO}/releases/latest">{ui["download"]}</a>
 </div></header>
 <div class="layout">
-<aside class="side"><details id="sidenav" open><summary>Docs menu</summary>
-<nav aria-label="Docs">
-<p class="group"><a href="/docs/"{' aria-current="page"' if not page.slug else ''}>Docs home</a></p>
+<aside class="side"><details id="sidenav" open><summary>{ui["menu"]}</summary>
+<nav aria-label="{ui["docs"]}">
+<p class="group"><a href="{ui["docs_url"]}"{' aria-current="page"' if not page.slug else ''}>{ui["home"]}</a></p>
 {sidebar(pages, page)}
 </nav></details></aside>
 <main class="main">
 <div class="head">
-<nav aria-label="Breadcrumb"><ol class="crumbs">{crumb_html}</ol></nav>
+<nav aria-label="{"Breadcrumb" if page.lang == "en" else "Brotkrumen"}"><ol class="crumbs">{crumb_html}</ol></nav>
 <h1 id="content" tabindex="-1">{esc(page.title)}</h1>
-<p class="meta">Last updated <time datetime="{page.updated}">{updated}</time>{edit}</p>
+<p class="meta">{ui["updated"]} <time datetime="{page.updated}">{updated}</time>{edit}</p>
 </div>
 {toc_html}
 <div class="prose">
@@ -766,15 +844,41 @@ def page_title(page):
     """<title>: the page, then the brand. A page whose own title names Deploy Center does not get it twice, and a title
     that would run past 60 characters (a search result cuts it there) is shortened at a word."""
     if not page.slug:
-        return "Deploy Center docs: install, CLI, hosts, integrations"
+        return ("Deploy Center docs: install, CLI, hosts, integrations" if page.lang == "en"
+                else "Deploy Center Doku: Installation, CLI, Hosts, Integrationen")
     t = page.title
-    full = t if "Deploy Center" in t else f"{t} · Deploy Center docs"
+    full = t if "Deploy Center" in t else f"{t} · Deploy Center " + ("docs" if page.lang == "en" else "Doku")
     if len(full) <= 60:
         return full
     if "Deploy Center" not in t and len(t) <= 60:
         return t
     cut = full[:59].rsplit(" ", 1)[0].rstrip(" ,:;·-")
     return cut + "…"
+
+
+def index_page_de(pages):
+    """/de/docs/: the German pages, by group."""
+    p = Page("", "Doku", "", "", "Die deutsche Doku zu Deploy Center, der kostenlosen Mac-App und der deploys-CLI. "
+             "Seiten ohne deutsche Fassung sind englisch.")
+    p.lang, p.url, p.title = "de", "/de/docs/", "Deploy Center Doku"
+    p.alt = "/docs/"
+    p.updated = max(x.updated for x in pages)
+    p.published = min(x.published for x in pages)
+    body = ['<p class="lead">Diese Seiten gibt es auf Deutsch. Alles andere, vor allem die Seiten zu den einzelnen Hosts '
+            'und die Integrationen, steht in der <a href="/docs/">englischen Doku</a>.</p>']
+    for g in [GROUPS_DE[x] for x in GROUPS]:
+        items = [x for x in pages if x.group == g]
+        if not items:
+            continue
+        hid = slugify(g, set())
+        p.headings.append((2, hid, g))
+        body.append(f'<h2 id="{hid}">{esc(g)}<a class="anchor" href="#{hid}" aria-label="Link zum Abschnitt: {html.escape(g)}">#</a></h2>'
+                    '<div class="cards">')
+        for x in items:
+            body.append(f'<a class="cardlink" href="{x.url}"><b>{esc(x.label)}</b><span>{esc(x.description)}</span></a>')
+        body.append("</div>")
+    p.body = "\n".join(body)
+    return p
 
 
 def index_page(pages):
@@ -899,7 +1003,7 @@ def update_sitemap(urls):
         text = open(path, encoding="utf-8").read()
     text = re.sub(r"  <!-- docs: written by scripts/build-docs.py -->\n.*?  <!-- /docs -->\n", "", text, flags=re.S)
     # also drop docs URLs someone added by hand, so none is listed twice
-    text = re.sub(r"  <url><loc>" + re.escape(BASE) + r"/docs/[^<]*</loc>.*?</url>\n", "", text)
+    text = re.sub(r"  <url><loc>" + re.escape(BASE) + r"/(?:de/)?docs/[^<]*</loc>.*?</url>\n", "", text)
     if "</urlset>" not in text:
         raise BuildError("site/sitemap.xml has no </urlset>")
     text = text.replace("</urlset>", block + "</urlset>", 1)
@@ -1107,8 +1211,11 @@ def llms_full(pages, version):
 
 def main():
     pages = page_list()
-    build_pages(pages)
+    de_pages = german_pages(pages)
+    build_pages(pages + de_pages)
     index = index_page(pages)
+    index.alt = "/de/docs/"
+    index_de = index_page_de(de_pages)
     version = (open(os.path.join(ROOT, "VERSION")).read().strip() if os.path.exists(os.path.join(ROOT, "VERSION")) else "0")
     if version != "0":
         sync_site_version(version)
@@ -1127,18 +1234,25 @@ def main():
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as f:
             f.write(render(p, pages, assets))
+    if os.path.isdir(OUT_DE):
+        shutil.rmtree(OUT_DE)
+    for p in [index_de] + de_pages:
+        d = os.path.join(OUT_DE, p.slug)
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as f:
+            f.write(render(p, de_pages, assets))
     with open(os.path.join(OUT, "search-index.json"), "w", encoding="utf-8") as f:
         json.dump(search_index(pages), f, ensure_ascii=False, separators=(",", ":"))
     with open(os.path.join(OUT, "llms-full.txt"), "w", encoding="utf-8") as f:
         f.write(llms_full(pages, version))
-    update_sitemap([(index.url, index.updated)] + [(p.url, p.updated) for p in pages])
+    update_sitemap([(x.url, x.updated) for x in [index, index_de] + pages + de_pages])
     sync_hand_dates()
     sync_home_faq()
     sync_page_seo()
     sync_blog_feed()
     sync_schema_copy()
     sync_csp()
-    print(f"build-docs: {len(pages) + 1} pages in site/docs/")
+    print(f"build-docs: {len(pages) + 1} pages in site/docs/, {len(de_pages) + 1} in site/de/docs/")
 
 
 # ---------------------------------------------------------------- what the hand-written pages derive

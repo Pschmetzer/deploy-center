@@ -28,3 +28,4 @@ site/schema/
 .build/
 .swiftpm/
 Package.resolved
+site/de/docs/
