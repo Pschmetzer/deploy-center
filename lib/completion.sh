@@ -23,8 +23,9 @@ check:start show
 autofix:set-token routine list forget-token prompt status sync schedule
 rules:check
 price:set unset
+nightly:on off review status
 budget:set off
-journal:verify export report
+journal:verify export report search
 idle:--days --json
 local-sessions:stop set config --json --yes
 creds:--max-age --json
@@ -42,6 +43,7 @@ readonly:on off
 config:--refresh export import
 doctor:--text --fix --json
 freeze:status add import remove clear --json
+lock:list --json
 digest:--days --json --no-savings --format
 preview:--json
 timeline:--days --project --limit --json
@@ -72,7 +74,16 @@ status:--json --no-github --watch --platform
 history:--json --days --limit
 risk:--json
 autodeploy-off:--yes --dry-run
-autodeploy-on:--yes --dry-run"
+autodeploy-on:--yes --dry-run
+ai:--question --lang --json
+autofix:--dry-run --only --again --preview --json
+ci:--wait --exit-code --json
+changed:--json --no-github
+notes:--json --days
+diff:--json
+costs:--json
+scan:--findings --json
+check:--findings --json"
     verbs_of() {
       local v="list deploy rollback status cancel autodeploy-off json" x
       for x in $(declare -F | sed -n "s/^declare -f ${1}_cli_//p" | tr '_' '-'); do [[ " $v " == *" $x "* ]] || v="$v $x"; done

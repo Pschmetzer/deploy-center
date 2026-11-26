@@ -137,16 +137,22 @@ gitlab_api() {
     printf '%s\n' "$out"; return 0
   fi
   [ "$host" = "$(gitlab_host)" ] && tok="$(gitlab_token)"
+  local cerr; cerr="$(umask 077; mktemp)"
   for try in 1 2 3; do
     # The token on stdin as a curl config line, so it never shows in the process list.
     out="$( { [ -z "$tok" ] || printf 'header = "PRIVATE-TOKEN: %s"\n' "$tok"; } \
       | curl -sS --connect-timeout 10 --max-time 60 -H "Accept: application/json" -K - -w '\n%{http_code}' \
-        "https://$host/api/v4/$path" 2>/dev/null)" || out=$'\n000'
+        "https://$host/api/v4/$path" 2>"$cerr")" || out=$'\n000'
     code="${out##*$'\n'}"; out="${out%$'\n'*}"
     case "$code" in 429|5*|000) [ "$try" -lt 3 ] && { sleep $((try * 2)); continue; } ;; esac
     break
   done
-  if [[ "$code" != 2* ]]; then echo "gitlab: HTTP $code: $(printf '%s' "$out" | head -c 300)" >&2; return 1; fi
+  if [[ "$code" != 2* ]]; then
+    # HTTP 000 has no body: curl's own line says why (certificate, DNS, timeout).
+    [ -n "$out" ] || out="$(tail -n 1 "$cerr" 2>/dev/null | cut -c1-200)"
+    rm -f "$cerr"; echo "gitlab: HTTP $code: $(printf '%s' "$out" | head -c 300)" >&2; return 1
+  fi
+  rm -f "$cerr"
   printf '%s' "$out"
 }
 
