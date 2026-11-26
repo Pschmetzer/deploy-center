@@ -20,7 +20,7 @@ cli() { env -u DEPLOYS_LIB bash "$root/deploys" "$@"; }
 
 # --- shared team window: over midnight reads the day before; every window has its own zone ---
 team_on() { return 0; }
-TEAM_EFF_CACHE='{"projects":{"night":{"window":{"value":{"days":["fri"],"from":"22:00","to":"06:00","tz":"UTC"}}},
+export TEAM_EFF_CACHE='{"projects":{"night":{"window":{"value":{"days":["fri"],"from":"22:00","to":"06:00","tz":"UTC"}}},
   "two":{"window":{"value":[{"days":["mon"],"from":"09:00","to":"10:00","tz":"UTC"},{"days":["mon"],"from":"09:00","to":"10:00","tz":"Pacific/Auckland"}]}}}}'
 twd() { DEPLOYS_NOW="$1" team_window_denied "$2"; }
 expect "team window: Fri 23:00 open" "$(twd "fri 23:00 2026-11-13" night)" ""
@@ -116,7 +116,7 @@ cli help nosuchcmd >/dev/null 2>&1; expect "help <unknown> is a usage error" "$?
 
 # --- deploys lock / unlock: refused like a closed window, --force goes ahead ---
 export DEPLOYS_LOCKS="$tmp/project-locks.json"; rm -f "$DEPLOYS_LOCKS"
-LOCKS_FILE="$DEPLOYS_LOCKS"
+export LOCKS_FILE="$DEPLOYS_LOCKS"
 cli lock >/dev/null 2>&1; expect "lock: nothing locked lists nothing and exits 0" "$?" "0"
 cli lock web >/dev/null 2>&1; expect "lock: a lock needs a reason (usage, 2)" "$?" "2"
 expect "lock: locking says so" "$(DEPLOYS_LOCKS="$DEPLOYS_LOCKS" cli lock web "migration running" 2>&1 | head -n 1)" "web is locked: migration running. Starts are refused until: deploys unlock web"
@@ -124,9 +124,9 @@ expect "lock: --json lists it" "$(DEPLOYS_LOCKS="$DEPLOYS_LOCKS" cli lock --json
 expect "lock_denied names the lock" "$(lock_denied web | grep -c '^web is locked: migration running (since ')" "1"
 expect "lock_denied: platform:name is the same project" "$(lock_denied vercel:web | cut -c1-12)" "web is locke"
 expect "lock_denied: another project is free" "$(lock_denied api)" ""
-( forced=0 window_checked=""; freeze_check web ) >/dev/null 2>&1; expect "freeze_check refuses a locked project" "$?" "1"
-( forced=1 window_checked=""; freeze_check web; [ -n "$frozen" ] ) >/dev/null 2>&1; expect "freeze_check --force goes ahead and notes it" "$?" "0"
-( forced=0 window_checked=""; freeze_check api ) >/dev/null 2>&1; expect "freeze_check lets another project through" "$?" "0"
+( export forced=0 window_checked=""; freeze_check web ) >/dev/null 2>&1; expect "freeze_check refuses a locked project" "$?" "1"
+( export forced=1 window_checked=""; freeze_check web; [ -n "$frozen" ] ) >/dev/null 2>&1; expect "freeze_check --force goes ahead and notes it" "$?" "0"
+( export forced=0 window_checked=""; freeze_check api ) >/dev/null 2>&1; expect "freeze_check lets another project through" "$?" "0"
 DEPLOYS_LOCKS="$DEPLOYS_LOCKS" cli unlock web >/dev/null 2>&1
 expect "unlock opens it again" "$(lock_denied web)" ""
 cli lock 'a;b' x >/dev/null 2>&1; expect "lock: a strange name is refused" "$?" "2"

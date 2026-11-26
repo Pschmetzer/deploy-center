@@ -65,7 +65,7 @@ deploys_call "deploys deploy web --dry-run"; expect "dry run is seen" "$DC_DRY" 
 deploys_call "deploys freeze clear"; expect "weaken text" "$DC_WEAKEN" "removes a freeze"
 
 # The hook itself: weakening commands and writes to the window file are asked.
-hook() { jq -nc --arg c "$1" '{tool_input:{command:$c}}' | DEPLOYS_DEPLOY_GATE= bash "$cc/scripts/before-deploy.sh"; }
+hook() { jq -nc --arg c "$1" '{tool_input:{command:$c}}' | DEPLOYS_DEPLOY_GATE='' bash "$cc/scripts/before-deploy.sh"; }
 expect "hook asks for freeze clear" "$(hook 'deploys freeze clear' | jq -r .hookSpecificOutput.permissionDecision)" "ask"
 expect "hook asks for sed -i on window.json" "$(hook "sed -i 's/fri/mon/' ~/.config/deploys/window.json" | jq -r .hookSpecificOutput.permissionDecision)" "ask"
 expect "hook asks for a redirect into rules.json" "$(hook 'echo {} > ~/.config/deploys/rules.json' | jq -r .hookSpecificOutput.permissionDecision)" "ask"

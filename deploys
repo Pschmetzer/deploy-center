@@ -1566,7 +1566,7 @@ af_mask() {
     s/\b[0-9]{8,10}:[A-Za-z0-9_-]{35}\b/[masked]/g;
     s/\b(hf_[A-Za-z0-9]{20,}|[0-9]{1,6}\|[A-Za-z0-9]{40})\b/[masked]/g;
     # A password or secret with spaces in it ("password: my secret phrase"): the rest of the line, unless it is quoted.
-    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:passphrase|password|secret))["\x27]?\s*[:=]\s*)(?![\s"\x27]|\[masked\])(?!(?i:bearer|basic|token|bot)\s)[^\r\n]+/${1}\[masked]/g;
+    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:passphrase|password|secret))["\x27]?\s*[:=]\s*)(?![\s"\x27]|\[masked\])(?!(?i:bearer|basic|token|bot)\s)(?=[^\s,;]+[ \t]+[^\s])[^\r\n]+/${1}\[masked]/g;
     # NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret
     # (VERCEL_TOKEN, SECRET_KEY, aws_secret_access_key, DB_PASSWORD, x-api-key, Ocp-Apim-Subscription-Key,
     # AccountKey=, ...).
@@ -3311,7 +3311,7 @@ case "${1:-} ${2:-}" in
         *://*|git@*) die "Shared configs are read from GitHub repos only: give it as owner/name or https://github.com/owner/name" ;;
       esac
       case "$r" in */*/*|*[!A-Za-z0-9._/-]*|/*|*/) die "Give the repo as owner/name";; */*) ;; *) die "Give the repo as owner/name";; esac
-      case "$r" in .*/*|*/.|*/..|..*/*) case "${r%%/*}:${r#*/}" in .:*|..:*|*:.|*:..) die "Give the repo as owner/name (no . or .. parts)" ;; esac ;; esac
+      case "$r" in .*/*|*/.|*/..) case "${r%%/*}:${r#*/}" in .:*|..:*|*:.|*:..) die "Give the repo as owner/name (no . or .. parts)" ;; esac ;; esac
       printf '%s' "$r"
     }
     # The repos whose deploy-center.json counts here, beyond those vercel-repos.json names.
@@ -3882,7 +3882,7 @@ case "${1:-} ${2:-}" in
     sed -n '/^# Exit codes: /,/^#$/p' "$SELF" | sed 's/^# \{0,1\}//'
     echo "Every command: the table is in docs/CLI.md (Exit codes)." ;;
 
-  "lock"|"lock "*|"unlock "*)
+  "lock "*|"unlock "*)
     declare -F locks_main >/dev/null || die "$1 needs lib/locks.sh next to deploys."
     locks_main "$@" ;;
   "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*|"local-sessions "*|"clean "*)
@@ -4629,7 +4629,7 @@ case "${1:-} ${2:-}" in
     # A typo gets one line with the nearest commands, not the whole help. The commands are read
     # from the case labels of this script, so the list cannot fall behind.
     if [ -n "${1:-}" ]; then
-      sug="$( { sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' "$SELF"; printf '%s\n' $(enabled_providers) help version; } | sort -u \
+      sug="$( { sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' "$SELF"; enabled_providers | tr ' ' '\n'; printf '%s\n' help version; } | sort -u \
         | awk -v w="$1" 'function lev(a, b,   i, j, la, lb, d, c) { la = length(a); lb = length(b)
               for (i = 0; i <= la; i++) d[i, 0] = i; for (j = 0; j <= lb; j++) d[0, j] = j
               for (i = 1; i <= la; i++) for (j = 1; j <= lb; j++) { c = (substr(a, i, 1) != substr(b, j, 1))
