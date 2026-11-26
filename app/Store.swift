@@ -1994,7 +1994,7 @@ final class Store: ObservableObject {
     nonisolated private static func pageText(_ url: URL) async -> String? {
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
-        guard let (bytes, _) = try? await probeSession.bytes(for: req) else { return nil }
+        guard let (bytes, _) = try? await probeSession.bytes(for: req, delegate: PublicRedirectDelegate()) else { return nil }
         defer { bytes.task.cancel() }
         var data = Data()
         var chunk = [UInt8](); chunk.reserveCapacity(4096)
@@ -2067,7 +2067,7 @@ final class Store: ObservableObject {
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
         req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
         // Only the status is needed: stop reading once the headers are in.
-        guard let (bytes, resp) = try? await probeSession.bytes(for: req) else { return nil }
+        guard let (bytes, resp) = try? await probeSession.bytes(for: req, delegate: PublicRedirectDelegate()) else { return nil }
         bytes.task.cancel()
         return (resp as? HTTPURLResponse)?.statusCode
     }

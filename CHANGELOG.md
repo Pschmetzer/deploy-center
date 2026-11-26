@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The page check and the certificate check follow redirects only to https and public hosts (also by DNS: no localhost, private, CGNAT, 0.0.0.0/8 or unique-local IPv6 addresses, no cloud metadata address); one shared rule replaces two different ones. The script calls of the app no longer inherit the whole environment of the app: only `PATH`, `HOME`, locale, proxy variables and the hosts' own `DEPLOYS_*`, `VERCEL_*`, `RENDER_*`, `GH_*` … variables (an `ANTHROPIC_API_KEY` or `AWS_SECRET_ACCESS_KEY` in the app's environment stays out).
 - Local session counter: `deploys local-sessions [--json]` lists the Claude Code sessions on this Mac (title, folder, idle time, CPU, RAM) and finds tasks that should have been bundled: more than 3 sessions on one repo, each started within 10 minutes of the one before, and the same task running twice; two sessions in one folder and sessions idle for over an hour are flagged too. The count turns yellow only at 30 (`deploys local-sessions set max-local|bundle-to|burst-min`). The menu shows the count with a green or yellow dot and a "Bundle tasks" menu with the extras; ending a session always asks first (`deploys local-sessions stop <pid> --yes`). Read-only MCP tool `deploys_local_sessions`. The number of running cloud sessions cannot be read on the Mac; `deploys sessions` shows them as GitHub sees them ([docs/LOCAL-SESSIONS.md](docs/LOCAL-SESSIONS.md)).
 - Performance guard: a Docker stack that is started again after an idle stop is left alone for 24 hours instead of being stopped again on the next pass.
 
