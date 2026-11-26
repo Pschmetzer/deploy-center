@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Quiet hours are read in one place (`QuietHours`), so notifications, reminders and the digest cannot disagree about them.
+- VS Code: an address from the CLI's output (the deploy, the preview, the dashboard) is opened in the browser only when it is `https://` (or `http://` to this machine): no `javascript:`, `file:` or custom scheme.
 - MCP: the server's instructions name every tool that returns untrusted data (listed from the code, so `deploys_preview` and `deploys_journal_search` are no longer missing); `deploys_journal_search` has an `offset` (read past the newest matches) and reads the journal columns by their header names; the server says its title ("Deploy Center").
 - `deploys lock <project> "why"` closes one project for starts until `deploys unlock <project>` (no time window, unlike `freeze`): `deploy`, `deploy-changed` and groups refuse it like a closed window, only `--force "why"` goes ahead and the journal says so. `deploys lock` lists the locks. A group member named `*` is no longer expanded against the current folder.
 - CLI: `deploys help <command>` is `deploys <command> --help`. The environment table of docs/CLI.md and the man page now name 30 more `DEPLOYS_*` settings (scan, check, Amplify, GitHub Pages, Railway, Render, Netlify, hook store, GitLab, performance guard, update base).
