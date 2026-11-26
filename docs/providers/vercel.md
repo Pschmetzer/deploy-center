@@ -18,6 +18,18 @@ vercel login
 In CI, set `VERCEL_TOKEN` instead of logging in, and install the CLI in the runner. `deploys doctor` says what is missing.
 If your login sees several teams, choose one with `deploys vercel team <id>` (or `DEPLOYS_VERCEL_TEAM`).
 
+## No more "Authorize Device" page
+
+`deploys` uses the keychain token (`deploys vercel set-key`) when there is one, but a plain `vercel` in your shell only knows
+the CLI login, which expires after a few hours and then opens the "Authorize Device" page. To give every `vercel` run the
+same token, put the shim first in your `PATH`:
+
+```bash
+install -m 755 integrations/vercel-shim/vercel ~/.local/bin/vercel
+```
+
+`vercel login` and `vercel logout` pass through, and an explicit `VERCEL_TOKEN` wins.
+
 ## Turning auto-deploy off
 
 ```bash

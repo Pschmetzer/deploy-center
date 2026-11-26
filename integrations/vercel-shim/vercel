@@ -1,0 +1,20 @@
+#!/bin/bash
+# Hands the Deploy Center keychain token to every `vercel` run, so a plain `vercel` never opens the
+# "Authorize Device" page when the CLI login has expired. Put this file first in PATH (for example
+# ~/.local/bin/vercel). `login` and `logout` pass through. An explicit VERCEL_TOKEN wins.
+self="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+real="${VERCEL_REAL_BIN:-}"
+if [ -z "$real" ]; then
+  IFS=: read -ra dirs <<<"$PATH"
+  for d in "${dirs[@]}"; do
+    c="$d/vercel"
+    [ -x "$c" ] && [ "$(cd "$d" && pwd -P)/vercel" != "$self" ] && { real="$c"; break; }
+  done
+fi
+[ -n "$real" ] || { echo "vercel shim: the real vercel CLI was not found (set VERCEL_REAL_BIN)." >&2; exit 127; }
+case "${1:-}" in login|logout) exec "$real" "$@";; esac
+if [ -z "${VERCEL_TOKEN:-}" ]; then
+  t="$(security find-generic-password -a "${USER:-$(id -un)}" -s "${VERCEL_KEYCHAIN:-deploy-center-vercel}" -w </dev/null 2>/dev/null)" || t=""
+  [ -n "$t" ] && export VERCEL_TOKEN="$t"
+fi
+exec "$real" "$@"
