@@ -15,7 +15,7 @@ final class FakeSecrets: SecretStore {
     // Accounts
     let d = UserDefaults(suiteName: "dc-r15-accounts-\(UUID().uuidString)")!
     let fake = FakeSecrets()
-    expect("label: plain", Accounts.cleanLabel("  Work "), "Work")
+    expect("label: plain", Accounts.cleanLabel("  Work ") ?? "nil", "Work")
     expect("label: a key as a name is refused", Accounts.cleanLabel("sk-ant-abc/def") == nil, true)
     expect("label: too long", Accounts.cleanLabel(String(repeating: "a", count: 41)) == nil, true)
     expect("key: spaces refused", Accounts.cleanKey("a b") == nil, true)
@@ -24,11 +24,11 @@ final class FakeSecrets: SecretStore {
     expect("add: same label refused", Accounts.add(host: "render", label: "Work", key: "rnd_2", secrets: fake, d), false)
     expect("add: key reaches the store only", fake.store.values.contains("rnd_1") && !(d.dictionaryRepresentation().description.contains("rnd_1")), true)
     expect("names", Accounts.names("render", d), ["Work"])
-    expect("key read back", Accounts.key(host: "render", label: "Work", secrets: fake), "rnd_1")
+    expect("key read back", Accounts.key(host: "render", label: "Work", secrets: fake) ?? "nil", "rnd_1")
     Accounts.markActive(host: "render", label: "Work", d)
-    expect("active", Accounts.active("render", d), "Work")
+    expect("active", Accounts.active("render", d) ?? "nil", "Work")
     Accounts.markActive(host: "render", label: "Nobody", d)
-    expect("active: an unknown label is ignored", Accounts.active("render", d), "Work")
+    expect("active: an unknown label is ignored", Accounts.active("render", d) ?? "nil", "Work")
     Accounts.remove(host: "render", label: "Work", secrets: fake, d)
     expect("remove: gone from names, store and active", Accounts.names("render", d).isEmpty && fake.store.isEmpty && Accounts.active("render", d) == nil, true)
 
