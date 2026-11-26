@@ -21,7 +21,7 @@ cfg="$(cat)"; prev=""; body=""
 for a in "$@"; do [ "$prev" = --data-binary ] && body="$(cat "${a#@}")"; prev="$a"; done
 echo "args $*" >> "$CALLS"; [ -z "$body" ] || echo "body $body" >> "$CALLS"
 # NEWRUN: once the dispatch has gone out, the runs list gains a new run (a fixture swapped in).
-case "$*" in *dispatches*) [ ! -f "${NEWRUN:-/nonexistent}" ] || cp "$NEWRUN" "$FIXTURES/ghpages/GET_repos_example_alpha_actions_workflows_pages.yml_runs_per_page_5_branch_main.json" ;; esac
+case "$*" in *dispatches*) [ ! -f "${NEWRUN:-/nonexistent}" ] || { cp "$NEWRUN" "$FIXTURES/ghpages/GET_repos_example_alpha_actions_workflows_pages.yml_runs_per_page_5_branch_main.json"; cp "$NEWRUN" "$FIXTURES/ghpages/GET_repos_example_alpha_actions_workflows_pages.yml_runs_per_page_5_branch_main_event_workflow_dispatch.json"; } ;; esac
 printf '%s' "$cfg" | "$REAL_CURL" "$@"
 CURL
 cat > "$tmp/bin/security" <<'SEC'

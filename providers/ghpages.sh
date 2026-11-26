@@ -97,10 +97,10 @@ GHPAGES_JQ='
 '
 
 # The newest runs of a site's workflow on its branch, newest first, as a JSON array.
-ghpages_runs() {  # ghpages_runs <site json> [n]
+ghpages_runs() {  # ghpages_runs <site json> [n] [event]
   local repo wf ref out
   repo="$(printf '%s' "$1" | jq -r .repo)"; wf="$(printf '%s' "$1" | jq -r .workflow)"; ref="$(printf '%s' "$1" | jq -r .ref)"
-  out="$(ghpages_call GET "/repos/$repo/actions/workflows/$wf/runs?per_page=${2:-5}&branch=$ref")" || return 1
+  out="$(ghpages_call GET "/repos/$repo/actions/workflows/$wf/runs?per_page=${2:-5}&branch=$ref${3:+&event=$3}")" || return 1
   printf '%s' "$out" | jq -ce '.workflow_runs | select(type == "array")' || { echo "GitHub answered without a run list for $repo" >&2; return 1; }
 }
 
@@ -172,11 +172,11 @@ ghpages_deploy_json() {
   repo="$(printf '%s' "$site" | jq -r .repo)"; wf="$(printf '%s' "$site" | jq -r .workflow)"; ref="$(printf '%s' "$site" | jq -r .ref)"
   if declare -F start_lock >/dev/null; then lock="$(start_lock "ghpages-$repo")" || exit 1; fi
   runs="$(ghpages_runs "$site" 5)" || { rm -f "$lock"; die "GitHub: could not read the runs of $repo"; }
-  prev="$(printf '%s' "$runs" | jq -r '[.[].id] | max // 0')"
+  prev="$(ghpages_runs "$site" 5 workflow_dispatch | jq -r '[.[].id] | max // 0')" || prev=0
   ghpages_call POST "/repos/$repo/actions/workflows/$wf/dispatches" "$(jq -nc --arg r "$ref" '{ref:$r}')" >/dev/null \
     || { rm -f "$lock"; die "GitHub did not start $wf on $ref for $repo (does the workflow have \`on: workflow_dispatch\`, and may the token run workflows?)"; }
   while [ "$n" -lt "${DEPLOYS_GHPAGES_POLLS:-6}" ]; do
-    new="$(ghpages_runs "$site" 5 2>/dev/null | jq -c --argjson p "$prev" '[.[] | select(.id > $p)] | sort_by(.id) | last // empty')" || new=""
+    new="$(ghpages_runs "$site" 5 workflow_dispatch 2>/dev/null | jq -c --argjson p "$prev" '[.[] | select(.id > $p)] | sort_by(.id) | last // empty')" || new=""
     [ -z "$new" ] || break
     n=$((n + 1)); sleep 3
   done
