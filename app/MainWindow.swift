@@ -537,7 +537,7 @@ struct ContentView: View {
         let d = UserDefaults.standard
         guard !firstStartDone, d.object(forKey: "firstStartChecked") == nil else { return }
         d.set(true, forKey: "firstStartChecked")
-        let used: Bool = !Journal.load(limit: 1).isEmpty || d.object(forKey: "lastPlatform") != nil
+        let used: Bool = Journal.hasEntries() || d.object(forKey: "lastPlatform") != nil
         if used { firstStartDone = true }
     }
 
