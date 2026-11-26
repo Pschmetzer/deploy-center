@@ -6,6 +6,24 @@
     return root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
   };
 
+  // The browser bar follows a manual choice too: once the visitor picks a theme, one meta tag without a media query replaces the two.
+  var COLORS = { dark: '#0b0d12', light: '#fbfbfd' };
+  var paintBar = function (theme) {
+    var metas = document.querySelectorAll('meta[name="theme-color"]');
+    if (!metas.length || !COLORS[theme]) return;
+    for (var i = 1; i < metas.length; i++) metas[i].remove();
+    metas[0].removeAttribute('media');
+    metas[0].setAttribute('content', COLORS[theme]);
+  };
+  // another tab changed the theme: follow it without a reload
+  window.addEventListener('storage', function (e) {
+    if (e.key !== 'theme' || (e.newValue !== 'light' && e.newValue !== 'dark')) return;
+    root.setAttribute('data-theme', e.newValue);
+    paintBar(e.newValue);
+    var b = document.querySelector('nav.top .theme');
+    if (b) b.setAttribute('aria-label', e.newValue === 'light' ? 'Switch to dark mode' : 'Switch to light mode');
+  });
+
   // theme switch in the top navigation
   var links = document.querySelector('nav.top .links');
   if (links && !links.querySelector('.theme')) {
@@ -19,6 +37,7 @@
     btn.addEventListener('click', function () {
       var next = current() === 'light' ? 'dark' : 'light';
       root.setAttribute('data-theme', next);
+      paintBar(next);
       try { localStorage.setItem('theme', next); } catch (e) { /* private window: the choice lasts for this page */ }
       label();
     });
@@ -26,23 +45,37 @@
     if (dl) links.insertBefore(btn, dl); else links.appendChild(btn);   // before "Download", as on the home page
   }
 
-  // copy button on code blocks
-  if (!navigator.clipboard) return;
+  // copy button on code blocks; a fallback for browsers without the clipboard API, and a message for screen readers
+  var live = document.createElement('div');
+  live.className = 'sr'; live.setAttribute('role', 'status'); live.setAttribute('aria-live', 'polite');
+  document.body.appendChild(live);
+  var say = function (msg) { live.textContent = ''; setTimeout(function () { live.textContent = msg; }, 60); };
+  var fallback = function (text) {
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { /* no copy command here */ }
+    ta.remove();
+    return ok;
+  };
   document.querySelectorAll('article pre').forEach(function (pre) {
-    var b = document.createElement('button');
+    var b = document.createElement('button'), timer;
     b.className = 'copy';
     b.type = 'button';
     b.textContent = 'Copy';
     b.setAttribute('aria-label', 'Copy this code');
     b.addEventListener('click', function () {
       var code = pre.querySelector('code') || pre;
-      navigator.clipboard.writeText(code.textContent.replace(/\n$/, '')).then(function () {
-        b.textContent = 'Copied';
-      }, function () {
-        b.textContent = 'Copy failed';
-      }).then(function () {
-        setTimeout(function () { b.textContent = 'Copy'; }, 1800);
-      });
+      var text = code.textContent.replace(/\n$/, '');
+      var done = function (ok) {
+        b.textContent = ok ? 'Copied' : 'Copy failed';
+        say(ok ? 'Copied to the clipboard' : 'Copying failed');
+        clearTimeout(timer);
+        timer = setTimeout(function () { b.textContent = 'Copy'; }, 1800);
+      };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(fallback(text)); });
+      else done(fallback(text));
     });
     pre.style.position = 'relative';
     pre.appendChild(b);
