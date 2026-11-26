@@ -644,10 +644,13 @@ struct DeployCenterApp: App {
                 .onOpenURL { url in
                     guard url.scheme == "deploycenter" else { return }
                     if let tab = SettingsNav.tab(from: url) { store.openSettings(tab); return }
-                    guard url.host == "select",
-                          let value = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "project" })?.value,
-                          let req = Store.showRequest(value, items: store.allItems) else { return }
-                    store.pendingShow = req
+                    guard let action = DeepLink.action(url), let req = Store.showRequest(action.project, items: store.allItems) else { return }
+                    switch action.kind {
+                    case .select: store.pendingShow = req
+                    // deploycenter://log?project=name: the build log of that project, read only; with no single match the project is shown.
+                    case .log:
+                        if let key = req.key { store.pendingLog = key; store.windowRequest += 1 } else { store.pendingShow = req }
+                    }
                 }
                 // A Spotlight hit: the project is found in the window, never deployed.
                 .onContinueUserActivity(CSSearchableItemActionType) { a in

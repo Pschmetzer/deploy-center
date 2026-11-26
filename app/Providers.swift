@@ -59,6 +59,13 @@ struct ProviderInfo: Decodable, Identifiable, Equatable, Sendable {
     /// The source hosts the status banner also watches, next to the platforms.
     static let gitHosts: [(label: String, page: String, feed: String)] = [
         ("GitHub", "https://www.githubstatus.com", "https://www.githubstatus.com/api/v2/status.json")]
+    /// Watched only while a project's repo is on gitlab.com (docs/GITLAB.md): nobody else asks GitLab's status page.
+    static let gitLabHost: (label: String, page: String, feed: String) =
+        ("GitLab", "https://status.gitlab.com", "https://status.gitlab.com/api/v2/status.json")
+    /// The git hosts to watch: GitHub always, GitLab when one of the repos is on gitlab.com.
+    static func watchedGitHosts(repos: [String?]) -> [(label: String, page: String, feed: String)] {
+        gitHosts + (repos.contains { ($0 ?? "").lowercased().hasPrefix("gitlab.com/") } ? [gitLabHost] : [])
+    }
 
     /// The app's own loader for this provider, if it has one.
     var platform: Platform? { Platform.allCases.first { $0.cli == id } }
