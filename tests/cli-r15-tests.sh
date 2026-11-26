@@ -110,4 +110,8 @@ printf '#!/bin/bash\necho "$*" >> "%s/gh.args"\n' "$tmp" > "$tmp/bin/gh"; chmod 
 . ./providers/hook.sh; PATH="$tmp/bin:$PATH" hook_head acme/shop 'feat/a#b?c%d' >/dev/null 2>&1
 expect "hook_head: # ? % in a branch are encoded" "$(cat "$tmp/gh.args")" "api repos/acme/shop/commits/feat%2Fa%23b%3Fc%25d"
 
+# --- deploys help <command> ---
+expect "help <cmd> is <cmd> --help" "$(cli help freeze 2>&1 | head -n 1 | cut -c1-23)" "  deploys freeze [status]"
+cli help nosuchcmd >/dev/null 2>&1; expect "help <unknown> is a usage error" "$?" "2"
+
 [ "$fails" = 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

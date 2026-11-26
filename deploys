@@ -2824,6 +2824,8 @@ provider_verbs() {
 }
 case "${1:-}" in
   -h|--help|help)
+    # `deploys help <command>` is `deploys <command> --help`.
+    if [ "${1:-}" = help ] && [ -n "${2:-}" ]; then exec "$SELF" "$2" --help; fi
     sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//'
     # The providers that are on, with every command each one takes (their own ones too).
     echo "Provider commands (deploys <p> <command>; the providers that are on here):"

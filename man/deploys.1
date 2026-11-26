@@ -221,6 +221,96 @@ the deploy journal file (default: the app's, on Linux in the config folder)
 .B DEPLOYS_TEAM_TTL
 seconds a shared deploy\-center.json is cached (default 600)
 .TP
+.B DEPLOYS_WATCH_EVERY
+seconds between the redraws of status \-\-watch (default 10)
+.TP
+.B DEPLOYS_CHECK_TIMEOUT
+seconds a check may run (default 900)
+.TP
+.B DEPLOYS_SEMGREP_CONFIG
+the semgrep rule set check uses (default p/default)
+.TP
+.B DEPLOYS_SCAN_TIMEOUT
+seconds a scan session may run (default 5400)
+.TP
+.B DEPLOYS_SCAN_PER_DAY
+scans per account per 24 hours (default 4)
+.TP
+.B DEPLOYS_SCAN_MAX_FIXES
+fixes one scan may hand over (default 5)
+.TP
+.B DEPLOYS_SCAN_MODEL
+the model of a scan (default sonnet)
+.TP
+.B DEPLOYS_SCAN_DIR
+where scan results are kept (default scan/ in the config folder)
+.TP
+.B DEPLOYS_NIGHTLY_MAX_SCANS
+scans one nightly check may start (default 2)
+.TP
+.B DEPLOYS_AMPLIFY_LOG_BYTES
+bytes read from the end of each Amplify step log (default 262144)
+.TP
+.B DEPLOYS_AMPLIFY_PARALLEL
+Amplify apps read at once (default DEPLOYS_PARALLEL, else 4)
+.TP
+.B DEPLOYS_GHPAGES_SITES
+GitHub Pages sites, space separated: owner/repo[:workflow.yml[@branch]]
+.TP
+.B DEPLOYS_GHPAGES_POLLS
+how often ghpages deploy looks for its run (default 6, 3 s apart)
+.TP
+.B DEPLOYS_RAILWAY_POLLS
+how often railway deploy looks for the new deployment (default 5)
+.TP
+.B DEPLOYS_RENDER_NAME_TTL
+seconds the Render name list is kept (default 60)
+.TP
+.B DEPLOYS_NETLIFY_RULE_TTL
+seconds between two reads of a Netlify site's build rule (default 600)
+.TP
+.B DEPLOYS_HOOK_STORE
+keychain or file: where deploy hook URLs are kept (default: keychain on a Mac)
+.TP
+.B DEPLOYS_GITLAB_TIMEOUT
+seconds a glab call may take before it is asked again (default 60)
+.TP
+.B DEPLOYS_GITLAB_CURL
+1 uses curl for GitLab even when glab is installed
+.TP
+.B DEPLOYS_VERCEL_NO_KEYCHAIN
+any value: the Vercel token of the keychain is not put in the CLI's environment
+.TP
+.B DEPLOYS_VERCEL_ANY_SHA
+1 lets vercel deploy \-\-sha take a commit that is not on the project's branch
+.TP
+.B DEPLOYS_UPDATE_BASE
+where self\-update \-\-check looks for releases (another folder or mirror)
+.TP
+.B DEPLOYS_PERF_GATE
+0 turns the Claude Code performance hook off
+.TP
+.B DEPLOYS_PERF_KILL_AFTER
+seconds between TERM and KILL when perf clean or perf reap stop a process (default 10)
+.TP
+.B DEPLOYS_PERF_DB_WAIT
+seconds to wait after starting a Docker stack's databases (default 3)
+.TP
+.B DEPLOYS_PERF_NORECORD
+1: perf status does not record its sample
+.TP
+.B DEPLOYS_PERF_LABEL
+the launchd label of the performance agent (default app.deploycenter.perf)
+.TP
+.B DEPLOYS_PERF_NOTIFY_CMD
+a program called with a title and a text instead of a Mac notification (no shell)
+.TP
+.B DEPLOYS_ROUTINE_TOKEN
+the token of a Claude routine, instead of the keychain (for CI; never put it on a command line)
+.TP
+.B DEPLOYS_CLAUDE_PROJECTS
+where Claude Code keeps its project folders (default ~/.claude/projects)
+.TP
 .B DEPLOYS_AUTOFIX_PER_DAY, DEPLOYS_AUTOFIX_PER_PROJECT
 autofix caps per 24 h (default 6 and 2; 0 = no cap); also ~/.config/deploys/autofix\-limits.json with perDay and perProject, the variables win
 .TP
