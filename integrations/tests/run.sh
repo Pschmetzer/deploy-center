@@ -1123,6 +1123,10 @@ if ops_out="$(tests/ops.sh --quiet 2>&1)"; then ok "ops: $(grep -c '^ok' <<<"$op
 else fail "ops: status page, report, badges, Docker, deploy hooks" "$(grep '^FAIL' <<<"$ops_out" | head -8)"; fi
 skips=$((skips + $(grep -c '^skip' <<<"$ops_out")))
 
+# --- round 15: the deploy gate and perf gate against the ways around them (tests/r15.sh) ---
+if r15_out="$(tests/r15.sh 2>&1)"; then ok "r15: $(grep -c '^ok' <<<"$r15_out") checks (deploy gate, config edits, perf gate)"
+else fail "r15: deploy gate, perf gate" "$(grep '^FAIL' <<<"$r15_out" | head -8)"; fi
+
 echo
 if [ "$skips" -gt 0 ] && [ "${REQUIRE_ALL:-0}" = 1 ]; then
   echo "$skips skipped, and REQUIRE_ALL=1 counts a skip as a failure."; fails=$((fails + skips))
