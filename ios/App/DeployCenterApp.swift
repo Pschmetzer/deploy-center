@@ -132,7 +132,7 @@ enum Background {
         // Nothing seen yet (first run, or the file is gone): nothing counts as new, no flood of notes.
         let before = readLast()
         let complete = await withTaskGroup(of: Bool?.self) { g in
-            g.addTask { await HTTP.$inBackground.withValue(true) { await store.reload() } }
+            g.addTask { await store.reload(inBackground: true) }
             g.addTask { try? await Task.sleep(for: budget); return nil }
             let first = await g.next() ?? nil
             g.cancelAll()

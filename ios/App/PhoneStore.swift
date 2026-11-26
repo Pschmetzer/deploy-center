@@ -253,7 +253,10 @@ final class PhoneStore: ObservableObject {
     /// Returns once a load that started after the call has finished (also when one was already running).
     /// False when it was cut off (the background refresh ran out of time): then nothing was replaced.
     @discardableResult
-    func reload() async -> Bool {
+    func reload(inBackground: Bool = false) async -> Bool {
+        // A person waiting for the list (not the background run) wants the foreground timeouts, also when a background
+        // run started the load; a background run that joins a foreground load gets its own, shorter pass afterwards.
+        if !inBackground { wantsForeground = true }
         if loading {
             reloadAgain = true
             while loading && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(200)) }
@@ -262,12 +265,15 @@ final class PhoneStore: ObservableObject {
         loading = true
         repeat {
             reloadAgain = false
-            lastLoadComplete = await load()
+            let background = !wantsForeground
+            wantsForeground = false
+            lastLoadComplete = await HTTP.$inBackground.withValue(background) { await load() }
         } while reloadAgain && !Task.isCancelled
         loading = false
         return lastLoadComplete
     }
     private var lastLoadComplete = false
+    private var wantsForeground = false
 
     /// Pull to refresh: offline there is nothing to read, and the spinner must not just vanish.
     func refreshByHand() async {

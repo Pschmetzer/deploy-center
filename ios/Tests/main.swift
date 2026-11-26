@@ -583,6 +583,9 @@ check(!neverCase { $0.paused = true }.neverDeployed, "never deployed: not a paus
 check(!neverCase { $0.headSha = nil; $0.headAt = nil }.neverDeployed, "never deployed: nothing to deploy without a commit")
 check(!neverCase { $0.fetchError = "x" }.neverDeployed, "never deployed: not when the read failed")
 check(!neverCase { $0.liveState = "BUILDING" }.neverDeployed, "never deployed: not while it builds")
+// Background timeouts are short, foreground ones are not (ideas E17)
+check(HTTP.timeout == 30 && HTTP.longestWait == 8, "timeouts: the foreground waits longer")
+check(HTTP.$inBackground.withValue(true) { (HTTP.timeout, HTTP.longestWait) } == (10, 2), "timeouts: the background run waits less")
 
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)

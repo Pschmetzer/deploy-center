@@ -702,7 +702,7 @@ struct DeployActivityWidget: Widget {
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) { phaseIcon(ctx.state.phase, w, rollback: ctx.attributes.rollback).font(.title2) }
                 DynamicIslandExpandedRegion(.trailing) { elapsed(ctx).font(.title3.monospacedDigit()) }
-                DynamicIslandExpandedRegion(.center) { Text(ctx.attributes.project).font(.headline).lineLimit(1) }
+                DynamicIslandExpandedRegion(.center) { Text(ctx.attributes.project).font(.headline).lineLimit(1).privacySensitive() }
                 DynamicIslandExpandedRegion(.bottom) {
                     Text(line(ctx, w)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
@@ -770,7 +770,7 @@ struct DeployActivityView: View {
         HStack(spacing: 12) {
             phaseIcon(ctx.state.phase, w, rollback: ctx.attributes.rollback).font(.title)
             VStack(alignment: .leading, spacing: 2) {
-                Text((ctx.attributes.rollback ? w("Rollback: ", "Zurückrollen: ") : "") + ctx.attributes.project).font(.headline).lineLimit(1)
+                Text((ctx.attributes.rollback ? w("Rollback: ", "Zurückrollen: ") : "") + ctx.attributes.project).font(.headline).lineLimit(1).privacySensitive()
                 Text(line(ctx, w)).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: 0)
