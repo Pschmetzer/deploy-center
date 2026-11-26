@@ -207,10 +207,9 @@ webhook_send() {
   f="$(umask 077; mktemp)" || return 1
   # Ctrl-C or a timeout kill must not leave the message text in $TMPDIR; the caller's own traps come back after.
   local old_int old_term; old_int="$(trap -p INT)"; old_term="$(trap -p TERM)"
-  # shellcheck disable=SC2064
-  trap "rm -f '$f' '$f.resp'; exit 130" INT
-  # shellcheck disable=SC2064
-  trap "rm -f '$f' '$f.resp'; exit 143" TERM
+  WEBHOOK_TMP="$f"
+  trap 'rm -f "$WEBHOOK_TMP" "$WEBHOOK_TMP.resp"; exit 130' INT
+  trap 'rm -f "$WEBHOOK_TMP" "$WEBHOOK_TMP.resp"; exit 143' TERM
   if [ "$format" = pushover ]; then
     jq -c --arg k "${DEPLOYS_PUSHOVER_TOKEN:-}" --arg us "${DEPLOYS_PUSHOVER_USER:-}" '{token:$k, user:$us} + .' <<<"$WEBHOOK_BODY" > "$f"
   else printf '%s' "$WEBHOOK_BODY" > "$f"; fi
