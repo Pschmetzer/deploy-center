@@ -87,8 +87,13 @@ struct PhoneProject: Identifiable, Equatable, Codable {
         DeployRule.changed(deployable: deployable, paused: paused, building: building, readError: fetchError != nil,
                            compareStatus: compareStatus, liveSha: liveSha, headSha: headSha, liveAt: liveAt, headAt: headAt)
     }
+    /// Commits exist, but nothing was ever deployed to production: the first deploy waits.
+    var neverDeployed: Bool {
+        DeployRule.neverDeployed(deployable: deployable, paused: paused, building: building, readError: fetchError != nil,
+                                 liveSha: liveSha, liveAt: liveAt, liveState: liveState, headSha: headSha, headAt: headAt)
+    }
     /// "Deploy" would build what is already live: nothing new, failed or unknown.
-    var upToDate: Bool { !changed && !failed && !building && !unknown && liveSha != nil && liveSha == headSha }
+    var upToDate: Bool { !changed && !neverDeployed && !failed && !building && !unknown && liveSha != nil && liveSha == headSha }
     var unknown: Bool { deployable && !paused && !foreignRepo && (fetchError != nil || (headSha == nil && headAt == nil)) }
 
     /// A provider state ("BUILDING", "build_failed", …) in words.
@@ -118,10 +123,10 @@ struct PhoneProject: Identifiable, Equatable, Codable {
             }
         }
     }
-    var group: Group { building || failed ? .attention : (changed ? .waiting : .live) }
+    var group: Group { building || failed ? .attention : (changed || neverDeployed ? .waiting : .live) }
 
     var snapshotStatus: DeploySnapshot.Project.Status? {
-        building ? .building : failed ? .failed : changed ? .waiting : nil
+        building ? .building : failed ? .failed : changed || neverDeployed ? .waiting : nil
     }
 }
 

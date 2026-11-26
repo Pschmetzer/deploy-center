@@ -544,5 +544,45 @@ do {
           "refresh: no out-of-date entry when it is already past or there is no snapshot")
 }
 
+// Followed runs keep their start across a restart (ideas E1)
+UserDefaults.standard.removeObject(forKey: FollowedRuns.defaultsKey)
+FollowedRuns.add(key: "Vercel/r", id: "d1", now: sNow)
+FollowedRuns.add(key: "Vercel/r", id: "d1", now: sNow.addingTimeInterval(600))
+check(FollowedRuns.fresh(now: sNow.addingTimeInterval(601)).first?.started == sNow, "followed runs: the same deploy keeps its first start")
+FollowedRuns.add(key: "Vercel/r", id: "d2", now: sNow.addingTimeInterval(700))
+check(FollowedRuns.fresh(now: sNow.addingTimeInterval(701)).first?.started == sNow.addingTimeInterval(700), "followed runs: a new deploy of the project starts afresh")
+FollowedRuns.remove("Vercel/r")
+
+// A deploy that may have started (ideas E2)
+check(deployMayHaveStarted(APIError(status: 502, message: "")), "deploy: a 502 may have started the build")
+check(deployMayHaveStarted(APIError(status: 504, message: "")), "deploy: a 504 may have started the build")
+check(deployMayHaveStarted(URLError(.timedOut)), "deploy: a timeout may have started the build")
+check(!deployMayHaveStarted(URLError(.cancelled)), "deploy: a cancel did not start one")
+check(!deployMayHaveStarted(APIError(status: 403, message: "")), "deploy: a 403 started nothing")
+check(!deployMayHaveStarted(APIError(status: 429, message: "", rateLimited: true)), "deploy: a rate limit started nothing")
+
+// What follow does with a failed poll (ideas E3)
+let pNow = Date(timeIntervalSince1970: 1_800_000_000)
+check(PollFailure.decide(APIError(status: 401, message: ""), elapsed: 60, now: pNow) == .stop, "poll: 401 stops")
+check(PollFailure.decide(APIError(status: 403, message: "no"), elapsed: 60, now: pNow) == .stop, "poll: 403 without a limit stops")
+check(PollFailure.decide(APIError(status: 404, message: ""), elapsed: 5, now: pNow) == .retry, "poll: an early 404 is retried")
+check(PollFailure.decide(APIError(status: 404, message: ""), elapsed: 60, now: pNow) == .stop, "poll: a later 404 stops")
+check(PollFailure.decide(APIError(status: 403, message: "", rateLimited: true, retryAt: pNow.addingTimeInterval(90)), elapsed: 60, now: pNow) == .wait(90),
+      "poll: a GitHub 403 limit waits until it is free")
+check(PollFailure.decide(APIError(status: 429, message: "", rateLimited: true), elapsed: 60, now: pNow) == .wait(1), "poll: a 429 without a time waits a moment")
+check(PollFailure.decide(APIError(status: 503, message: ""), elapsed: 60, now: pNow) == .retry, "poll: a 503 is retried")
+check(PollFailure.decide(URLError(.notConnectedToInternet), elapsed: 60, now: pNow) == .retry, "poll: offline is retried")
+
+// A project that was never deployed (ideas E6)
+func neverCase(_ f: (inout PhoneProject) -> Void) -> PhoneProject {
+    var p = PhoneProject(provider: .vercel, id: "p1", name: "atlas"); p.deployable = true; p.headSha = "abc1234"; p.headAt = sNow; f(&p); return p
+}
+check(neverCase { _ in }.neverDeployed && neverCase { _ in }.group == .waiting && !neverCase { _ in }.upToDate, "never deployed: commits but no production deploy is waiting")
+check(!neverCase { $0.liveSha = "abc1234"; $0.liveAt = sNow; $0.liveState = "READY" }.neverDeployed, "never deployed: not once something is live")
+check(!neverCase { $0.paused = true }.neverDeployed, "never deployed: not a paused project")
+check(!neverCase { $0.headSha = nil; $0.headAt = nil }.neverDeployed, "never deployed: nothing to deploy without a commit")
+check(!neverCase { $0.fetchError = "x" }.neverDeployed, "never deployed: not when the read failed")
+check(!neverCase { $0.liveState = "BUILDING" }.neverDeployed, "never deployed: not while it builds")
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
