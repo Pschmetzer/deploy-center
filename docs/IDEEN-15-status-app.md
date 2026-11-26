@@ -6,3 +6,18 @@
 | 62 | entfällt | derselbe Takt hält auch den Schutz (Docker, Prozesse) am Laufen, nicht nur den Punkt |
 | 32, 33, 34 | erledigt | Deploy-Fenster, Nightly-Minuten |
 | 128, 129, 130, 131, 135 (Teil) | erledigt | Tests 1 |
+# Block A (Mac-App): Stand
+
+Nummern wie in [IDEEN-15.md](IDEEN-15.md). „erledigt“ heißt umgesetzt und per PR gemergt; „entfällt“ heißt: trifft im Code nicht mehr zu.
+
+| Nr. | Stand | PR |
+| --- | --- | --- |
+| 7, 8, 9, 12, 13, 14, 15, 16, 48 | erledigt | Eigentümerprüfung |
+| 3, 11 (Sessions, Demo-Kurznamen), 18, 53, 56, 75 | erledigt | Mitteilungen und Sessions |
+| 1, 2, 17 | erledigt | Redirect-Prüfung, Umgebung |
+| 4, 19, 20, 21, 54, 55, 70 | erledigt | Races, Claude-Verbindung |
+| 25, 28, 29, 30, 31, 36, 37, 42, 43, 44, 49, 50, 52 | erledigt | Kleine Fehler 1 |
+| 22 | entfällt | das Skript nimmt `main` ohnehin als Vorgabe; Ref-Auflösung gehört ins CLI |
+| 45 (Teil), 73, 74, 76, 77, 81, 85, 86, 87, 88, 89, 90, 97 (Teil) | erledigt | Barrierefreiheit 1 |
+| 103, 104, 107 | erledigt | UX 1 |
+| 109 | offen | `thisWeek` hängt an Montag, Tests und Wochenzusammenfassung rechnen damit; braucht eine gemeinsame Quelle |

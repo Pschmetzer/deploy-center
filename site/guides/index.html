@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-wBdtWdXsHnAU2DdByySW4LlXFAScrBvmBgkXtydwJdg='; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'self'; form-action 'self'; object-src 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stop paying for builds: guides for 7 hosts, Vercel to Coolify</title>
-<meta name="description" content="Guides to turn off auto-deploy and skip unneeded builds on Vercel, Render, Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean and Coolify.">
+<title>Stop paying for builds: guides for 16 hosts, Vercel to Deno Deploy</title>
+<meta name="description" content="Guides to turn off auto-deploy and skip unneeded builds on Vercel, Render, Netlify, Cloudflare, Amplify, DigitalOcean, Coolify and nine more hosts.">
 <meta name="author" content="Deploy Center">
 <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
 <meta name="color-scheme" content="dark light">
@@ -19,7 +19,7 @@
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
 <meta property="og:title" content="Deploy Center guides">
-<meta property="og:description" content="Guides to turn off auto-deploy and skip unneeded builds on Vercel, Render, Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean and Coolify.">
+<meta property="og:description" content="Guides to turn off auto-deploy and skip unneeded builds on Vercel, Render, Netlify, Cloudflare, Amplify, DigitalOcean, Coolify and nine more hosts.">
 <meta property="og:url" content="https://deploycenter.app/guides/">
 <meta property="og:image" content="https://deploycenter.app/img/og.png">
 <meta property="og:image:type" content="image/png">
@@ -28,7 +28,7 @@
 <meta property="og:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="Deploy Center guides">
-<meta name="twitter:description" content="Guides to turn off auto-deploy and skip unneeded builds on Vercel, Render, Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean and Coolify.">
+<meta name="twitter:description" content="Guides to turn off auto-deploy and skip unneeded builds on Vercel, Render, Netlify, Cloudflare, Amplify, DigitalOcean, Coolify and nine more hosts.">
 <meta name="twitter:image" content="https://deploycenter.app/img/og.png">
 <meta name="twitter:image:alt" content="Deploy Center: stop paying for a build on every push. Free Mac app for Vercel and Render.">
 <link rel="icon" href="/img/icon-32.png" sizes="32x32" type="image/png">
@@ -36,6 +36,7 @@
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
 <script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/tokens.css">
 <link rel="stylesheet" href="/css/site.css">
 <script type="application/ld+json">
 [
@@ -43,9 +44,9 @@
   "@context": "https://schema.org",
   "@type": "CollectionPage",
   "name": "Deploy Center guides",
-  "description": "Guides to turn off auto-deploy and skip unneeded builds on Vercel, Render, Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean and Coolify.",
+  "description": "Guides to turn off auto-deploy and skip unneeded builds on Vercel, Render, Netlify, Cloudflare, Amplify, DigitalOcean, Coolify and nine more hosts.",
   "url": "https://deploycenter.app/guides/",
-  "dateModified": "2026-11-23",
+  "dateModified": "2026-11-26",
   "author": {
    "@type": "Person",
    "name": "Patrick Schmetzer",
@@ -302,6 +303,24 @@
      "position": 40,
      "url": "https://deploycenter.app/guides/check-your-setup-deploys-doctor/",
      "name": "Check your setup: tools, logins and keys"
+    },
+    {
+     "@type": "ListItem",
+     "position": 41,
+     "url": "https://deploycenter.app/guides/mac-hangs-when-agents-build-together/",
+     "name": "A build gate for Claude Code agents that hang your Mac"
+    },
+    {
+     "@type": "ListItem",
+     "position": 42,
+     "url": "https://deploycenter.app/guides/forecast-your-monthly-vercel-build-bill/",
+     "name": "Forecast this month's Vercel build bill"
+    },
+    {
+     "@type": "ListItem",
+     "position": 43,
+     "url": "https://deploycenter.app/guides/env-diff-missing-variables-production-preview/",
+     "name": "Compare production and preview variables"
     }
    ]
   }
@@ -337,13 +356,13 @@
 <main id="main" class="wrap narrow"><article>
 <p class="crumbs"><a href="/">Home</a></p>
 <h1>Guides</h1>
-<p class="answer">How to turn off auto-deploy, skip the builds you do not need and see what they cost, on Vercel, Render, Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean and Coolify. Each guide starts with the answer, then the steps and the trade-offs.</p>
+<p class="answer">How to turn off auto-deploy, skip the builds you do not need and see what they cost, on Vercel, Render, Netlify, Cloudflare, Amplify, DigitalOcean, Coolify and nine more hosts. Each guide starts with the answer, then the steps and the trade-offs.</p>
 <div class="site-search" role="search" hidden>
 <label class="sr" for="site-q">Search the guides, blog and docs</label>
 <input id="site-q" type="search" data-site-search placeholder="Search guides, blog and docs" autocomplete="off" aria-controls="site-results">
 <ul id="site-results" hidden></ul>
 </div>
-<p class="meta">Last updated <time datetime="2026-11-23">23 November 2026</time></p>
+<p class="meta">Last updated <time datetime="2026-11-26">26 November 2026</time></p>
 <div class="cards">
   <a href="/guides/disable-vercel-auto-deploy/"><b>Disable Vercel auto-deploy</b><span>Three ways to stop Vercel deploying on every push, and how to undo each.</span></a>
   <a href="/guides/stop-vercel-building-every-push/"><b>Stop Vercel building every push</b><span>Build less without turning Git off: previews, bots, monorepos, batching.</span></a>
@@ -382,6 +401,21 @@
   <a href="/guides/find-projects-nobody-deploys/"><b>Find projects that nobody deploys</b><span>List every project with no deploy for 90 days or any number you choose, so you can pause or delete what you no longer need, with the deploys idle command.</span></a>
   <a href="/guides/prometheus-metrics-for-deploys/"><b>Deploy metrics in Grafana, without a server</b><span>Write waiting commits, their age, failed deploys and auto-deploy state as a Prometheus text file for node_exporter and Grafana, with deploys metrics.</span></a>
   <a href="/guides/check-your-setup-deploys-doctor/"><b>Check your setup: tools, logins and keys</b><span>See what is missing before a deploy fails: tools, GitHub login, platform keys and how old they are, one line each with the fix, using deploys doctor and creds.</span></a>
+  <a href="/guides/mac-hangs-when-agents-build-together/"><b>A build gate for Claude Code agents that hang your Mac</b><span>A build gate: heavy commands wait for memory, swap and load to leave room. Works as a Claude Code hook.</span></a>
+  <a href="/guides/forecast-your-monthly-vercel-build-bill/"><b>Forecast this month's Vercel build bill</b><span>deploys forecast projects the spend so far to the end of the month, per project, with a budget warning.</span></a>
+  <a href="/guides/env-diff-missing-variables-production-preview/"><b>Compare production and preview variables</b><span>deploys env-diff compares production and preview variable names on Vercel, never values.</span></a>
+</div>
+<h2>More hosts</h2>
+<p>These hosts are opt-in in the CLI (<code>deploys providers enable &lt;host&gt;</code>). Each page says what Deploy Center does there, what it cannot do and how to undo it; the <a href="/docs/hosts/">table of all hosts</a> compares them.</p>
+<div class="cards">
+  <a href="/docs/fly-io/"><b>Fly.io</b><span>Fly.io builds only when you run fly deploy: what Deploy Center can do, restart machines, no push switch to flip.</span></a>
+  <a href="/docs/railway/"><b>Railway</b><span>Redeploy, cancel and roll back a service; the push trigger is disconnected in Railway itself.</span></a>
+  <a href="/docs/heroku/"><b>Heroku</b><span>Restart dynos, roll back a release, read the newest build log.</span></a>
+  <a href="/docs/firebase-hosting/"><b>Firebase Hosting</b><span>Make a finished version live or go back to the one before.</span></a>
+  <a href="/docs/github-pages/"><b>GitHub Pages</b><span>Dispatch the Pages workflow, cancel a run, see the newest result.</span></a>
+  <a href="/docs/koyeb/"><b>Koyeb</b><span>Redeploy a service with its current definition and follow the deployment.</span></a>
+  <a href="/docs/northflank/"><b>Northflank</b><span>Start a build of a service's branch or of a given commit.</span></a>
+  <a href="/docs/deno-deploy/"><b>Deno Deploy</b><span>Redeploy the newest deployment of a project as production.</span></a>
 </div>
 <h2>Tools and reading</h2>
 <div class="cards">
@@ -437,7 +471,7 @@
       <li><a href="/datenschutz.html">Datenschutz</a></li>
     </ul></div>
   </div>
-  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
+  <p class="fine">Deploy Center · free and open source (MIT) · not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Google, Koyeb, Northflank, Deno, GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.</p>
 </div></footer>
 <script src="/js/site.js" defer></script>
 </body>

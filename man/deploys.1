@@ -77,6 +77,7 @@ No key is ever printed.
   deploys streak [\-\-days 90] [\-\-project <p>]   deploys in a row without a failure, per project
   deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
   deploys clean [\-\-root <dir>] [\-\-worktrees] [\-\-yes] | clean schedule on|off   free disk space in old worktrees (a report without \-\-yes)
+  deploys repos status|sync [\-\-yes]|last|schedule on|off   keep local checkouts on top of origin/main (docs/REPOS.md)
   deploys when [\-\-days 90] [\-\-by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
   deploys health [\-\-days 30] [\-\-project <p>] [\-\-no\-ci]   0\-100 per project from failures, recovery, age of the last deploy, CI
   deploys local\-sessions [\-\-json] | stop <pid> \-\-yes | set <key> <n>   Claude Code sessions on this Mac; tasks started together, twins (docs/LOCAL\-SESSIONS.md)
@@ -142,6 +143,7 @@ No key is ever printed.
   deploys price [set <vercel|render> <usd> | unset <p>]   your price of one build minute (prices.json)
   deploys budget [set <usd a month> [\-\-strict] | off]     deploy\-changed \-\-yes stops before going over it
 
+  deploys more [\-\-json]                     the extra commands (lib/x\-*.sh): what each does and its usage
   deploys where                             config folder, version, key source, logins
   deploys self\-update \-\-check [\-\-json]      is a newer release out? only checks and prints (exit 10: yes)
   deploys completion zsh|bash|fish          tab completion (eval "$(deploys completion zsh)";
@@ -330,6 +332,15 @@ what the global \-\-quiet and \-\-debug set: only the result; the trace of the c
 .TP
 .B DEPLOYS_PARALLEL
 how many platform or git host reads run at once in a list (default 8, at most 32; 3 while GitHub's budget is under 1000)
+.TP
+.B DEPLOYS_REPOS_PARALLEL
+how many repos deploys repos looks at at once (default 6)
+.TP
+.B DEPLOYS_REPOS_IDLE_MIN
+minutes a linked worktree must be unused before deploys repos sync removes it (default 1440)
+.TP
+.B DEPLOYS_REPOS_NO_GH, DEPLOYS_REPOS_NO_LSOF
+1: deploys repos asks no gh for merged pull requests / no lsof for processes inside a worktree
 .TP
 .B HTTP_DEADLINE
 seconds one platform call may take in all, tries and waits included (default 120)

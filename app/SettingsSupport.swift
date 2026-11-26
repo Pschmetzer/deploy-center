@@ -52,18 +52,23 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     }
 
     /// The preferences "Reset to defaults" removes on this tab. Never keys, tokens or project data
-    /// (pinned, hidden, notes): those have their own buttons on the Projects tab.
+    /// (pinned, hidden, notes): those have their own buttons on the Projects tab. Never the safety and
+    /// privacy switches either (`SettingsTab.protectedKeys`): a reset must not end the owner check or show real names.
     var defaultsKeys: [String] {
         switch self {
-        case .general: return ["refreshMinutes", "showMenuBar", "hideDock", "notifications", "reminderHour", "checkUpdates", "demoMode", "paletteHotKey",
+        case .general: return ["refreshMinutes", "showMenuBar", "hideDock", "notifications", "reminderHour", "checkUpdates", "paletteHotKey",
                                "spotlightProjects", "tipOfTheDay", "compactRows", "colorBlind", "loadLogos", "quietFrom", "quietTo", "quietHeld",
-                               "summaryHour", "weeklySummary", "speakResults", "remindFailures", "resultSounds", "neutralNotifications", LocalSessionsMonitor.key]
-        case .deploy: return ["maxParallel", "undoSeconds", "staleDays", "confirmSingleDeploy",
-                              "watchMinutes", MigrationCheck.key, OwnerCheck.key]
+                               "summaryHour", "weeklySummary", "speakResults", "remindFailures", "resultSounds", LocalSessionsMonitor.key]
+        case .deploy: return ["maxParallel", "undoSeconds", "staleDays", "watchMinutes"]
         case .costs: return ["monthlyBudget", "savingsDays"]
         case .platforms, .projects, .claude, .iphone, .team, .help: return []
         }
     }
+}
+
+extension SettingsTab {
+    /// Switches that protect the person or the projects; no "Reset to defaults" removes them.
+    static let protectedKeys: [String] = [OwnerCheck.key, MigrationCheck.key, "confirmSingleDeploy", "demoMode", "neutralNotifications"]
 }
 
 /// Where Settings opens and which part it scrolls to. Set before opening the window.

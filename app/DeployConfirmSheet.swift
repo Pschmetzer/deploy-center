@@ -39,6 +39,12 @@ struct DeployConfirmSheet: View {
                 Button(L("Cancel", "Abbrechen")) { dismiss() }.keyboardShortcut(careful ? .defaultAction : .cancelAction)
                 Button(L("Deploy", "Deployen")) { onDeploy(); dismiss() }
                     .keyboardShortcut(careful ? KeyboardShortcut("d", modifiers: .command) : .defaultAction)
+                    .accessibilityHint(careful ? L("Shortcut Command D", "Kurzbefehl Befehl D") : "")
+                // Cancel is the default button then, so Esc needs its own: a hidden twin.
+                if careful {
+                    Button("") { dismiss() }.keyboardShortcut(.cancelAction)
+                        .frame(width: 0, height: 0).opacity(0).accessibilityHidden(true)
+                }
             }
         }
         .padding(20)

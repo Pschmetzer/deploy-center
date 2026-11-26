@@ -17,6 +17,7 @@ deploys doctor                          # what is connected (JSON)
 deploys certs [--days 14] [--json]      # TLS certificate of every project's address (also the platform's own domain); exit 1 when one runs out within N days. A host that cannot be reached is "unknown", not a failure.
 deploys domains [--warn 30] [--json]    # custom domains apart from the platform's own addresses, with the days their TLS certificate has left; exit 1 inside --warn (certificate only, no registration lookup)
 deploys forecast [--warn 80] [--json]   # this month's build cost so far, projected to the end of the month (an estimate: Vercel billing, shared by the journal's deploys; Render has no billing API), with a warning near the `budget` limit; exit 1 when over
+deploys more [<command>] [--json]   # the extra commands that live in lib/x-*.sh, one line each; with a name, its usage ([EXTRAS.md](EXTRAS.md))
 deploys env-diff <project> [--json]    # variable NAMES that exist in production but not in preview and the other way round (Vercel; values are never read into output). Exit 1 when they differ; hosts without a preview/production split say so
 deploys group list | add <name> <p>... | remove <name> | run <name> [--preview] [--yes]   # your own ordered groups (groups.json in the config folder): `run` deploys one member after the other, waits until each is live and stops at the first failure. Without --yes it asks on a terminal and otherwise only shows the order. Team groups: `deploys deploy group:<name>`
 deploys prepare on [HH:MM] [--weekdays] [--when-green] [--no-freeze] [--yes] [--only <p>]... | off | status | show | run   # a conditional morning job: it checks its conditions (CI green, no closed deploy window), saves what would go live (`prepare show`) and starts NOTHING, unless --yes is stored in the entry; then it runs `deploy-changed --yes`. It never uses --force through a closed window
@@ -34,6 +35,9 @@ deploys weeks [--days 7] [--project <name>] [--json]   # the last --days days ag
 deploys export [--format csv|json] [--what journal|costs|all] [--days 30] [--project <name>] [--out <file>]   # journal and Vercel costs with a fixed schema (below); secrets in details masked, files 0600
 deploys clean [--root <dir>] [--days 2] [--worktrees] [--min-free <GB>] [--yes] [--json]   # free disk space in old git worktrees: ignored build output, with --worktrees merged worktrees without changes (a report without --yes)
 deploys clean schedule on|off|status [--min-free 60]   # daily at 04:30, build output only, when less than <GB> are free
+deploys repos status [--no-fetch] [--json]   # local checkouts against origin/main: what a sync would do (changes nothing; docs/REPOS.md)
+deploys repos sync [--yes] [--json]           # fast-forward clean checkouts, back to main from merged branches; never one with changes
+deploys repos last [--json] | repos schedule on|off|status   # the last result; every 30 minutes and at login
 deploys streak [--days 90] [--project <name>] [--json]   # deploys in a row without a failure per project: now and longest (from the journal; reads only)
 deploys note <project> "text"           # one line in the journal (result `note`, 200 characters); it shows in `timeline`. A text that looks like a secret is refused. Touches no platform.
 deploys when [--days 90] [--by weekday|hour] [--json]   # on which weekday or hour of the day your deploys failed more often (UTC); a slot needs 5 tries to count
@@ -336,6 +340,9 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_HTTP_TRACE` | `1`: one line per call to a platform on stderr (method, path without query, status, time; no header, no body); `--debug` sets it |
 | `DEPLOYS_QUIET`, `DEPLOYS_DEBUG` | what the global `--quiet` and `--debug` set: only the result; the trace of the calls |
 | `DEPLOYS_PARALLEL` | how many platform or git host reads run at once in a list (default 8, at most 32; 3 while GitHub's budget is under 1000) |
+| `DEPLOYS_REPOS_PARALLEL` | how many repos `deploys repos` looks at at once (default 6) |
+| `DEPLOYS_REPOS_IDLE_MIN` | minutes a linked worktree must be unused before `deploys repos sync` removes it (default 1440) |
+| `DEPLOYS_REPOS_NO_GH`, `DEPLOYS_REPOS_NO_LSOF` | `1`: `deploys repos` asks no `gh` for merged pull requests / no `lsof` for processes inside a worktree |
 | `HTTP_DEADLINE` | seconds one platform call may take in all, tries and waits included (default 120) |
 | `DEPLOYS_CLOUDFLARE_PER_PAGE` | page size of the Cloudflare project list (default 10) |
 | `DEPLOYS_ANTHROPIC_API_KEY` | the key for `deploys ai`, before `ANTHROPIC_API_KEY` and the keychain |

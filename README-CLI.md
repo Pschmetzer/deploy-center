@@ -1,7 +1,8 @@
 # deploys: the Deploy Center CLI
 
 `deploys` turns off auto-deploy on Vercel and Render (and, opt-in, on Netlify, Cloudflare Pages,
-AWS Amplify, DigitalOcean App Platform, Coolify and any deploy hook), then deploys by hand: what
+AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting,
+GitHub Pages, Koyeb, Northflank, Deno Deploy and any deploy hook), then deploys by hand: what
 changed, when you say so. It is the same script the Mac app runs, and it works on its own on macOS, Linux,
 WSL and in CI. MIT licensed. Website: [deploycenter.app](https://deploycenter.app/).
 

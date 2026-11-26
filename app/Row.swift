@@ -451,6 +451,8 @@ struct Row: View {
                             .font(.caption.monospacedDigit())
                             // Twice as long as usual: something may be stuck.
                             .foregroundStyle(usualMinutes.map { secs > 120 * $0 } == true ? Color.warningText : Color.primary)
+                            // VoiceOver reads minutes, not a clock that changes every second.
+                            .accessibilityLabel(L("\(s), running for \(plural(secs / 60, "minute", "minutes"))", "\(s), läuft seit \(plural(secs / 60, "Minute", "Minuten"))"))
                     }
                 } else { Text(s).font(.caption) }
                 cancelButton

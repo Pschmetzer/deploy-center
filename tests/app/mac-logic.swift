@@ -176,7 +176,7 @@ import AppKit
     expect("model name known", ClaudeAI.modelName("claude-opus-5-5"), "Claude Opus 5.5")
     expect("model name new, with a date", ClaudeAI.modelName("claude-sonnet-6-0-20270101"), "Claude Sonnet 6.0")
     expect("model name foreign stays", ClaudeAI.modelName("gpt-x"), "gpt-x")
-    expect("settings fire has error and id", fire(#"{"fires":[{"at":2,"project":"a","status":"failed","error":"HTTP 500"}]}"#).fires.map { "\($0.error ?? "") \($0.id)" }, ["HTTP 500 a-2.0"])
+    expect("settings fire has error and id", fire(#"{"fires":[{"at":2,"project":"a","status":"failed","error":"HTTP 500"}]}"#).fires.map { "\($0.error ?? "") \($0.id)" }, ["HTTP 500 /a-2.0"])
     expect("this process has a start time", Tool.startTime(getpid()) != nil, true)
     var rt = item(.render); rt.lastState = "update_failed"
     expect("runtime failure can be explained, not autofixed", "\(ClaudeAI.isFailed(rt)) \(rt.lastFailed)", "true false")

@@ -99,17 +99,17 @@ enum QuickFilter: CaseIterable {
 
 extension SearchQuery {
     static func has(_ raw: String, _ token: String) -> Bool {
-        raw.split(separator: " ").contains { $0.lowercased() == token }
+        raw.split(whereSeparator: { $0.isWhitespace }).contains { $0.lowercased() == token }
     }
     /// The search text with `token` added, or removed when it is there.
     static func toggled(_ raw: String, _ token: String) -> String {
-        let words = raw.split(separator: " ").map(String.init)
+        let words = raw.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         if words.contains(where: { $0.lowercased() == token }) { return words.filter { $0.lowercased() != token }.joined(separator: " ") }
         return (words + [token]).joined(separator: " ")
     }
     /// The platform operator moved on: none, then each of `ids` in turn, then none again.
     static func cycledPlatform(_ raw: String, ids: [String]) -> String {
-        let words = raw.split(separator: " ").map(String.init)
+        let words = raw.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         let isOp: (String) -> Bool = { $0.lowercased().hasPrefix("platform:") || $0.lowercased().hasPrefix("host:") }
         let current = words.first(where: isOp).map { String($0.lowercased().drop(while: { $0 != ":" }).dropFirst()) }
         let rest = words.filter { !isOp($0) }
@@ -167,5 +167,6 @@ struct QuickFilterBar: View {
         .help(help)
         .accessibilityLabel(title + (count.map { $0 > 0 ? ", \($0)" : "" } ?? ""))
         .accessibilityAddTraits(on ? [.isSelected] : [])
+        .accessibilityValue(on ? L("on", "an") : L("off", "aus"))
     }
 }

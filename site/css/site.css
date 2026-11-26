@@ -1,6 +1,5 @@
 /* Shared styles for the guide, calculator, blog and 404 pages.
    The color tokens are in tokens.css (shared with the home page and the docs). Plain CSS, no build step. */
-@import url("/css/tokens.css");
 :root{--radius:16px; --max:1120px}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth;scroll-padding-top:68px}

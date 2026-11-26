@@ -39,7 +39,7 @@ struct DiskCleanView: View {
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             Toggle(L("Also remove merged worktrees", "Auch gemergte Worktrees entfernen"), isOn: $worktrees)
                 .onChange(of: worktrees) { _, _ in Task { await load() } }
-            if let e = error { Text(e).foregroundStyle(.red).font(.callout) }
+            if let e = error { Text(e).foregroundStyle(Color.dangerText).font(.callout) }
             if let d = done { Label(d, systemImage: "checkmark.circle.fill").foregroundStyle(.green) }
             if let r = report {
                 HStack {

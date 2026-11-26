@@ -168,7 +168,7 @@ enum JournalStats {
         func safe(_ t: String) -> String { scrub(LogTools.maskSecrets(t)) }
         let title: String = "# " + L("Postmortem: \(mask(e.name))", "Postmortem: \(mask(e.name))")
         var lines: [String] = [title, ""]
-        lines.append("- " + L("When", "Wann") + ": " + e.at.formatted(date: .long, time: .shortened))
+        lines.append("- " + L("When", "Wann") + ": " + uiDate(e.at, date: .long, time: .shortened))
         lines.append("- " + L("Platform", "Plattform") + ": " + e.platform)
         lines.append("- " + L("Result", "Ergebnis") + ": " + e.kind.title)
         if let d = e.detail { lines.append("- " + L("Detail", "Detail") + ": " + safe(d)) }
@@ -279,7 +279,7 @@ struct JournalStatsView: View {
                             .frame(width: 56, height: 18)
                             .overlay(Text(n == 0 ? "" : (f > 0 ? "\(n)·\(f)✕" : "\(n)")).font(.caption2.monospacedDigit()))   // failures as a mark, not only red (IDEEN-11 240)
                             .help(L("\(n) deploys, \(f) failed", "\(n) Deploys, \(f) fehlgeschlagen"))
-                            .accessibilityLabel(cal.weekdaySymbols[w - 1] + ": " + L("\(n) deploys, \(f) failed", "\(n) Deploys, \(f) fehlgeschlagen"))
+                            .accessibilityLabel(cal.weekdaySymbols[w - 1] + " \(["0–6", "6–12", "12–18", "18–24"][b]): " + L("\(n) deploys, \(f) failed", "\(n) Deploys, \(f) fehlgeschlagen"))
                     }
                 }
             }

@@ -59,7 +59,7 @@ struct GoalsSection: View {
                 ForEach(idle.prefix(8), id: \.project) { i in
                     // "platform/name": only the name is a project's, so only it is masked in demo mode.
                     let parts = i.project.split(separator: "/", maxSplits: 1).map(String.init)
-                    Text((parts.count == 2 ? parts[0] + "/" + Demo.mask(parts[1]) : Demo.mask(i.project)) + " · " + i.last.formatted(date: .abbreviated, time: .omitted)).font(.caption).foregroundStyle(.secondary)
+                    Text((parts.count == 2 ? parts[0] + "/" + Demo.mask(parts[1]) : Demo.mask(i.project)) + " · " + uiDate(i.last)).font(.caption).foregroundStyle(.secondary)
                 }
                 if idle.count > 8 {
                     Text(L("+\(idle.count - 8) more", "+\(idle.count - 8) weitere")).font(.caption).foregroundStyle(.secondary)

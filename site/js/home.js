@@ -12,6 +12,11 @@
       img.src=img.dataset[t];
     });
   }
+  // the browser bar follows a manual choice: one theme-color without a media query replaces the two
+  const COLORS={dark:'#0b0d12',light:'#fbfbfd'};
+  function paintBar(th){const m=document.querySelectorAll('meta[name="theme-color"]');if(!m.length||!COLORS[th])return;for(let i=1;i<m.length;i++)m[i].remove();m[0].removeAttribute('media');m[0].setAttribute('content',COLORS[th])}
+  // another tab changed the theme
+  addEventListener('storage',e=>{if(e.key!=='theme'||(e.newValue!=='light'&&e.newValue!=='dark'))return;root.setAttribute('data-theme',e.newValue);paintBar(e.newValue);swapImages();label()});
   const label=()=>document.querySelectorAll('.theme').forEach(b=>b.setAttribute('aria-label',current()==='light'?'Switch to dark mode':'Switch to light mode'));
   if(root.hasAttribute('data-theme')) swapImages();
   label();
@@ -20,7 +25,7 @@
     const next=current()==='light'?'dark':'light';
     root.setAttribute('data-theme',next);
     try{localStorage.setItem('theme',next)}catch(e){}
-    swapImages(); label();
+    paintBar(next); swapImages(); label();
   }));
 })();
 // copy buttons, with a fallback and a message for screen readers
@@ -37,7 +42,7 @@
     b.textContent=ok?'Copied':'Selected: press '+copyKey;
     // Cleared first and set in the next tick: a second copy has the same text, and a live region says nothing for an unchanged one.
     if(live){live.textContent='';setTimeout(()=>{live.textContent=ok?'Copied to the clipboard':'Copying failed; the command is selected, press '+copyKey},60)}
-    setTimeout(()=>{b.textContent='Copy'},1600);
+    clearTimeout(b._t); b._t=setTimeout(()=>{b.textContent='Copy'},1600);
   }));
 })();
 // install tabs

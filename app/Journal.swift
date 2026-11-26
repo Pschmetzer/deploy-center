@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 struct JournalEntry: Codable, Identifiable {
     /// Stable across loads, so a list does not redraw every row when it is read again.
     /// The deploy id (or commit) is part of it: two entries of one project in the same second differ.
-    var id: String { "\(at.timeIntervalSince1970)|\(platform)|\(name)|\(result)|\(deployId ?? "")|\(sha ?? "")|\(Int(seconds ?? -1))|\(detail ?? "")" }
+    var id: String { "\(at.timeIntervalSince1970)|\(platform)|\(name)|\(result)|\(deployId ?? "")|\(sha ?? "")|\(Journal.safeInt(seconds ?? -1, floor: -1))|\(detail ?? "")" }
     let at: Date
     let platform: String
     let name: String
@@ -172,9 +172,12 @@ enum Journal {
         return nil
     }
 
+    /// A whole number from seconds out of a journal line: NaN, infinity and huge values never trap `Int(_:)`.
+    static func safeInt(_ d: Double, floor: Double = 0) -> Int { d.isFinite ? Int(max(floor, min(d, 1e12))) : Int(floor) }
+
     /// "2:05" under an hour (minutes:seconds), "2 h 05" from an hour on (IDEEN-11 392).
     static func duration(_ s: Double) -> String {
-        let n = Int(s)
+        let n = safeInt(s)
         return n >= 3600 ? "\(n / 3600) h \(String(format: "%02d", n % 3600 / 60))" : "\(n / 60):\(String(format: "%02d", n % 60))"
     }
 
@@ -211,7 +214,7 @@ enum Journal {
             return String(format: "%.2f", p)
         }
         return (["time,platform,project,result,seconds,detail,note,usd_estimate"] + list.map {
-            [$0.at.formatted(.iso8601), $0.platform, q(mask($0.name)), $0.result, $0.seconds.map { String(Int($0)) } ?? "",
+            [$0.at.formatted(.iso8601), $0.platform, q(mask($0.name)), $0.result, $0.seconds.map { String(safeInt($0)) } ?? "",
              q(scrub(LogTools.maskSecrets($0.detail ?? ""))), q(scrub(LogTools.maskSecrets($0.note ?? ""))), usd($0)].joined(separator: ",")
         }).joined(separator: "\n")
     }
@@ -418,7 +421,7 @@ struct JournalView: View {
                 }
                 Spacer()
                 if let took { Text(took).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
-                Text(e.at.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                Text(uiTime(e.at)).font(.caption).foregroundStyle(.secondary)
             }
             if let detail, !detail.isEmpty {
                 Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2).padding(.leading, 26)

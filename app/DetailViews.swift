@@ -153,7 +153,7 @@ struct BuildLog: View {
                     }
                     .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 12).padding(.vertical, 4)
                 }
-                if live.failed, let text { ErrorHintCard(log: text, project: live.name) }
+                if live.failed, let text { ErrorHintCard(log: text, project: FailureCauses.key(platform: live.platform.cli, name: live.name)) }
                 LogText(lines: shownLines, onlyErrors: onlyErrors, firstError: firstError, jump: jump, nextError: nextError, prevError: prevError, fontSize: fontSize,
                         label: L("Build log of \(Demo.mask(live.name))", "Build-Log von \(Demo.mask(live.name))"))
                 // The error buttons sit in a bar under the log, so they never cover its last lines.
@@ -301,7 +301,7 @@ struct LogText: NSViewRepresentable {
                 if onlyErrors && !bad { continue }
                 let line = Self.shown(raw, bad: bad, noColour: noColour)
                 var attrs: [NSAttributedString.Key: Any] = [.font: bad && noColour ? bold : font,
-                                                            .foregroundColor: bad ? NSColor.systemRed : NSColor.textColor]
+                                                            .foregroundColor: bad ? NSColor.dangerText : NSColor.textColor]
                 if n == firstError { attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.12) }
                 let start = base + out.length
                 out.append(NSAttributedString(string: line + "\n", attributes: attrs))

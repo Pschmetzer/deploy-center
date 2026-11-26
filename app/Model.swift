@@ -276,7 +276,8 @@ struct Item: Identifiable {
     var compareURL: URL? {
         guard let repo, let live = lastSha, !live.isEmpty, hasNewCommits else { return nil }
         // A branch may hold characters a URL cannot (#, %, spaces); "/" stays as GitHub expects it.
-        let branch = ref ?? headSha ?? "main"
+        // Neither a branch nor a head commit known: no link rather than a guess at "main".
+        guard let branch = ref ?? headSha else { return nil }
         let safe = branch.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "#?"))) ?? branch
         // A GitHub repo is "owner/name"; any other host comes with it ("gitlab.com/group/name").
         let first = repo.split(separator: "/").first.map(String.init) ?? ""
@@ -289,7 +290,7 @@ struct Item: Identifiable {
     /// The service's page on Render; Vercel's address needs the team's slug, which the list does not carry.
     var dashboardURL: URL? {
         guard platform == .render else { return nil }
-        let section = ["static_site": "static", "cron_job": "cron", "background_worker": "worker"][kind ?? ""] ?? "web"
+        let section = ["static_site": "static", "cron_job": "cron", "background_worker": "worker", "private_service": "pserv"][kind ?? ""] ?? "web"
         return URL(string: "https://dashboard.render.com/\(section)/\(id)")
     }
 
@@ -407,7 +408,7 @@ struct CheckDetails: Decodable, Sendable {
 /// The one reader of this command: the rows, Settings > Autofix and the Claude connection.
 struct AutofixReport: Decodable {
     struct Fire: Decodable, Identifiable {
-        var id: String { "\(project)-\(at)" }
+        var id: String { "\(platform ?? "")/\(project)-\(at)" }
         /// Why a start failed or was skipped.
         var error: String? = nil
         let at: Double

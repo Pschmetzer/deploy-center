@@ -74,7 +74,10 @@ struct AutofixSettings: View {
             // 3. Every 10 minutes through launchd, also while the app is closed.
             Toggle(L("3. Check every 10 minutes", "3. Alle 10 Minuten prüfen"), isOn: Binding(
                 get: { status?.scheduled ?? false },
-                set: { on in Task { await run(["autofix", "schedule", on ? "on" : "off"]) } }))
+                set: { on in Task {
+                    // Every 10 minutes build logs may go to the cloud routine: the same check as "Run now".
+                    if on, !(await OwnerCheck.confirm(L("send build logs to your Claude routine every 10 minutes", "Build-Logs alle 10 Minuten an deine Claude-Routine senden"))) { return }
+                    await run(["autofix", "schedule", on ? "on" : "off"]) } }))
                 .disabled(!ready || busy)
             if let s = status, s.scheduled, !s.pathMissing.isEmpty {
                 PathMissingLine(missing: s.pathMissing, busy: busy) { Task { await run(["autofix", "schedule", "on"]) } }
@@ -101,12 +104,12 @@ struct AutofixSettings: View {
                 DisclosureGroup(L("Last hand-overs (\(fires.count))", "Letzte Übergaben (\(fires.count))")) {
                     ForEach(fires.sorted { $0.at > $1.at }.prefix(10)) { f in
                         HStack {
-                            Text(Date(timeIntervalSince1970: f.at).formatted(date: .abbreviated, time: .shortened))
+                            Text(uiDate(Date(timeIntervalSince1970: f.at), date: .abbreviated, time: .shortened))
                                 .foregroundStyle(.secondary)
                             Text(Demo.mask(f.project))
                             Spacer()
                             if f.status == "failed" { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).accessibilityHidden(true) }
-                            Text(Self.label(f)).foregroundStyle(f.status == "failed" ? .red : .secondary)
+                            Text(Self.label(f)).foregroundStyle(f.status == "failed" ? Color.dangerText : Color.secondary)
                             if let n = f.prNumber, let s = f.prUrl, let url = URL(string: s), !Demo.on {
                                 Button("PR #\(n)") { SafeLink.open(url) }.buttonStyle(.link)
                             }

@@ -657,7 +657,7 @@ final class Store: ObservableObject {
         }
         // Back in the app: the failures were seen, their second reminders go.
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { Notify.dropEscalations() }
+            MainActor.assumeIsolated { Notify.dropEscalations(); Notify.clearDeliveredSuccesses() }
         }
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -1267,6 +1267,17 @@ final class Store: ObservableObject {
             Self.writeMessages(messages)
         }
     }
+    /// When the list of messages was last opened: failures after it are "unread" (the red number on "More").
+    @Published var messagesSeenAt: Date = {
+        let t = UserDefaults.standard.object(forKey: "messagesSeenAt") as? Double
+        return t.map { Date(timeIntervalSince1970: $0) } ?? Date()
+    }()
+    nonisolated static func unreadFailures(_ messages: [Message], since: Date) -> Int { messages.filter { !$0.ok && $0.date > since }.count }
+    var unreadFailures: Int { Self.unreadFailures(messages, since: messagesSeenAt) }
+    func markMessagesSeen() {
+        messagesSeenAt = Date()
+        UserDefaults.standard.set(messagesSeenAt.timeIntervalSince1970, forKey: "messagesSeenAt")
+    }
     nonisolated static var messagesURL: URL { AppDirs.support.appendingPathComponent("messages.json") }
     nonisolated static func readMessages() -> [Message] {
         guard let d = try? Data(contentsOf: messagesURL) else { return [] }
@@ -1297,7 +1308,10 @@ final class Store: ObservableObject {
         Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack, silent: silent)
         show(Toast(text: title, ok: ok, undoLabel: undoLabel, undo: undo), logged: true)
         // With VoiceOver the toast is announced already; saying it twice would stutter.
-        if UserDefaults.standard.bool(forKey: Speech.resultsKey), !NSWorkspace.shared.isVoiceOverEnabled { Speech.say(title) }
+        let spoken = UserDefaults.standard
+        // Quiet hours hold the voice back like they hold the notifications.
+        let hushed = Notify.quiet(hour: Calendar.current.component(.hour, from: Date()), from: spoken.integer(forKey: "quietFrom"), to: spoken.integer(forKey: "quietTo"))
+        if spoken.bool(forKey: Speech.resultsKey), !NSWorkspace.shared.isVoiceOverEnabled, !hushed { Speech.say(title) }
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok, project: row ?? key))
     }
     /// Newest first; `messages`' didSet keeps 30 and writes them to disk.
@@ -1439,15 +1453,21 @@ final class Store: ObservableObject {
     }
 
     /// One row. `force` (a reason) goes out inside a closed deploy window, as the footer's dialog does.
-    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, force: String? = nil) {
+    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, force: String? = nil, windowChecked: Bool = false) {
         let job = Job(item: item, preview: preview, sha: sha, clearCache: clearCache, force: force)
         // A preview is never held by the deploy window. A live deploy from a row, the details or the
         // palette is: the script would refuse it anyway, so say why here instead of a failed row.
-        guard !preview, !observer, force == nil else {
+        guard !preview, !observer, force == nil, !windowChecked else {
             guard namesTyped([item], preview: preview, sha: sha) else { return }
             enqueue([job]); return
         }
+        // One check per project: a second click while the first still asks the deploy window (or waits for a typed
+        // name) does nothing, so the name is asked once and the first check does not clear the other's message.
+        let rowKey = Self.key(item)
+        guard !checkingDeploy.contains(rowKey) else { return }
+        checkingDeploy.insert(rowKey)
         Task {
+            defer { checkingDeploy.remove(rowKey) }
             busyMessage = L("Checking the deploy window …", "Prüfe das Deploy-Fenster …")
             let window = await deployWindow()
             busyMessage = nil
@@ -1462,6 +1482,8 @@ final class Store: ObservableObject {
             enqueue([job])
         }
     }
+    /// Rows whose deploy-window check from `deployOne` is still running.
+    private var checkingDeploy: Set<String> = []
     /// Set by the palette: one project to deploy; the window asks about the deploy window like for a row.
     @Published var pendingDeploy: Item?
 
@@ -1747,6 +1769,13 @@ final class Store: ObservableObject {
     /// The rollback itself; the automatic one after a failed check does not wait for a person.
     func rollbackNow(_ item: Item) {
         guard !refusedAsObserver() else { return }
+        // Like `enqueue`: a rollback does not overwrite a deploy that waits or runs for the same project.
+        if itemNow(item)?.state.isActive ?? false {
+            say(L("\(item.name) is busy", "\(item.name) ist beschäftigt"),
+                L("A deploy of this project waits or runs. Cancel it or wait until it is done, then roll back.",
+                  "Ein Deploy dieses Projekts wartet oder läuft. Abbrechen oder abwarten, dann zurückrollen."), ok: false)
+            return
+        }
         Notify.ask()
         if let at = unsureStarts[Self.key(item)], Date().timeIntervalSince(at) < Self.unsureWait {
             say(L("\(item.name) may be busy already", "\(item.name) ist vielleicht schon beschäftigt"),
@@ -1754,9 +1783,10 @@ final class Store: ObservableObject {
             return
         }
         clearPreview(item)
+        // The claim is visible before the Task suspends: an `enqueue` in between sees an active row and skips it.
+        let p = item.platform
+        set(p, item.id, .starting)
         Task {
-            let p = item.platform
-            set(p, item.id, .starting)
             do {
                 let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self, timeout: 300)
                 unsureStarts[Self.key(item)] = nil
@@ -1949,12 +1979,19 @@ final class Store: ObservableObject {
     /// "/health, api/ping" → ["/health", "/api/ping"]; empty parts and repeats dropped, at most five.
     nonisolated static func cleanPaths(_ text: String) -> [String] {
         var seen: Set<String> = []
-        return Array(text.split(separator: ",").compactMap { cleanPath(String($0)) }.filter { seen.insert($0).inserted }.prefix(5))
+        // A comma separates two paths only before a space, a slash, another comma or the end (and a line break always):
+        // "/search?q=a,b" is one path.
+        let marked = text.replacingOccurrences(of: #"\s*,(?=[\s/,]|$)|\n"#, with: "\u{1}", options: .regularExpression)
+        return Array(marked.split(separator: "\u{1}").compactMap { cleanPath(String($0)) }.filter { seen.insert($0).inserted }.prefix(5))
     }
     /// The addresses to ask: the site itself when no path is set, else each path on it.
     nonisolated static func checkLinks(_ link: String, _ paths: [String]) -> [String] {
-        let base = link.hasSuffix("/") ? String(link.dropLast()) : link
-        return paths.isEmpty ? [link] : paths.map { base + $0 }
+        guard !paths.isEmpty else { return [link] }
+        // The paths go on the origin: a link with a path, query or fragment ("https://x.app/de?x=1") must not become "…/de?x=1/health".
+        var base = link
+        if var c = URLComponents(string: link), c.host != nil { c.path = ""; c.query = nil; c.fragment = nil; base = c.string ?? link }
+        if base.hasSuffix("/") { base.removeLast() }
+        return paths.map { base + $0 }
     }
 
     /// The site's certificate after going live (FEA-085): a word when it ends within two weeks,
@@ -1994,7 +2031,7 @@ final class Store: ObservableObject {
     nonisolated private static func pageText(_ url: URL) async -> String? {
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
         req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
-        guard let (bytes, _) = try? await probeSession.bytes(for: req) else { return nil }
+        guard let (bytes, _) = try? await probeSession.bytes(for: req, delegate: PublicRedirectDelegate()) else { return nil }
         defer { bytes.task.cancel() }
         var data = Data()
         var chunk = [UInt8](); chunk.reserveCapacity(4096)
@@ -2067,7 +2104,7 @@ final class Store: ObservableObject {
         var req = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: timeout)
         req.setValue("DeployCenter (post-deploy check)", forHTTPHeaderField: "User-Agent")
         // Only the status is needed: stop reading once the headers are in.
-        guard let (bytes, resp) = try? await probeSession.bytes(for: req) else { return nil }
+        guard let (bytes, resp) = try? await probeSession.bytes(for: req, delegate: PublicRedirectDelegate()) else { return nil }
         bytes.task.cancel()
         return (resp as? HTTPURLResponse)?.statusCode
     }

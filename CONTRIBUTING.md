@@ -54,6 +54,7 @@ bash tests/all.sh            # CLI, team, install, release, app (on macOS) and i
 bash tests/all.sh --quick    # without the app and integration tests (no Swift build, no node)
 bash tests/all.sh --list     # the suites, one per line (the list is tests/suites.txt)
 bash tests/all.sh --only team   # only the suites whose path contains "team"
+bash tests/all.sh --changed  # only the suites whose sources changed against origin/main (tests/suites-map.txt)
 ```
 
 The integration tests need `npm ci` in `integrations/mcp` and `integrations/vscode` first.
