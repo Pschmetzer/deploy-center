@@ -88,7 +88,7 @@ Only the CLI, installed with Homebrew: `brew uninstall deploys`.
 | Render API key | Keychain, a password item with the service name `deploy-center-render` (older versions: `render-api-key`) | `security delete-generic-password -a "$USER" -s deploy-center-render` |
 | Anthropic API key (Claude in the app) | Keychain, service name `deploy-center-anthropic` | `deploys ai forget-key`, or `security delete-generic-password -a "$USER" -s deploy-center-anthropic` |
 | Autofix routine token | Keychain, service name `deploy-center-routine` | `deploys autofix forget-token`, or `security delete-generic-password -a "$USER" -s deploy-center-routine` |
-| Keys of the opt-in hosts (Netlify, Cloudflare, DigitalOcean, Coolify; Amplify keeps only a profile name) | Keychain, service names `deploy-center-netlify`, `deploy-center-cloudflare`, `deploy-center-digitalocean`, `deploy-center-coolify`, `deploy-center-amplify` | `security delete-generic-password -a "$USER" -s deploy-center-<name>` for each one you set |
+| Keys of the opt-in hosts (Netlify, Cloudflare, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Northflank, Deno Deploy; Amplify keeps only a profile name) | Keychain, service names `deploy-center-netlify`, `deploy-center-cloudflare`, `deploy-center-digitalocean`, `deploy-center-coolify`, `deploy-center-fly`, `deploy-center-railway`, `deploy-center-heroku`, `deploy-center-firebase`, `deploy-center-ghpages`, `deploy-center-koyeb`, `deploy-center-northflank`, `deploy-center-deno`, `deploy-center-amplify` | `security delete-generic-password -a "$USER" -s deploy-center-<name>` for each one you set |
 | Deploy hook URLs | Keychain, `deploy-center-hook-<name>` (without a keychain: `~/.config/deploys/hook-urls/`) | `deploys hook remove <name>` (before you remove the CLI), or `security delete-generic-password -a "$USER" -s deploy-center-hook-<name>` |
 | GitLab token (`deploys gitlab set-token`) | Keychain, service name `deploy-center-gitlab` | `deploys gitlab forget-token`, or `security delete-generic-password -a "$USER" -s deploy-center-gitlab` |
 | The Vercel token made for the iPhone | Keychain, service name `deploy-center-phone-vercel` | `security delete-generic-password -a "$USER" -s deploy-center-phone-vercel` |
@@ -110,7 +110,7 @@ Deploy Center never had its own account. To revoke what it used:
 - Render: delete the API key at dashboard.render.com → Account Settings → API Keys.
 - Anthropic: delete the API key at console.anthropic.com → Settings → API keys, and the Autofix
   routine (and its token) at claude.ai → Code → Routines.
-- Netlify, Cloudflare, DigitalOcean, Coolify: delete the token you made for Deploy Center in each
+- Netlify, Cloudflare, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Northflank, Deno Deploy: delete the token you made for Deploy Center in each
   dashboard. On Netlify, also delete the build hook named `deploy-center` and, if you want builds on
   push again, the `ignore` line in `netlify.toml`.
 - GitLab: `glab auth logout`, or revoke the `GITLAB_TOKEN` in GitLab → Preferences → Access tokens.

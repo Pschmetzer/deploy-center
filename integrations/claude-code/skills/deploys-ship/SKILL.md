@@ -27,7 +27,8 @@ If no project was given, run `deploys changed --json`, list what is waiting, and
 3. Ask: "Deploy $ARGUMENTS to production now? (yes/no)". **Stop and wait for the answer.** Running
    this command is not the confirmation. Only a clear yes in the user's next message is.
 4. On yes, deploy exactly this one project, on whichever platform it is (Vercel, Render, Netlify,
-   Cloudflare, Amplify, DigitalOcean, Coolify, a deploy hook):
+   Cloudflare, Amplify, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Firebase, GitHub Pages,
+   Koyeb, Northflank, Deno Deploy, a deploy hook):
    `deploys deploy $ARGUMENTS --wait`
    (`deploys deploy <platform>:<name> --wait` when the name is on two platforms). It checks the
    deploy window and approvals. If it refuses (window closed, approval missing), report that and

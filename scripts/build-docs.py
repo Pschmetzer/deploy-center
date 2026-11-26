@@ -35,8 +35,8 @@ BRANCH = "main"
 # site/img/og.png (1200 x 630), the same picture as on the home page
 OG_ALT = "Deploy Center: stop paying for a build on every push. Free Mac app for manual deploys."
 # The footer line on every docs page; the home page lists the same names.
-TRADEMARKS = ("Not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, "
-              "GitLab or Anthropic. Claude is a trademark of Anthropic.")
+TRADEMARKS = ("Not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Google, Koyeb, Northflank, Deno, "
+              "GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.")
 
 # slug, nav label, group, source file, description. Order = sidebar order.
 PAGES = [
