@@ -66,7 +66,8 @@ struct LogSearchView: View {
     @FocusState private var searchFocused: Bool
     @AppStorage("demoMode") private var demoMode = false
 
-    private var failed: [Item] { store.allItems.filter { $0.failed } }
+    /// The failed rows, taken once per read (`shown` runs for every line and every match).
+    @State private var failed: [Item] = []
     private func shown(_ s: String) -> String { Demo.scrub(LogTools.maskSecrets(s), items: failed) }
 
     var body: some View {
@@ -134,6 +135,7 @@ struct LogSearchView: View {
     private func load() async {
         var got: [(project: String, text: String)] = []
         var bad = 0
+        failed = store.allItems.filter { $0.failed }
         for i in failed {
             if let d = try? await Tool.run([i.platform.cli, "logs", i.id, "200"]), let t = String(data: d, encoding: .utf8) {
                 got.append((i.name, t))
