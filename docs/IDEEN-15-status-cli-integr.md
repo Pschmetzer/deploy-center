@@ -49,4 +49,6 @@ Alle PRs gegen `main`, je Thema ein Branch, jeder mit Tests, `CHANGELOG.md` (`##
 
 ## Zur CI
 
-Die macOS-Jobs (`test`, `ios`) liefen bei den PRs dieser Runde nicht an: die Warteschlange der macOS-Runner war mit den PRs der anderen Sessions voll, und jeder neue Push bricht den wartenden Lauf ab. Gemergt wurde nach grünen Linux-Jobs (`linux-cli`, `integrations`, `lint`, `docs`, `docker`, `cli-install`, `vscode`, `raycast`, `changelog`, `public-commits`). `scripts/check-bash32.sh` (in `lint`) prüft die Bash-3.2-Kompatibilität.
+Die macOS-Jobs (`test`, `ios`) liefen bei den PRs dieser Runde nicht an: die Warteschlange der macOS-Runner war mit den PRs der anderen Sessions voll, und jeder neue Push bricht den wartenden Lauf ab. Gemergt wurde nach grünen Linux-Jobs (`linux-cli`, `integrations`, `lint`, `docs`, `docker`, `cli-install`, `vscode`, `raycast`, `changelog`, `public-commits`); `scripts/check-bash32.sh` (in `lint`) prüft die Bash-3.2-Kompatibilität. Bei #423 und #424 war ein VS-Code-Unit-Test (`# fail 1` von 93, ohne Bezug zu den geänderten Dateien, lokal 0 Fehler in mehreren Läufen) im `vscode`- beziehungsweise `integrations`-Job rot; er lief nicht erneut, weil der Lauf durch die wartenden macOS-Jobs nicht als beendet galt. Der Test ist unstet (siehe auch #361).
+
+Beim Einspielen von `main` in die gestapelten Branches wurden `CHANGELOG.md`-Konflikte durch Zusammenführen beider Seiten gelöst. Danach liefen auf `main` `tests/cli-r15-tests.sh`, `integrations/tests/r15.sh`, `scripts/lint.sh` und `scripts/check-cli-docs.py` grün.
