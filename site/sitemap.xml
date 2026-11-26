@@ -94,6 +94,9 @@
   <url><loc>https://deploycenter.app/de/anleitungen/prometheus-metriken-fuer-deploys/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/guides/check-your-setup-deploys-doctor/</loc><lastmod>2026-11-23</lastmod></url>
   <url><loc>https://deploycenter.app/de/anleitungen/einrichtung-pruefen-deploys-doctor/</loc><lastmod>2026-11-23</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/mac-hangs-when-agents-build-together/</loc><lastmod>2026-11-26</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/forecast-your-monthly-vercel-build-bill/</loc><lastmod>2026-11-26</lastmod></url>
+  <url><loc>https://deploycenter.app/guides/env-diff-missing-variables-production-preview/</loc><lastmod>2026-11-26</lastmod></url>
   <!-- docs: written by scripts/build-docs.py -->
   <url><loc>https://deploycenter.app/docs/</loc><lastmod>2026-11-26</lastmod></url>
   <url><loc>https://deploycenter.app/de/docs/</loc><lastmod>2026-11-26</lastmod></url>
