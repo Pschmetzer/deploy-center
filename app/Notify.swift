@@ -26,7 +26,16 @@ enum Notify {
         guard available, !quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo")) else {
             then?(false); return
         }
-        add(title, body, id: id, then: then)
+        // "Neutral notifications" holds for reminders, sessions and the day and week summaries too: they carry
+        // project names, pull request titles and branches of private repos.
+        let n = neutralText(title, body, failed: false, neutral: d.bool(forKey: "neutralNotifications"))
+        add(n.title, n.body, id: id, then: then)
+    }
+    /// The lock-screen text: the real one, or (neutral) a note that something happened.
+    static func neutralText(_ title: String, _ body: String, failed: Bool, neutral: Bool) -> (title: String, body: String) {
+        guard neutral else { return (title, body) }
+        return (failed ? L("A deploy needs a look", "Ein Deploy braucht einen Blick") : L("Deploy Center", "Deploy Center"),
+                L("Open Deploy Center for details.", "Details im Deploy Center."))
     }
     /// One authorization request at a time: two alarms at once would ask twice.
     private static var authorization: Task<Bool, Never>?
@@ -65,8 +74,7 @@ enum Notify {
         if !inQuiet, d.object(forKey: QuietDigest.key) != nil { d.removeObject(forKey: QuietDigest.key) }
         // Settings → General: a notification on the lock screen says that something happened, not which project.
         let neutral = d.bool(forKey: "neutralNotifications")
-        let title = neutral ? (failed ? L("A deploy needs a look", "Ein Deploy braucht einen Blick") : L("Deploy Center", "Deploy Center")) : title
-        let body = neutral ? L("Open Deploy Center for details.", "Details im Deploy Center.") : body
+        let (title, body) = neutralText(title, body, failed: failed, neutral: neutral)
         let category = autoOn && key != nil ? NotifyRouter.autoOnCategory
             : failed && key != nil ? (rollBack ? NotifyRouter.brokenCategory : NotifyRouter.failedCategory) : nil
         // A failure keeps one note per project (a newer one replaces it); anything else stacks.
