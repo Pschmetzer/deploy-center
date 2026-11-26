@@ -8,6 +8,9 @@ cd "$(dirname "$0")/.."
 cases=tests/fixtures/changed-rule/cases.json
 fails=0
 
+echo "--- the iPhone app's files without UIKit are all tested"
+python3 -I scripts/check-ios-pure.py || fails=$((fails+1))
+
 echo "--- the script's rule"
 rule="$(DEPLOYS_LIB=1 DEPLOYS_CONFIG="$(mktemp -d)" bash -c '. ./deploys >/dev/null 2>&1; printf "%s" "$CHANGED_RULE"')"
 [ -n "$rule" ] || { echo "FAIL CHANGED_RULE not found in deploys"; exit 1; }

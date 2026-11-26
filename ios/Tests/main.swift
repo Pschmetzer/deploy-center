@@ -544,5 +544,38 @@ do {
           "refresh: no out-of-date entry when it is already past or there is no snapshot")
 }
 
+// Error texts (ideas E81)
+check(APIError(status: 403, message: "no scope").errorDescription?.contains("403") == true && APIError(status: 403, message: "no scope").errorDescription?.contains("no scope") == true, "error text: 403 names the status and the message")
+check(APIError(status: 404, message: "gone").errorDescription?.contains("404") == true, "error text: 404")
+check(APIError(status: 500, message: "").errorDescription?.contains("500") == true, "error text: 5xx")
+check(APIError(status: 429, message: "").errorDescription?.isEmpty == false, "error text: 429 without a message still says something")
+check(APIError(status: 403, message: "Try again after 14:05", rateLimited: true).errorDescription == "Try again after 14:05", "error text: a rate limit with its time shows the time")
+check(!APIError(status: 403, message: "", rateLimited: true).isAuth && APIError(status: 403, message: "").isAuth && APIError(status: 401, message: "").isAuth, "error text: only a 403 without a limit is a key problem")
+check(explain(URLError(.notConnectedToInternet)).contains("internet"), "explain: offline")
+check(explain(URLError(.timedOut)).contains("No answer"), "explain: timeout")
+check(explain(URLError(.cannotFindHost)).contains("cannot be reached"), "explain: host not found")
+check(explain(URLError(.secureConnectionFailed)).contains("secure connection"), "explain: TLS")
+check(explain(URLError(.cancelled)) == "Canceled.", "explain: canceled")
+check(explain(NSError(domain: NSCocoaErrorDomain, code: 3840)).contains("not JSON"), "explain: an HTML answer instead of JSON")
+
+// The rule for states (ideas E84)
+check(!DeployRule.failed(latest: "canceled", building: false), "rule: canceled is neutral")
+check(DeployRule.failed(latest: "build_failed", building: false) && DeployRule.failed(latest: "update_failed", building: false), "rule: Render failures count")
+check(!DeployRule.building(live: "deactivated", latest: "deactivated"), "rule: a replaced Render deploy is not building")
+check(DeployRule.building(live: nil, latest: "build_in_progress"), "rule: Render build_in_progress is building")
+
+// The snapshot file is read across versions (ideas E86)
+func fixture(_ name: String) -> URL { URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures/" + name) }
+let oldSnap = DeploySnapshot.read(fixture("snapshot-v1.json"))
+check(oldSnap?.waitingPRs == 2 && oldSnap?.projects.count == 2 && oldSnap?.projects.first?.id == "Vercel/atlas" && oldSnap?.saving?.month == 60, "snapshot: a file of the first app still decodes")
+check(oldSnap?.byPlatform == nil && oldSnap?.language == nil && oldSnap?.connected == nil, "snapshot: fields that came later are nil")
+let futureSnap = DeploySnapshot.read(fixture("snapshot-future.json"))
+check(futureSnap?.demo == true && futureSnap?.failed == 1 && futureSnap?.projects.first?.key == "Vercel/prj_1" && futureSnap?.language == "de", "snapshot: unknown fields are ignored, known ones kept")
+
+// The demo data stands on its own (ideas E87)
+let demoProjects = DemoData.projects()
+check(!demoProjects.isEmpty && Set(demoProjects.map(\.key)).count == demoProjects.count, "demo: projects exist and their keys are unique")
+check(demoProjects.contains { $0.group == .waiting } && demoProjects.contains { $0.group == .attention }, "demo: waiting and failing projects are shown")
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
