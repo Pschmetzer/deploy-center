@@ -646,6 +646,14 @@ check(futureSnap?.demo == true && futureSnap?.failed == 1 && futureSnap?.project
 let demoProjects = DemoData.projects()
 check(!demoProjects.isEmpty && Set(demoProjects.map(\.key)).count == demoProjects.count, "demo: projects exist and their keys are unique")
 check(demoProjects.contains { $0.group == .waiting } && demoProjects.contains { $0.group == .attention }, "demo: waiting and failing projects are shown")
+// Sorting, the name list and the team id (ideas E7, E13, E60)
+func named(_ n: String, _ id: String = "1") -> PhoneProject { PhoneProject(provider: .vercel, id: id, name: n) }
+check(PhoneProject.nameOrder(named("app2"), named("app10")), "sort: app2 comes before app10")
+check(PhoneProject.nameOrder(named("Ärger"), named("Zebra")) && PhoneProject.nameOrder(named("alpha"), named("Beta")), "sort: umlauts and case sort as a person expects")
+check(PhoneProject.nameOrder(named("web", "a"), named("web", "b")) && !PhoneProject.nameOrder(named("web", "b"), named("web", "a")), "sort: the same name is ordered by key")
+check(PhoneProject.nameList(["a", "b"]) == "a, b", "name list: a short list is shown whole")
+check(PhoneProject.nameList((1...40).map { "p\($0)" }) == "p1, p2, p3, p4, p5 and 35 more", "name list: 40 projects become five and a count")
+check(TokenShape.teamProblem("team_abc123") == nil && TokenShape.teamProblem("") == nil && TokenShape.teamProblem("my-team") != nil, "team id: a slug is refused, an id and nothing are fine")
 
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)

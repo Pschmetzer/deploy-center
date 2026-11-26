@@ -161,6 +161,24 @@ extension PhoneProject {
     }
 }
 
+extension PhoneProject {
+    /// Names as a person sorts them ("app2" before "app10", umlauts in place, case ignored); the key breaks a tie,
+    /// so two projects of one name (two teams) keep their place between loads.
+    static func nameOrder(_ a: PhoneProject, _ b: PhoneProject) -> Bool {
+        switch a.name.localizedStandardCompare(b.name) {
+        case .orderedAscending: return true
+        case .orderedDescending: return false
+        case .orderedSame: return a.key < b.key
+        }
+    }
+    /// "Atlas, Harbor, Nova, Cedar, Quartz and 35 more": at most `limit` names, then the rest as a number.
+    static func nameList(_ names: [String], limit: Int = 5) -> String {
+        guard names.count > limit else { return names.joined(separator: ", ") }
+        let more = names.count - limit
+        return names.prefix(limit).joined(separator: ", ") + L(" and \(more) more", " und \(more) weitere")
+    }
+}
+
 extension Array where Element == PhoneProject {
     /// The projects the app counts as "waiting" (not building, not failed): one rule for the app, the widgets and Siri.
     var waitingOnly: [PhoneProject] { filter { $0.group == .waiting } }
@@ -181,6 +199,13 @@ extension Array where Element == PhoneProject {
 /// A key that was cut up on its way (a line break in the middle from a clipboard or a handoff) only ever
 /// gives a 401 later. Checked before it is saved; nil when the shape is fine.
 enum TokenShape {
+    /// A Vercel team id is `team_…`; a team slug pasted instead gives a 403 only when the list loads.
+    static func teamProblem(_ value: String) -> String? {
+        let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if v.isEmpty || v.hasPrefix("team_") { return nil }
+        return L("A Vercel team id starts with team_ (Team Settings → General), not the team's name.",
+                 "Eine Vercel-Team-ID beginnt mit team_ (Team-Einstellungen → Allgemein), nicht mit dem Namen des Teams.")
+    }
     static func problem(_ value: String, render: Bool) -> String? {
         let v = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if v.isEmpty { return nil }

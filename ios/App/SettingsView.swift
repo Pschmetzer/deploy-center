@@ -263,7 +263,8 @@ struct SettingsView: View {
 
     private func save() -> Bool {
         guard dirty else { return true }
-        for k in Key.allCases where (fields[k] ?? "") != (saved[k] ?? "") && k != .vercelTeam {
+        for k in Key.allCases where (fields[k] ?? "") != (saved[k] ?? "") {
+            if k == .vercelTeam { if let why = TokenShape.teamProblem(fields[k] ?? "") { badKey = why; return false }; continue }
             if let why = TokenShape.problem(fields[k] ?? "", render: k == .render) { badKey = why; return false }
         }
         // Only what was changed: a key that could not be read (locked keychain) shows as an empty field,
