@@ -28,6 +28,7 @@ MainActor.assumeIsolated {
     suite_round15_network()
     suite_round15_races()
     suite_round15_bugs()
+    suite_round15_ux()
     insightsAppTests(expect); insightsAppTests2(expect)
 }
 

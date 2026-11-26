@@ -1267,6 +1267,17 @@ final class Store: ObservableObject {
             Self.writeMessages(messages)
         }
     }
+    /// When the list of messages was last opened: failures after it are "unread" (the red number on "More").
+    @Published var messagesSeenAt: Date = {
+        let t = UserDefaults.standard.object(forKey: "messagesSeenAt") as? Double
+        return t.map { Date(timeIntervalSince1970: $0) } ?? Date()
+    }()
+    nonisolated static func unreadFailures(_ messages: [Message], since: Date) -> Int { messages.filter { !$0.ok && $0.date > since }.count }
+    var unreadFailures: Int { Self.unreadFailures(messages, since: messagesSeenAt) }
+    func markMessagesSeen() {
+        messagesSeenAt = Date()
+        UserDefaults.standard.set(messagesSeenAt.timeIntervalSince1970, forKey: "messagesSeenAt")
+    }
     nonisolated static var messagesURL: URL { AppDirs.support.appendingPathComponent("messages.json") }
     nonisolated static func readMessages() -> [Message] {
         guard let d = try? Data(contentsOf: messagesURL) else { return [] }
