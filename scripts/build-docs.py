@@ -112,6 +112,8 @@ PAGES = [
      "GitHub Pages in Deploy Center: the newest run of your Pages workflow, and starting a deploy by dispatching it."),
     ("koyeb", "Koyeb", "Hosts", "docs/providers/koyeb.md",
      "Koyeb in Deploy Center: your services and their newest deployment, and redeploying a service by hand."),
+    ("northflank", "Northflank", "Hosts", "docs/providers/northflank.md",
+     "Northflank in Deploy Center: the services of your projects and their newest build, and starting a build of a branch or commit by hand."),
     ("deno-deploy", "Deno Deploy", "Hosts", "docs/providers/deno.md",
      "Deno Deploy in Deploy Center: the projects of one organization and redeploying a deployment as production by hand."),
     ("ci", "Deploy from CI", "Using it", "examples/README.md",
