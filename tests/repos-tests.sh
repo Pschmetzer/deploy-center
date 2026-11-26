@@ -67,11 +67,20 @@ g "$tmp/root/behind" worktree add -q -b wt-fresh "$tmp/wt-fresh" origin/main 2>/
 old "$tmp/wt-done"; old "$tmp/wt-dirty"
 for r in "$tmp"/root/*; do old "$r"; done
 
+# gone: a pushed branch, deleted on origin later, whose line main changes too (no squash match, no pull request)
+clone gone; g "$tmp/root/gone" switch -qc gone-b; echo mine > "$tmp/root/gone/a.txt"; g "$tmp/root/gone" commit -qam mine
+g "$tmp/root/gone" push -q -u origin gone-b 2>/dev/null
+# a worktree of the conflicted checkout that would otherwise go: the whole checkout is hands off
+g "$tmp/root/conflict" worktree add -q -b wt-conf "$tmp/wt-conf" origin/main 2>/dev/null; old "$tmp/wt-conf"
+for r in "$tmp"/root/*; do old "$r"; done
+
 # origin moves on; the .env becomes tracked upstream (git add -f)
 push later1; push later2
 echo committed > "$tmp/seed/.env"; g "$tmp/seed" add -f .env; g "$tmp/seed" commit -qm env; g "$tmp/seed" push -q origin main 2>/dev/null
 g "$tmp/root/envfile" fetch -q; old "$tmp/root/envfile"
 g "$tmp/root/offline" remote set-url origin "$tmp/nowhere.git"
+echo theirs > "$tmp/seed/a.txt"; g "$tmp/seed" commit -qam theirs; g "$tmp/seed" push -q origin main 2>/dev/null
+git --git-dir="$tmp/origin.git" branch -q -D gone-b
 
 st() { jq -r --arg n "$1" '.repos[] | select(.name==$n) | .state' "$tmp/out.json"; }
 
@@ -79,9 +88,14 @@ st() { jq -r --arg n "$1" '.repos[] | select(.name==$n) | .state' "$tmp/out.json
 cli repos status --json > "$tmp/out.json" 2>"$tmp/err" || fail "status runs" "$(cat "$tmp/err")"
 expect "status: behind main would fast-forward" "$(st behind)" "behind"
 expect "status: squash-merged branch would switch" "$(st squash)" "merged"
-expect "status: nothing changed" "$(g "$tmp/root/squash" branch --show-current):$(g "$tmp/root/behind" rev-list --count HEAD..origin/main)" "feat:4"
+expect "status: nothing changed" "$(g "$tmp/root/squash" branch --show-current):$(g "$tmp/root/behind" rev-list --count HEAD..origin/main)" "feat:5"
+expect "status: gone and fully pushed would switch" "$(st gone)" "merged"
 expect "status: worktree not removed" "$([ -d "$tmp/wt-done" ] && echo there)" "there"
 cli repos sync --json > "$tmp/out.json" 2>/dev/null
+expect "gone: still seen after a second look (status does not prune)" "$(st gone)" "merged"
+mkdir -p "$DEPLOYS_CONFIG/locks/repos.lock"
+expect "a run while another holds the lock: the last result, busy" "$(cli repos sync --yes --json 2>/dev/null | jq -r '.busy')" "true"
+rmdir "$DEPLOYS_CONFIG/locks/repos.lock"
 expect "sync without --yes changes nothing" "$(jq -r .applied "$tmp/out.json"):$(g "$tmp/root/squash" branch --show-current)" "false:feat"
 
 # sync --yes
@@ -91,7 +105,7 @@ expect "squash: on main, branch deleted" "$(st squash):$(g "$tmp/root/squash" br
 expect "squash: the old commit is in the note" "$(jq -r '.repos[]|select(.name=="squash")|.note' "$tmp/out.json" | grep -c 'git branch feat')" "1"
 expect "open branch: untouched" "$(st open):$(g "$tmp/root/open" branch --show-current)" "unmerged:wip"
 expect "dirty: untouched" "$(st dirty):$(g "$tmp/root/dirty" branch --show-current):$(g "$tmp/root/dirty" status --porcelain | wc -l | tr -d ' ')" "needs-hand:d:1"
-expect "untracked file: untouched" "$(st untracked):$(g "$tmp/root/untracked" rev-list --count HEAD..origin/main)" "needs-hand:3"
+expect "untracked file: untouched" "$(st untracked):$(g "$tmp/root/untracked" rev-list --count HEAD..origin/main)" "needs-hand:4"
 expect "merge conflict: untouched" "$(st conflict):$([ -f "$tmp/root/conflict/.git/MERGE_HEAD" ] && echo merging)" "needs-hand:merging"
 expect "local main ahead: diverged, untouched" "$(st ahead):$(g "$tmp/root/ahead" rev-list --count origin/main..HEAD)" "diverged:1"
 expect "gh merged, same head: switched" "$(st prdone):$(g "$tmp/root/prdone" branch --show-current)" "switched:main"
@@ -102,14 +116,17 @@ expect "hooks do not run" "$(st hooked):$([ -e "$tmp/hook-ran" ] && echo ran || 
 expect "failed fetch: nothing done" "$(st offline):$(g "$tmp/root/offline" rev-list --count HEAD..origin/main)" "error:0"
 expect "worktrees: merged clean one removed, dirty and fresh kept" "$([ -d "$tmp/wt-done" ] && echo y || echo n)$([ -d "$tmp/wt-dirty" ] && echo y)$([ -d "$tmp/wt-fresh" ] && echo y)" "nyy"
 expect "worktree branch deleted" "$(g "$tmp/root/behind" branch --list wt-done | wc -l | tr -d ' ')" "0"
-expect "summary counts" "$(jq -r '.summary | "\(.updated)/\(.worktrees)"' "$tmp/out.json")" "4/1"
+expect "gone: back on main, the branch kept" "$(st gone):$(g "$tmp/root/gone" branch --show-current):$(g "$tmp/root/gone" branch --list gone-b | wc -l | tr -d ' ')" "switched:main:1"
+expect "conflicted checkout: its worktree is left too" "$([ -d "$tmp/wt-conf" ] && echo there):$(g "$tmp/root/conflict" branch --list wt-conf | wc -l | tr -d ' ')" "there:1"
+expect "every repo has a row" "$(jq -r '.summary.repos' "$tmp/out.json")" "$(ls -d "$tmp"/root/*/.git | wc -l | tr -d ' ')"
+expect "summary counts" "$(jq -r '.summary | "\(.updated)/\(.worktrees)"' "$tmp/out.json")" "5/1"
 expect "last: the same result, no git" "$(cli repos last --json | jq -r .ranAt)" "$(jq -r .ranAt "$tmp/out.json")"
 expect "journal has the upkeep line" "$(grep -c 'Repo upkeep' "$tmp/journal.jsonl")" "1"
 expect "text output" "$(cli repos status --no-fetch | tail -n 1 | grep -c 'need you')" "1"
 
 # a second run changes nothing more
 cli repos sync --yes --json > "$tmp/out.json" 2>/dev/null
-expect "second run: up to date" "$(st behind):$(st squash)" "current:current"
+expect "second run: up to date" "$(st behind):$(st squash):$(st gone)" "current:current:current"
 
 # schedule writes a background job that also runs at login (no real launchd: a test folder)
 plist="$tmp/la/com.deploycenter.repos.plist"

@@ -306,7 +306,7 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_HTTP_TRACE` | `1`: one line per call to a platform on stderr (method, path without query, status, time; no header, no body); `--debug` sets it |
 | `DEPLOYS_QUIET`, `DEPLOYS_DEBUG` | what the global `--quiet` and `--debug` set: only the result; the trace of the calls |
 | `DEPLOYS_PARALLEL` | how many platform or git host reads run at once in a list (default 8, at most 32; 3 while GitHub's budget is under 1000) |
-| `DEPLOYS_REPOS_PARALLEL` | how many repos `deploys repos` looks at at once (default 4) |
+| `DEPLOYS_REPOS_PARALLEL` | how many repos `deploys repos` looks at at once (default 6) |
 | `DEPLOYS_REPOS_IDLE_MIN` | minutes a linked worktree must be unused before `deploys repos sync` removes it (default 1440) |
 | `DEPLOYS_REPOS_NO_GH`, `DEPLOYS_REPOS_NO_LSOF` | `1`: `deploys repos` asks no `gh` for merged pull requests / no `lsof` for processes inside a worktree |
 | `HTTP_DEADLINE` | seconds one platform call may take in all, tries and waits included (default 120) |

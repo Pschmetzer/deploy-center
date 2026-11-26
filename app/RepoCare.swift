@@ -11,6 +11,8 @@ struct RepoCareReport: Decodable {
     struct Summary: Decodable { let repos: Int; let updated: Int; let needsHand: Int; let unmerged: Int; let worktrees: Int }
     let ranAt: String?
     let applied: Bool?
+    /// Another run (the schedule) holds the lock: this is the last result, not a new one.
+    let busy: Bool?
     let repos: [Repo]
     let summary: Summary?
 }
@@ -110,6 +112,10 @@ struct RepoCareView: View {
         do {
             let r = try JSONDecoder().decode(RepoCareReport.self, from: try await Tool.run(["repos", "sync", "--yes", "--json"], timeout: 1800))
             report = r
+            if r.busy == true {
+                done = L("A scheduled run is going on; showing the last result. Try again in a minute.", "Ein geplanter Lauf ist gerade dran; das ist das letzte Ergebnis. In einer Minute noch einmal.")
+                busy = false; return
+            }
             let s = r.summary
             done = L("\(s?.updated ?? 0) updated, \(s?.worktrees ?? 0) worktrees removed, \(s?.needsHand ?? 0) need you",
                      "\(s?.updated ?? 0) aktualisiert, \(s?.worktrees ?? 0) Worktrees entfernt, \(s?.needsHand ?? 0) brauchen dich")

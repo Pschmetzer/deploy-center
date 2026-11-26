@@ -19,7 +19,7 @@ deploys repos schedule off
 
 ## Was mit einem Checkout passiert
 
-Nach `git fetch --prune origin`:
+Nach `git fetch origin` (alte Remote-Branches werden erst gelöscht, wenn `sync` entschieden hat; so bleibt ein auf origin gelöschter Branch als vollständig gepusht erkennbar):
 
 | Der Checkout | Was passiert |
 | --- | --- |

@@ -7,7 +7,7 @@
 #   deploys repos schedule on|off|status         a LaunchAgent: `repos sync --yes` every 30 minutes and at login
 #
 # When sessions work in worktrees or in the cloud and merge through pull requests, the main checkout stays
-# on an old branch and falls hundreds of commits behind. Per repo, after `git fetch --prune origin`:
+# on an old branch and falls hundreds of commits behind. Per repo, after `git fetch origin` (stale refs are pruned once a sync has decided):
 #   clean, on the default branch        -> fast-forward (git merge --ff-only), never a merge commit
 #   clean, on a branch that is merged   -> switch to the default branch, fast-forward, delete the branch
 #     (merged: its commits are in origin/<default>, or merging it there changes nothing (a squash merge),
@@ -127,9 +127,17 @@ repos_active() {  # repos_active <repo>
   REPOS_IDLE_MIN=60 repos_recent "$1"
 }
 
+# No --prune here: the remote-tracking ref of a branch deleted on origin is what shows that every commit of it
+# was pushed. repos_one prunes after a sync has decided (and not while a switch is still waiting).
 repos_fetch() {  # repos_fetch <repo>: git's message on stdout when it fails
   GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}" \
-    perl -e 'alarm 120; exec @ARGV' git -C "$1" fetch -q --prune origin </dev/null 2>&1 >/dev/null
+    perl -e 'alarm 60; exec @ARGV' git -C "$1" fetch -q origin </dev/null 2>&1 >/dev/null
+}
+
+repos_gone() {  # repos_gone <repo> <refs/heads/name>: origin answered and does not have it
+  local ls; ls="$(GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="${GIT_SSH_COMMAND:-ssh -o BatchMode=yes}" \
+    perl -e 'alarm 30; exec @ARGV' git -C "$1" ls-remote --heads origin "$2" </dev/null 2>/dev/null)" || return 1
+  [ -z "$ls" ]
 }
 
 repos_default() {  # repos_default <repo>: main, master or what origin/HEAD names
@@ -146,8 +154,6 @@ repos_one() {  # repos_one <repo> <apply 0|1> <fetch 0|1>
   out() { rm -rf "$REPOS_PR_CACHE"; printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$name" "$repo" "${br:-}" "${def:-}" "$st" "$act" "$behind" "$ahead" "$(printf '%s' "$note" | tr '\t\n' '  ')" "$wtn"; }
   git -C "$repo" remote get-url origin >/dev/null 2>&1 || { st=no-remote; note="no remote origin"; out; return; }
   br="$(git -C "$repo" symbolic-ref -q --short HEAD 2>/dev/null || true)"
-  # The upstream as last known, before --prune can take it away: "gone, but everything was pushed".
-  [ -z "$br" ] || up="$(git -C "$repo" rev-parse -q --verify "$br@{upstream}" 2>/dev/null || true)"
   local fetched=1 ferr=""
   if [ "$fetch" = 1 ] && ! ferr="$(repos_fetch "$repo")" && ! { sleep 3; ferr="$(repos_fetch "$repo")"; }; then
     note="git fetch failed: $(printf '%s' "$ferr" | grep -v '^\s*$' | tail -n 1 | cut -c1-160); nothing done"; fetched=0
@@ -155,20 +161,27 @@ repos_one() {  # repos_one <repo> <apply 0|1> <fetch 0|1>
   def="$(repos_default "$repo" || true)"
   [ -n "$def" ] || { st=error; note="${note:+$note; }no origin/main or origin/master"; out; return; }
   base="origin/$def"
-  if [ -n "$br" ] && [ -n "$up" ] && ! git -C "$repo" rev-parse -q --verify "$br@{upstream}" >/dev/null 2>&1; then upgone=1; fi
+  # Gone on origin: the branch has an upstream, origin no longer has it (ls-remote answered), and its last known
+  # remote-tracking ref is still here (fetch does not prune) to show what was pushed.
+  local mref; mref="$( [ -z "$br" ] || git -C "$repo" config "branch.$br.merge" 2>/dev/null || true)"
+  if [ -n "$br" ] && [ "$br" != "$def" ] && [ "$fetched" = 1 ] && [ -n "$mref" ]; then
+    up="$(git -C "$repo" rev-parse -q --verify "refs/remotes/origin/${mref#refs/heads/}" 2>/dev/null || true)"
+  fi
   lr="$(git -C "$repo" rev-list --left-right --count "$base...HEAD" 2>/dev/null || echo "0 0")"
   behind="$(printf '%s' "$lr" | awk '{print $1+0}')"; ahead="$(printf '%s' "$lr" | awk '{print $2+0}')"
 
+  local hands_off=0
   if [ "$fetched" = 0 ]; then
     st=error; apply=0
   elif repos_busy "$repo"; then
-    st=needs-hand; note="${note:+$note; }a merge, rebase or cherry-pick is running"
+    st=needs-hand; hands_off=1; note="${note:+$note; }a merge, rebase or cherry-pick is running"
   elif [ -n "$(git -C "$repo" diff --name-only --diff-filter=U 2>/dev/null | head -n 1)" ]; then
-    st=needs-hand; note="${note:+$note; }conflicts"
+    st=needs-hand; hands_off=1; note="${note:+$note; }conflicts"
   elif repos_dirty "$repo"; then
     local pc nm nu; pc="$(git -C "$repo" status --porcelain 2>/dev/null || true)"
     nu="$(printf '%s\n' "$pc" | grep -c '^??' || true)"; nm="$(printf '%s\n' "$pc" | grep -v '^??' | grep -c . || true)"
-    st=needs-hand; note="${note:+$note; }uncommitted changes ($nm changed, $nu untracked files)"
+    local ex; ex="$(printf '%s\n' "$pc" | sed -n 's/^?? //p' | head -n 3 | tr '\n' ' ' | sed 's/ $//')"
+    st=needs-hand; note="${note:+$note; }uncommitted changes ($nm changed, $nu untracked$([ -z "$ex" ] || echo ": $ex"))"
   elif [ -z "$br" ]; then
     st=detached; note="${note:+$note; }detached HEAD"
   elif [ "$br" = "$def" ]; then
@@ -180,9 +193,11 @@ repos_one() {  # repos_one <repo> <apply 0|1> <fetch 0|1>
       else st=error; note="${note:+$note; }fast-forward failed"; fi
     else st=behind; act="fast-forward $behind"; fi
   else
-    head="$(git -C "$repo" rev-parse HEAD)"
+    head="$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
     local keep=0 why=""
     if repos_merged "$repo" "$base" "$br" "$head"; then why="merged"
+    elif [ -n "$up" ] && repos_gone "$repo" "$mref"; then upgone=1; fi
+    if [ -n "$why" ]; then :
     elif [ "$upgone" = 1 ] && git -C "$repo" merge-base --is-ancestor "$head" "$up" 2>/dev/null; then why="gone"; keep=1
     fi
     # A local default branch with commits of its own is not switched to: that needs a person.
@@ -201,12 +216,19 @@ repos_one() {  # repos_one <repo> <apply 0|1> <fetch 0|1>
             act="$act, deleted $br"; note="${note:+$note; }$br was at ${head:0:12} (git branch $br $head brings it back)"
           else note="${note:+$note; }$br kept (gone on origin, every commit was pushed)"; fi
         else st=error; note="${note:+$note; }switching to $def failed (checked out in another worktree?)"; fi
-      else st=merged; act="switch to $def$([ "$keep" = 0 ] && echo ", delete $br")"; note="${note:+$note; }$br is $([ "$keep" = 0 ] && echo merged || echo "gone on origin, fully pushed")"; fi
+      else
+        st=merged
+        if [ "$keep" = 0 ]; then act="switch to $def, delete $br"; note="${note:+$note; }$br is merged"
+        else act="switch to $def"; note="${note:+$note; }$br is gone on origin, every commit was pushed (kept)"; fi
+      fi
     else
       st=unmerged; note="${note:+$note; }$br: $ahead own commits, $behind behind $base"
     fi
   fi
-  wtn="$(repos_worktrees "$repo" "$base" "$apply")"
+  # A checkout in the middle of a merge or with conflicts is left completely alone, its worktrees too.
+  [ "$hands_off" = 1 ] || wtn="$(repos_worktrees "$repo" "$base" "$apply")"
+  # Stale remote-tracking refs go once a sync has decided; not while a switch waits (they show what was pushed).
+  if [ "$apply" = 1 ] && [ "$hands_off" = 0 ] && [ "$st" != merged ]; then git -C "$repo" remote prune origin >/dev/null 2>&1 || true; fi
   out
 }
 
@@ -259,17 +281,33 @@ repos_main() {
   mkdir -p "$CONFIG_DIR/locks"
   local lock="$CONFIG_DIR/locks/repos.lock"
   lock_clear_stale "$lock" 1800
-  mkdir "$lock" 2>/dev/null || { echo "Another repos run is going on; try again in a minute." >&2; return 0; }
+  if ! mkdir "$lock" 2>/dev/null; then
+    echo "Another repos run is going on; try again in a minute." >&2
+    # For the app and scripts: the last result, marked busy, rather than nothing on stdout.
+    if [ "${json:-0}" = 1 ]; then
+      if [ -f "$CONFIG_DIR/repos-last.json" ]; then jq -c '. + {busy:true}' "$CONFIG_DIR/repos-last.json"
+      else echo '{"ranAt":null,"busy":true,"repos":[]}'; fi
+    fi
+    return 0
+  fi
   trap_add "rmdir '$lock' 2>/dev/null || true"
   local GIT_OPTIONAL_LOCKS=0; export GIT_OPTIONAL_LOCKS
   # A few repos at a time (each its own row file, joined in order): fetches wait on the network, not the Mac.
-  local rows r i=0 par="${DEPLOYS_REPOS_PARALLEL:-4}" parts; rows="$(mktemp)"; parts="$(mktemp -d)"
+  local rows r i=0 par="${DEPLOYS_REPOS_PARALLEL:-6}" parts; rows="$(mktemp)"; parts="$(mktemp -d)"
   while IFS= read -r r; do
-    i=$((i+1)); ( repos_one "$r" "$apply" "$fetch" > "$parts/$(printf '%05d' "$i")" ) &
+    i=$((i+1)); printf '%s' "$r" > "$parts/$(printf '%05d' "$i").path"
+    ( repos_one "$r" "$apply" "$fetch" > "$parts/$(printf '%05d' "$i")" ) &
     [ $((i % par)) -ne 0 ] || wait
   done < <(repos_list)
   wait
-  cat "$parts"/* > "$rows" 2>/dev/null || true; rm -rf "$parts"
+  local f p
+  for f in "$parts"/*.path; do
+    [ -e "$f" ] || continue; p="$(cat "$f")"
+    # A repo whose look failed half-way still gets its row instead of quietly dropping out of the report.
+    if [ -s "${f%.path}" ]; then cat "${f%.path}"
+    else printf '%s\t%s\t\t\terror\t\t0\t0\tcould not be read (git failed)\t0\n' "$(basename "$p")" "$p"; fi
+  done > "$rows"
+  rm -rf "$parts"
   local res
   res="$(jq -Rn --argjson applied "$apply" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
     [inputs | split("\t") | {name:.[0], path:.[1], branch:.[2], default:.[3], state:.[4], action:.[5],

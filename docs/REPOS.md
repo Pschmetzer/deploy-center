@@ -19,7 +19,7 @@ deploys repos schedule off
 
 ## What happens to a checkout
 
-After `git fetch --prune origin`:
+After `git fetch origin` (old remote branches are pruned once `sync` has decided, so a branch deleted on origin is still recognised as fully pushed):
 
 | The checkout | What happens |
 | --- | --- |
