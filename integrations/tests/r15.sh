@@ -123,4 +123,50 @@ cat Makefile
 LIST
 expect "perf-gate: DEPLOYS_PERF_HEAVY_EXTRA" "$(PG_ENV=DEPLOYS_PERF_HEAVY_EXTRA='terraform[[:space:]]+apply' pg 'terraform apply')" 2
 
+# --- docker scheduler: sub-commands and flags, SIGTERM during a job, heartbeat ticker, ping ---
+sch="integrations/docker/scheduler.sh"
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+bad_job() { printf 'every 5m %s\n' "$1" > "$tmp/j.conf"; DEPLOYS_INTEGRATIONS="$PWD/integrations" bash "$sch" --jobs "$tmp/j.conf" --check >/dev/null 2>&1; echo $?; }
+for j in 'deploys freeze clear' 'deploys freeze remove 1' 'deploys doctor --fix' 'deploys digest --post' 'deploys history --clear'; do
+  expect "scheduler refuses: $j" "$(bad_job "$j")" 1
+done
+for j in 'deploys freeze' 'deploys freeze status' 'deploys doctor' 'deploys digest --days 7'; do
+  expect "scheduler accepts: $j" "$(bad_job "$j")" 0
+done
+mkdir -p "$tmp/bin"
+cat > "$tmp/bin/deploys" <<'D'
+#!/bin/bash
+echo "ro=${DEPLOYS_READONLY:-}" >> "$CALLS"
+sleep 20.31
+D
+chmod +x "$tmp/bin/deploys"
+printf 'every 5m out=%s/out.json deploys changed --json\n' "$tmp" > "$tmp/term.conf"
+export CALLS="$tmp/calls"; : > "$CALLS"
+DEPLOYS="$tmp/bin/deploys" DEPLOYS_INTEGRATIONS="$PWD/integrations" DEPLOYS_HEARTBEAT_FILE="$tmp/hb" bash "$sch" --jobs "$tmp/term.conf" --tick 1 >"$tmp/term.out" 2>&1 &
+sp=$!
+n=0; while [ ! -s "$CALLS" ] && [ "$n" -lt 50 ]; do sleep 0.1; n=$((n + 1)); done
+sleep 1.2
+expect "scheduler: the job gets DEPLOYS_READONLY=1" "$(head -n 1 "$CALLS")" "ro=1"
+hb1="$(cat "$tmp/hb" 2>/dev/null)"
+sleep 1.1
+expect "scheduler: the heartbeat moves while a job runs" "$([ "$(cat "$tmp/hb" 2>/dev/null)" -gt "$hb1" ] && echo moved || echo stuck)" moved
+t_a="$(date +%s)"; kill -TERM "$sp"; wait "$sp"; rc=$?; t_b="$(date +%s)"
+expect "scheduler: TERM ends it with 143" "$rc" 143
+expect "scheduler: TERM does not wait for the job" "$([ $((t_b - t_a)) -le 3 ] && echo quick || echo slow)" quick
+expect "scheduler: no temp file after TERM" "$(ls "$tmp"/out.json.* 2>/dev/null | wc -l | tr -d ' ')" 0
+expect "scheduler: no stand-in job is left" "$(pgrep -f 'sleep 20.31' | wc -l | tr -d ' ')" 0
+printf 'every 5m deploys changed --json\n' > "$tmp/ping.conf"
+cat > "$tmp/bin/curl" <<'C'
+#!/bin/bash
+echo "curl $*" >> "$CALLS"
+C
+chmod +x "$tmp/bin/curl"
+printf '#!/bin/bash\nexit 0\n' > "$tmp/bin/deploys"
+: > "$CALLS"
+PATH="$tmp/bin:$PATH" DEPLOYS_PING_URL="https://ping.example.test/abc" DEPLOYS="$tmp/bin/deploys" DEPLOYS_INTEGRATIONS="$PWD/integrations" bash "$sch" --jobs "$tmp/ping.conf" --once >/dev/null 2>&1
+expect "scheduler: a ping after a job that worked" "$(grep -c 'ping.example.test' "$CALLS")" 1
+: > "$CALLS"
+PATH="$tmp/bin:$PATH" DEPLOYS_PING_URL="http://ping.example.test/abc" DEPLOYS="$tmp/bin/deploys" DEPLOYS_INTEGRATIONS="$PWD/integrations" bash "$sch" --jobs "$tmp/ping.conf" --once >/dev/null 2>&1
+expect "scheduler: an http ping URL is refused" "$(grep -c 'ping.example.test' "$CALLS")" 0
+
 [ "$fails" = 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
