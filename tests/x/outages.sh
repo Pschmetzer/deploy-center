@@ -13,9 +13,9 @@ j="$(
 )"
 o="$(outages_from "$now" 5 "" 20 <<<"$j")"
 expect "three outages, one open" "$(jq -c '[.total,.open]' <<<"$o")" "[3,1]"
-expect "longest first: the 10 h one, then the open 10 h api one" "$(jq -c '[.outages[] | [.project,.seconds,.failures,.open]]' <<<"$o")" '[["vercel/web",36000,2,false],["render/api",36000,1,true],["vercel/web",3600,1,false]]'
-expect "the closed one has an end" "$(jq -r '.outages[0].to | length > 0' <<<"$o")" "true"
-expect "the open one has none" "$(jq -r '.outages[1].to' <<<"$o")" "null"
+expect "longest first (a tie by name)" "$(jq -c '[.outages[] | [.project,.seconds,.failures,.open]]' <<<"$o")" '[["render/api",36000,1,true],["vercel/web",36000,2,false],["vercel/web",3600,1,false]]'
+expect "the closed one has an end" "$(jq -r '.outages[1].to | length > 0' <<<"$o")" "true"
+expect "the open one has none" "$(jq -r '.outages[0].to' <<<"$o")" "null"
 expect "the project filter" "$(outages_from "$now" 5 api 20 <<<"$j" | jq -c '.total')" "1"
 expect "the limit" "$(outages_from "$now" 5 "" 1 <<<"$j" | jq -c '[.total, (.outages|length)]')" "[3,1]"
 txt="$(outages_print <<<"$o")"

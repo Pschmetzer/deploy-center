@@ -21,7 +21,7 @@ outages_from() {
             else (if .cur != null then .out += [.cur + {to: $x.t, open: false}] | .cur = null else . end) end)
         | (.out + (if .cur != null then [.cur + {to: $now, open: true}] else [] end))[]
         | {project: $k, from: (.from | todate), to: (if .open then null else (.to | todate) end), seconds: (.to - .from), failures: .failures, open: .open} ]
-    | sort_by(-.seconds) as $all
+    | sort_by([-.seconds, .project]) as $all
     | {days: $days, total: ($all | length), open: ($all | map(select(.open)) | length), outages: $all[0:$limit]}'
 }
 
