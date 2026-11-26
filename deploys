@@ -1289,7 +1289,12 @@ journal_add() {  # journal_add <platform> <name> <result> <detail>
   fi
   # A last line cut off by a crash or a full disk has no newline: end it first, or this entry would be glued to it.
   if [ -s "$f" ] && [ -n "$(tail -c 1 "$f" 2>/dev/null | tr -d '\n')" ]; then printf '\n' >> "$f" 2>/dev/null || true; fi
-  jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$4" --arg h "$prev" \
+  # A hand-typed reason ("--force ...") may hold a secret: masked when written, not only when read.
+  local det="$4"
+  if [ -n "$det" ] && declare -F af_mask >/dev/null; then
+    det="$(printf '%s' "$det" | af_mask 2>/dev/null)" || det="[detail not stored: it could not be masked]"
+  fi
+  jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$det" --arg h "$prev" \
     '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d, prevHash:(if $h == "" then null else $h end)}' >> "$f" 2>/dev/null \
     || echo "Warning: could not write the history ($f): the disk may be full or the file read-only; this action is not in it" >&2
   [ -z "$locked" ] || file_unlock "$f"
@@ -1544,7 +1549,7 @@ af_mask() {
     if ($pem) { $pem = 0 if /-----END [A-Z0-9 ]*PRIVATE KEY/; $_ = ""; next }
     if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY/) { $pem = 1; $_ = "[masked private key]\n"; next }
     # Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, Netlify, DigitalOcean (dop_v1_, dp.st.), Vercel (vcp_, vck_), Cloudflare (cfut_, cfat_), Heroku (HRKU-), Fly (fo1_), Supabase, SendGrid, Resend, Sentry, Linear, JWT.
-    s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|(?:vcp|vck|cfut|cfat|fo1)_[A-Za-z0-9_-]{8,}|HRKU-[A-Za-z0-9_-]{8,}|dp\.st\.[A-Za-z0-9._-]{8,}|nfp_[A-Za-z0-9]{8,}|dop_v1_[A-Fa-f0-9]{16,}|sbp_[A-Za-z0-9]{16,}|sb_secret_[A-Za-z0-9_-]{8,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|re_[A-Za-z0-9]{16,}|sntrys_[A-Za-z0-9+\/=_-]{16,}|lin_api_[A-Za-z0-9]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
+    s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|(?:vcp|vck|cfut|cfat|fo1)_[A-Za-z0-9_-]{8,}|HRKU-[A-Za-z0-9_-]{8,}|dp\.st\.[A-Za-z0-9._-]{8,}|nfp_[A-Za-z0-9]{8,}|dop_v1_[A-Fa-f0-9]{16,}|sbp_[A-Za-z0-9]{16,}|sb_secret_[A-Za-z0-9_-]{8,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|re_[A-Za-z0-9]{16,}|sntrys_[A-Za-z0-9+\/=_-]{16,}|lin_api_[A-Za-z0-9]{16,}|ya29\.[A-Za-z0-9_-]{20,}|GOCSPX-[A-Za-z0-9_-]{16,}|shp(?:at|ca|pa|ss)_[A-Za-z0-9]{16,}|pypi-[A-Za-z0-9_-]{16,}|dckr_pat_[A-Za-z0-9_-]{8,}|SK[0-9a-f]{32}|key-[0-9a-f]{32}|ops_eyJ[A-Za-z0-9+\/=_-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
     # Webhook URLs carry their secret in the path (Slack, Discord, Teams), a Telegram bot token has its own shape,
     # and a few more prefixes: Hugging Face, Coolify (<id>|<40 characters>), Telegram.
     s#(https?://hooks\.slack\.com/(?:services|workflows|triggers)/)[A-Za-z0-9/_-]+#${1}\[masked]#g;
@@ -1553,10 +1558,14 @@ af_mask() {
     s#(api\.telegram\.org/bot)[0-9]{6,12}:[A-Za-z0-9_-]{30,}#${1}\[masked]#g;
     s/\b[0-9]{8,10}:[A-Za-z0-9_-]{35}\b/[masked]/g;
     s/\b(hf_[A-Za-z0-9]{20,}|[0-9]{1,6}\|[A-Za-z0-9]{40})\b/[masked]/g;
+    # A password or secret with spaces in it ("password: my secret phrase"): the rest of the line, unless it is quoted.
+    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:passphrase|password|secret))["\x27]?\s*[:=]\s*)(?![\s"\x27]|\[masked\])(?!(?i:bearer|basic|token|bot)\s)[^\r\n]+/${1}\[masked]/g;
     # NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret
     # (VERCEL_TOKEN, SECRET_KEY, aws_secret_access_key, DB_PASSWORD, x-api-key, Ocp-Apim-Subscription-Key,
     # AccountKey=, ...).
-    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|\x27[^\x27]*\x27|[^\s"\x27,;]+)/${1}${2}\[masked]/g;
+    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("(?:[^"\\]|\\.)*"|\x27(?:[^\x27\\]|\\.)*\x27|[^\s"\x27,;]+)/${1}${2}\[masked]/g;
+    # curl -u user:password, --user user:password.
+    if (/\b(?:curl|wget|http)/i) { s/(\s(?:-u|--user)(?:=|\s+))[^\s:"\x27]+:[^\s"\x27]+/${1}\[masked]/g }
     # Bearer/Basic with no name before it, and whole cookies.
     s/\b((?i:bearer|basic)\s+)[A-Za-z0-9._~+\/=-]{12,}/${1}\[masked]/g;
     s/\b((?i:set-cookie|cookie)\s*:\s*).+/${1}\[masked]/g;
@@ -1565,7 +1574,7 @@ af_mask() {
     # --token x, --token=x (vercel, npm and most CLIs).
     s/(--(?i:token|password|api-key|secret)(?:=|\s+))[^\s"\x27]+/${1}\[masked]/g;
     # user:password@ in a URL (database URLs).
-    s#(://[^/\s:@]+):[^\s/]+@#${1}:\[masked]@#g;
+    s#(://[^/\s:@]+):\S+@(?=[^\s@]*(?:\s|$))#${1}:\[masked]@#g;
     # A long unbroken base64 or hex run on a line that talks about keys: whatever the other rules did not know.
     if (/(?i:token|secret|passw|api[_-]?key|credential|authoriz|bearer)/) {
       s/(?<![A-Za-z0-9+\/=_-])(?![0-9a-f]{40}(?![A-Za-z0-9]))(?=[A-Za-z0-9+\/=_-]*[0-9])(?=[A-Za-z0-9+\/=_-]*[A-Za-z])[A-Za-z0-9+\/=_-]{40,}(?![A-Za-z0-9+\/=_-])/[masked]/g;
