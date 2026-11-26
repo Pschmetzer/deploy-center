@@ -32,6 +32,8 @@ deploys sessions [--hours 6] [--repo <owner/name>] [--json]   # Claude Code clou
 deploys sessions add|remove <owner/name> | repos | set prefix|wait|idle|hours <value>   # the watched repos and settings, in sessions.json in the config folder (prefix claude/, wait 3, idle 20, hours 6)
 deploys weeks [--days 7] [--project <name>] [--json]   # the last --days days against the same number before: deploys, failure rate, typical recovery, open failures (from the journal; reads only)
 deploys export [--format csv|json] [--what journal|costs|all] [--days 30] [--project <name>] [--out <file>]   # journal and Vercel costs with a fixed schema (below); secrets in details masked, files 0600
+deploys clean [--root <dir>] [--days 2] [--worktrees] [--min-free <GB>] [--yes] [--json]   # free disk space in old git worktrees: ignored build output, with --worktrees merged worktrees without changes (a report without --yes)
+deploys clean schedule on|off|status [--min-free 60]   # daily at 04:30, build output only, when less than <GB> are free
 deploys streak [--days 90] [--project <name>] [--json]   # deploys in a row without a failure per project: now and longest (from the journal; reads only)
 deploys note <project> "text"           # one line in the journal (result `note`, 200 characters); it shows in `timeline`. A text that looks like a secret is refused. Touches no platform.
 deploys when [--days 90] [--by weekday|hour] [--json]   # on which weekday or hour of the day your deploys failed more often (UTC); a slot needs 5 tries to count
