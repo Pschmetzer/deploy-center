@@ -81,7 +81,11 @@ cfg="$(jq -c '
 [ "$(jq '.projects | length' <<<"$cfg")" -gt 0 ] || { echo "No projects in $config: the page shows only the ones listed there." >&2; exit 1; }
 
 journal="${DEPLOYS_JOURNAL:-$(jq -r '.journal // empty' <<<"$cfg")}"
-journal="${journal:-$HOME/Library/Application Support/app.deploycenter.mac/journal.jsonl}"
+# The CLI's own default: the app's folder on a Mac, the config folder elsewhere (a Linux runner, the Docker cron image).
+if [ -z "$journal" ]; then
+  if [ "$(uname)" = Darwin ]; then journal="$HOME/Library/Application Support/app.deploycenter.mac/journal.jsonl"
+  else journal="${DEPLOYS_CONFIG:-$HOME/.config/deploys}/journal.jsonl"; fi
+fi
 journal="${journal/#\~/$HOME}"
 
 # Every project the CLI can read, kept to the allowlist (in its order). Only the fields listed
@@ -127,7 +131,7 @@ check_of() {
   for try in 1 2; do
     url="$1"; total=0; r="000 0"
     for hop in 1 2 3 4 5 6; do
-      out="$(curl -sS -o /dev/null --proto '=http,https' --max-time 10 \
+      out="$(curl -sS -o /dev/null -A 'deploy-center-statuspage' --proto '=http,https' --max-time 10 \
         -w '%{http_code} %{time_total} %{redirect_url}' -- "$url" 2>/dev/null </dev/null)" || { r="000 $total"; break; }
       code="${out%% *}"; secs="${out#* }"; secs="${secs%% *}"
       total="$(awk -v a="$total" -v b="$secs" 'BEGIN { printf "%.3f", a + b }')"

@@ -94,7 +94,7 @@ health_main() {
   local days=30 project="" ci=1 jf now cij out
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
+      --days) case "${2:-}" in ''|*[!0-9]*|0|???????*) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
       --project) [ -n "${2:-}" ] || die "--project takes a project name"; project="$2"; shift ;;
       --no-ci) ci=0 ;;
       *) die "Unknown option $1. Usage: deploys health [--days 30] [--project <name>] [--no-ci] [--json]" ;;
@@ -154,7 +154,7 @@ weeks_main() {
   local days=7 project="" jf now out
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
+      --days) case "${2:-}" in ''|*[!0-9]*|0|???????*) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
       --project) [ -n "${2:-}" ] || die "--project takes a project name"; project="$2"; shift ;;
       *) die "Unknown option $1. Usage: deploys weeks [--days 7] [--project <name>] [--json]" ;;
     esac

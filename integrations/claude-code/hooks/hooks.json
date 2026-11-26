@@ -11,6 +11,16 @@
             "timeout": 30
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/before-config-edit.sh\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostToolUse": [
