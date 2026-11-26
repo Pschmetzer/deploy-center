@@ -4,7 +4,7 @@
 #   scripts/check-disables.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-max=90   # 82 at round 12 part B
+max=91   # 82 at round 12 part B; 91: the glob column of tests/suites-map.txt
 n="$(grep -rhE '#[[:space:]]*shellcheck[[:space:]]+disable=' deploys lib providers scripts release.sh build.sh tests integrations 2>/dev/null | grep -v 'check-disables' | wc -l | tr -d ' ')"
 if [ "$n" -gt "$max" ]; then echo "check-disables: $n 'shellcheck disable' lines (limit $max)" >&2; exit 1; fi
 echo "check-disables: ok ($n of $max)"

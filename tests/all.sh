@@ -41,12 +41,13 @@ if [ "$changed" = 1 ]; then
   fi
 fi
 suite_changed() {   # $1 suite path
-  local f p
+  local f
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     case "$f" in "$1"|tests/all.sh|tests/suites.txt|tests/suites-map.txt|tests/lib/*) return 0 ;; esac
     while read -r sp pat; do
       [ "$sp" = "$1" ] || continue
+      # shellcheck disable=SC2254 # the table's second column is a glob on purpose
       case "$f" in $pat) return 0 ;; esac
     done < tests/suites-map.txt
   done <<EOF2
