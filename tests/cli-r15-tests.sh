@@ -59,6 +59,8 @@ for t in 'ya29.abcdefghijklmnopqrstu' 'GOCSPX-abcdefghijklmnop' 'shpat_abcdefghi
 done
 expect "af_mask: curl -u user:pass" "$(m 'curl -u admin:hunter2hunter2 https://x.test')" "curl -u [masked] https://x.test"
 expect "af_mask: password with spaces" "$(m 'password: my secret pass phrase')" "password: [masked]"
+expect "af_mask: password with a comma, then a space" "$(m 'password: a,b c')" "password: [masked]"
+expect "af_mask: no space keeps what follows" "$(m 'password=x;next')" "password=[masked];next"
 expect "af_mask: client_secret with a space" "$(m 'client_secret=abc def')" "client_secret=[masked]"
 expect "af_mask: escaped quote in a quoted value" "$(m 'token="abc\"def ghi" ok')" "token=[masked] ok"
 expect "af_mask: slash in a database password" "$(m 'postgres://user:p/ss@db/app x')" "postgres://user:[masked]@db/app x"

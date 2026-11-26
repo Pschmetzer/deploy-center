@@ -1572,7 +1572,7 @@ af_mask() {
     s/\b[0-9]{8,10}:[A-Za-z0-9_-]{35}\b/[masked]/g;
     s/\b(hf_[A-Za-z0-9]{20,}|[0-9]{1,6}\|[A-Za-z0-9]{40})\b/[masked]/g;
     # A password or secret with spaces in it ("password: my secret phrase"): the rest of the line, unless it is quoted.
-    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:passphrase|password|secret))["\x27]?\s*[:=]\s*)(?![\s"\x27]|\[masked\])(?!(?i:bearer|basic|token|bot)\s)(?=[^\s,;]+[ \t]+[^\s])[^\r\n]+/${1}\[masked]/g;
+    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:passphrase|password|secret))["\x27]?\s*[:=]\s*)(?![\s"\x27]|\[masked\])(?!(?i:bearer|basic|token|bot)\s)(?=\S*[ \t]+\S)[^\r\n]+/${1}\[masked]/g;
     # NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret
     # (VERCEL_TOKEN, SECRET_KEY, aws_secret_access_key, DB_PASSWORD, x-api-key, Ocp-Apim-Subscription-Key,
     # AccountKey=, ...).
