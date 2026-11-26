@@ -544,5 +544,17 @@ do {
           "refresh: no out-of-date entry when it is already past or there is no snapshot")
 }
 
+// Auto-deploy off on Render: the same two values as `deploys render off|on` (ideas E69)
+check(Render.autoDeployBody(on: false) as NSDictionary == ["autoDeployTrigger": "off"] as NSDictionary, "render: auto-deploy off sends autoDeployTrigger off")
+check(Render.autoDeployBody(on: true) as NSDictionary == ["autoDeployTrigger": "commit"] as NSDictionary, "render: auto-deploy on sends autoDeployTrigger commit")
+Stub.reset()
+Stub.routes["/services/srv-1"] = (200, [:], #"{"id":"srv-1","autoDeployTrigger":"off"}"#)
+do {
+    let r = Render(key: "k", session: Stub.session)
+    try await r.setAutoDeploy(PhoneProject(provider: .render, id: "srv-1", name: "atlas"), on: false)
+    let req = Stub.seen.last
+    check(req?.httpMethod == "PATCH" && req?.url?.path == "/services/srv-1", "render: setAutoDeploy PATCHes the service")
+} catch { check(false, "render: setAutoDeploy failed: \(error)") }
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)

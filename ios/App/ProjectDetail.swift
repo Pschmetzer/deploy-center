@@ -11,6 +11,7 @@ struct ProjectDetail: View {
     let project: PhoneProject
     @State private var confirmCancel = false
     @State private var renderAction: RenderAction?
+    @State private var confirmAuto = false
 
     var body: some View {
         let p = project
@@ -45,6 +46,10 @@ struct ProjectDetail: View {
                 if let e = p.fetchError { Text(e).font(.footnote).foregroundStyle(.red) }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
+                    if p.autoDeploy && p.provider == .vercel {
+                        Text(L("To turn it off for Vercel use the Mac app or `deploys vercel off`: it disconnects Git and remembers the repository.",
+                               "Bei Vercel schaltest du es in der Mac-App oder mit `deploys vercel off` ab: Das trennt Git und merkt sich das Repository."))
+                    }
                     if p.autoDeploy {
                         Text(L("Every push to \(p.branch ?? "the branch") builds and goes live, and each build can cost build minutes.",
                                "Jeder Push auf \(p.branch ?? "den Branch") baut und geht live, und jeder Build kann Build-Minuten kosten."))
@@ -116,6 +121,11 @@ struct ProjectDetail: View {
                         Button(role: a == .suspend ? .destructive : nil) { renderAction = a } label: { Label(a.title, systemImage: a.icon) }
                             .disabled(busy || p.building)
                     }
+                    Button { confirmAuto = true } label: {
+                        Label(p.autoDeploy ? L("Turn off auto-deploy …", "Auto-Deploy abschalten …") : L("Turn on auto-deploy …", "Auto-Deploy einschalten …"),
+                              systemImage: p.autoDeploy ? "bolt.slash" : "bolt")
+                    }
+                    .disabled(busy || p.paused)
                 }
             } footer: {
                 let how = store.unlockName
@@ -142,6 +152,15 @@ struct ProjectDetail: View {
             Text(renderAction == .suspend ? L("The service stops answering until it is resumed.", "Der Dienst antwortet nicht mehr, bis er fortgesetzt wird.")
                  : renderAction == .restart ? L("The live deploy starts again; nothing is built.", "Der Live-Deploy startet neu; gebaut wird nichts.")
                  : L("The service starts again with its last deploy.", "Der Dienst startet wieder mit seinem letzten Deploy."))
+        }
+        .confirmationDialog(p.autoDeploy ? L("Turn off auto-deploy of \(p.name)?", "Auto-Deploy von \(p.name) abschalten?")
+                                         : L("Turn on auto-deploy of \(p.name)?", "Auto-Deploy von \(p.name) einschalten?"),
+                            isPresented: $confirmAuto, titleVisibility: .visible) {
+            Button(p.autoDeploy ? L("Turn off", "Abschalten") : L("Turn on", "Einschalten")) { Task { await store.setAutoDeploy(p, on: !p.autoDeploy) } }
+            Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+        } message: {
+            Text(p.autoDeploy ? L("Pushes no longer build; you deploy by hand. This is the setting that saves build minutes.", "Pushes bauen nicht mehr; du deployst von Hand. Diese Einstellung spart Build-Minuten.")
+                 : L("Every push builds and goes live again (On Commit).", "Jeder Push baut wieder und geht live (On Commit)."))
         }
         .confirmationDialog(L("Cancel the build of \(p.name)?", "Build von \(p.name) abbrechen?"), isPresented: $confirmCancel, titleVisibility: .visible) {
             Button(L("Cancel the build", "Build abbrechen"), role: .destructive) { Task { await store.cancelBuild(p) } }
