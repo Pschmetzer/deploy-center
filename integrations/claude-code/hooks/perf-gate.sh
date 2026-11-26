@@ -9,16 +9,27 @@ input="$(cat 2>/dev/null)" || exit 0
 [ "${DEPLOYS_PERF_GATE:-1}" = 0 ] && exit 0
 cmd="$(printf '%s' "$input" | jq -r '.tool_input.command // empty' 2>/dev/null)" || exit 0
 [ -n "$cmd" ] || exit 0
-case "$cmd" in *"perf gate"*|*"perf wait"*) exit 0 ;; esac
-
-# Heavy only as a command of its own: at the start, or after && || ; | ( or a newline, past VAR=value and cd … &&.
-# `grep tsc file` or `echo vitest` is not heavy.
-heavy='(^|[;&|(])[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*(time[[:space:]]+)?'
-heavy="$heavy"'((npx|pnpm[[:space:]]+exec|pnpm[[:space:]]+dlx|bunx|yarn)[[:space:]]+)?'
-heavy="$heavy"'(tsc|vitest|jest|eslint|playwright|next[[:space:]]+build|xcodebuild|swift[[:space:]]+build|swift[[:space:]]+test|docker[[:space:]]+(build|compose[[:space:]]+build)|\./build\.sh'
-heavy="$heavy"'|(npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+)?(verify|test|build|typecheck|type-check|lint|e2e)([[:space:]:]|$)|npm[[:space:]]+t([[:space:]]|$))'
 nl=$'\n'
 one="${cmd//$nl/;}"
+# Only a command that is itself `deploys perf gate|wait` is left alone ("git commit -m 'perf wait'; npm test" is not).
+printf '%s' "$one" | grep -Eq '^[[:space:]]*(env[[:space:]]+([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*)?([^[:space:];&|]*/)?deploys[[:space:]]+perf[[:space:]]+(gate|wait)([[:space:]]|$)' \
+  && ! printf '%s' "$one" | grep -Eq '[;&|]' && exit 0
+
+# Heavy only as a command of its own: at the start, or after && || ; | ( or a newline, past VAR=value, wrappers
+# (env, time, nohup, sudo, caffeinate, xargs, npx -y, bash -c) and cd … &&. `grep tsc file` or `echo vitest` is not heavy.
+wrap='((env|time|nohup|sudo|caffeinate|nice|xargs|exec|command|setsid|stdbuf|timeout)([[:space:]]+(-[A-Za-z-]+|[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*|[0-9]+[smh]?))*[[:space:]]+)*'
+heavy='(^|[;&|(]|bash[[:space:]]+-[a-z]*c[[:space:]]+["'"'"']?|sh[[:space:]]+-[a-z]*c[[:space:]]+["'"'"']?)[[:space:]]*([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'"$wrap"
+heavy="$heavy"'((npx([[:space:]]+(-y|--yes|--no-install))?|pnpm[[:space:]]+exec|pnpm[[:space:]]+dlx|bunx|yarn)[[:space:]]+|(\./)?node_modules/\.bin/)?'
+heavy="$heavy"'(tsc|vitest|jest|eslint|playwright|vite[[:space:]]+build|turbo[[:space:]]+(run[[:space:]]+)?(build|test|lint)|next[[:space:]]+build|xcodebuild|swift[[:space:]]+build|swift[[:space:]]+test|docker[[:space:]]+(build|compose[[:space:]]+build|compose[[:space:]]+up[[:space:]]+.*--build)|\./build\.sh'
+heavy="$heavy"'|cargo[[:space:]]+(build|test|check|clippy)|go[[:space:]]+(build|test|vet)|pytest|make([[:space:]]|$)|\./gradlew|gradle[[:space:]]+(build|test)|mvn[[:space:]]+(package|test|install|verify)|npm[[:space:]]+ci([[:space:]]|$)|(pnpm|yarn|bun)[[:space:]]+install([[:space:]]|$)'
+heavy="$heavy"'|(npm|pnpm|yarn|bun)[[:space:]]+(run[[:space:]]+(-r[[:space:]]+)?)?(verify|test|build|typecheck|type-check|lint|e2e)([[:space:]:"'"'"']|$)|npm[[:space:]]+t([[:space:]]|$)'
+# More of your own: DEPLOYS_PERF_HEAVY_EXTRA (an ERE, e.g. "terraform[[:space:]]+apply|bazel") and one ERE per line in ~/.config/deploys/heavy.txt.
+extra="${DEPLOYS_PERF_HEAVY_EXTRA:-}"
+hf="${DEPLOYS_CONFIG:-$HOME/.config/deploys}/heavy.txt"
+if [ -r "$hf" ]; then extra="$extra|$(grep -Ev '^[[:space:]]*(#|$)' "$hf" 2>/dev/null | paste -sd'|' -)"; fi
+extra="${extra#|}"; extra="${extra%|}"
+[ -z "$extra" ] || heavy="$heavy|$extra"
+heavy="$heavy)"
 printf '%s' "$one" | grep -Eq "$heavy" || exit 0
 
 # lib/perf.sh: DEPLOYS_PERF_LIB, else next to the deploys on PATH (symlinks followed), else the app's copy.
