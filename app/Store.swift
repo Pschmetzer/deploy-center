@@ -628,7 +628,7 @@ final class Store: ObservableObject {
         guard !booted else { return }
         booted = true
         if UserDefaults.standard.bool(forKey: "hideDock") { NSApp.setActivationPolicy(.accessory) }
-        LogoCache.sweep()
+        Task.detached(priority: .utility) { LogoCache.sweep() }
         if !UserDefaults.standard.bool(forKey: "migratedCacheV2") {
             for p in Platform.allCases { try? FileManager.default.removeItem(at: Self.cacheDir.appendingPathComponent("\(p.cli)-v1.json")) }
             UserDefaults.standard.set(true, forKey: "migratedCacheV2")
