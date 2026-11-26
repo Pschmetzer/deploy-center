@@ -61,6 +61,20 @@ One event "Deploys closed" per closed period of the "deny" rules of `window.json
 is its text). Times are the window's own local times, with its `tz` as the calendar's time zone when it has one.
 [`deploys freeze import`](SAFE-DEPLOY.md) reads a calendar file the other way. Only the freezes are written, not the scheduled jobs.
 
+## backup and restore: move your settings
+
+```bash
+deploys backup --out settings.json     # the settings files of the config folder in one file (mode 600)
+deploys restore settings.json          # shows new / changed / same per file; writes nothing
+deploys restore settings.json --yes    # writes; the files it replaces are kept in restore-backup-<time>/ first
+```
+
+In: window, rules, budget, prices, ignored, groups, guard, providers, clean, nightly, prepare, autofix limits, slo, checklists
+and sessions (`.json`). Never in: the journal, caches, keys (keychain or environment), auto-deploy allowances (they end on
+purpose, so restoring one would switch a safeguard off) and schedules (they belong to one machine). A file that is not valid
+JSON, or looks like it holds a secret, is left out and named. `restore` refuses any file name that is not on that list, and `--yes`
+is refused in observer mode.
+
 ## Adding one
 
 Put `lib/x-<name>.sh` next to `deploys`. It defines `x_<name>_main` (dashes in the name become underscores) and says what it

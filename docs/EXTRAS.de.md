@@ -61,6 +61,20 @@ Ein Termin „Deploys closed" je gesperrter Zeit der „deny"-Regeln von `window
 steht im Text). Die Zeiten sind die lokalen Zeiten des Fensters, mit seiner `tz` als Zeitzone des Kalenders, wenn es eine hat.
 [`deploys freeze import`](SAFE-DEPLOY.md) liest eine Kalenderdatei in die andere Richtung. Geschrieben werden nur die Sperren, nicht die geplanten Läufe.
 
+## backup und restore: Einstellungen mitnehmen
+
+```bash
+deploys backup --out settings.json     # die Einstellungsdateien des Konfigurationsordners in einer Datei (Modus 600)
+deploys restore settings.json          # zeigt je Datei neu / geändert / gleich; schreibt nichts
+deploys restore settings.json --yes    # schreibt; ersetzte Dateien liegen vorher in restore-backup-<Zeit>/
+```
+
+Enthalten: window, rules, budget, prices, ignored, groups, guard, providers, clean, nightly, prepare, Autofix-Grenzen, slo,
+checklists und sessions (`.json`). Nie enthalten: das Journal, Caches, Schlüssel (Schlüsselbund oder Umgebung), Auto-Deploy-Freigaben
+(sie enden mit Absicht, ein Zurückspielen schaltete eine Sicherung ab) und Zeitpläne (sie gehören zu einem Rechner). Eine Datei, die kein gültiges JSON ist
+oder nach einem Geheimnis aussieht, bleibt draußen und wird genannt. `restore` lehnt jeden Dateinamen ab, der nicht auf der Liste steht,
+und `--yes` ist im Beobachtermodus verweigert.
+
 ## Einen neuen hinzufügen
 
 `lib/x-<name>.sh` neben `deploys` legen. Die Datei definiert `x_<name>_main` (Bindestriche im Namen werden zu Unterstrichen)

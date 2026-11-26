@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New: `deploys backup [--out file]` puts the settings files of the config folder (window, rules, budget, prices, ignored, groups, guard, providers, clean, nightly, prepare, autofix limits, slo, checklists) in one file, never the journal, keys or auto-deploy allowances, and names a file it leaves out; `deploys restore <file>` shows what would change and writes only with `--yes` (not in observer mode), keeping the old files in `restore-backup-<time>/` ([docs/EXTRAS.md](docs/EXTRAS.md)).
 - New: `deploys calendar [--days 30] [--out file]` writes the closed times of the deploy window (`window.json`) as an `.ics` calendar for the next days, one event per closed period, so a team sees its freezes next to its other plans; `deploys freeze import` reads such a file the other way ([docs/EXTRAS.md](docs/EXTRAS.md)).
 - New: `deploys besttime` names the weekday and hour (UTC) when your deploys went best and when they failed most, and the next good slot (`--next`); `deploys slo set 95` sets a goal for how many deploys work and `deploys slo` checks every project against the journal, exit 1 below it (for cron and CI; `slo set` is refused in observer mode) ([docs/EXTRAS.md](docs/EXTRAS.md)).
 - New: `deploys handover` (what is still failing, the notes of the last hours, the counts, and whether the deploy window is closed now) and `deploys flaky` (projects whose builds fail and pass again within minutes, a hint that a retry helped); both read the journal only ([docs/EXTRAS.md](docs/EXTRAS.md)).
