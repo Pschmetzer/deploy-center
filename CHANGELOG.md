@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Link `deploycenter://log?project=name` (or `platform:name`) opens that project's build log, read only like `select`; scripts and notes can point straight at a failure. The outage banner also watches GitLab's status page, but only while one of your projects lives on gitlab.com.
 - Quiet hours are read in one place (`QuietHours`), so notifications, reminders and the digest cannot disagree about them.
 - VS Code: an address from the CLI's output (the deploy, the preview, the dashboard) is opened in the browser only when it is `https://` (or `http://` to this machine): no `javascript:`, `file:` or custom scheme.
 - MCP: the server's instructions name every tool that returns untrusted data (listed from the code, so `deploys_preview` and `deploys_journal_search` are no longer missing); `deploys_journal_search` has an `offset` (read past the newest matches) and reads the journal columns by their header names; the server says its title ("Deploy Center").

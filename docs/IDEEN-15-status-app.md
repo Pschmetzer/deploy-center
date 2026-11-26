@@ -1,3 +1,4 @@
+| 110 (log), 125 | erledigt | Features 1 (`check`-Link bewusst nicht: er würde Netzwerkzugriffe auslösen) |
 | 150 | erledigt | Code 1 (`QuietHours`) |
 | 146 | offen | Refactor ohne Compiler zu riskant; später mit CI-Rückmeldung |
 | 23, 39, 51, 142 (Teil) | erledigt | Fehler 2 |

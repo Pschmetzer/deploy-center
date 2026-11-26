@@ -287,11 +287,11 @@ final class Store: ObservableObject {
     /// The status pages the banner links to: one per platform that is on, then GitHub.
     var statusLinks: [(label: String, url: URL)] {
         enabledProviders.compactMap { p in p.statusURL.map { (p.label, $0) } }
-            + ProviderInfo.gitHosts.compactMap { g in URL(string: g.page).map { (g.label, $0) } }
+            + ProviderInfo.watchedGitHosts(repos: allItems.map(\.repo)).compactMap { g in URL(string: g.page).map { (g.label, $0) } }
     }
     func checkProviders() async {
         let feeds = enabledProviders.compactMap { p in p.statusFeed.map { (p.label, $0.absoluteString) } }
-            + ProviderInfo.gitHosts.map { ($0.label, $0.feed) }
+            + ProviderInfo.watchedGitHosts(repos: allItems.map(\.repo)).map { ($0.label, $0.feed) }
         // (index, the issue text, or nil when fine; `failed`: the page itself could not be read)
         let found = await withTaskGroup(of: (Int, String?, Bool).self) { group -> [(Int, String?, Bool)] in
             for (k, feed) in feeds.enumerated() {
