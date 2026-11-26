@@ -30,4 +30,12 @@ enum DeployRule {
         if let h = headAt, let l = liveAt { return h > l }
         return false
     }
+
+    /// A project that has commits but no production deploy yet (no live commit, time or state). `changed` is false for it
+    /// (there is nothing to compare with), yet it is not "up to date": its first deploy is waiting.
+    static func neverDeployed(deployable: Bool, paused: Bool, building: Bool, readError: Bool,
+                              liveSha: String?, liveAt: Date?, liveState: String?, headSha: String?, headAt: Date?) -> Bool {
+        deployable && !paused && !building && !readError && liveSha == nil && liveAt == nil && liveState == nil
+            && (headSha != nil || headAt != nil)
+    }
 }

@@ -253,7 +253,10 @@ final class PhoneStore: ObservableObject {
     /// Returns once a load that started after the call has finished (also when one was already running).
     /// False when it was cut off (the background refresh ran out of time): then nothing was replaced.
     @discardableResult
-    func reload() async -> Bool {
+    func reload(inBackground: Bool = false) async -> Bool {
+        // A person waiting for the list (not the background run) wants the foreground timeouts, also when a background
+        // run started the load; a background run that joins a foreground load gets its own, shorter pass afterwards.
+        if !inBackground { wantsForeground = true }
         if loading {
             reloadAgain = true
             while loading && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(200)) }
@@ -262,12 +265,15 @@ final class PhoneStore: ObservableObject {
         loading = true
         repeat {
             reloadAgain = false
-            lastLoadComplete = await load()
+            let background = !wantsForeground
+            wantsForeground = false
+            lastLoadComplete = await HTTP.$inBackground.withValue(background) { await load() }
         } while reloadAgain && !Task.isCancelled
         loading = false
         return lastLoadComplete
     }
     private var lastLoadComplete = false
+    private var wantsForeground = false
 
     /// Pull to refresh: offline there is nothing to read, and the spinner must not just vanish.
     func refreshByHand() async {
@@ -427,7 +433,7 @@ final class PhoneStore: ObservableObject {
                 let da = a.oldestPendingAt ?? .distantFuture, db = b.oldestPendingAt ?? .distantFuture
                 if da != db { return da < db }
             }
-            return a.name.lowercased() < b.name.lowercased()
+            return PhoneProject.nameOrder(a, b)
         }
     }
 
@@ -525,13 +531,14 @@ final class PhoneStore: ObservableObject {
             }
             say(L("Deploy of \(p.name) started.", "Deploy von \(p.name) gestartet."))
             await follow(p, id)
-        } catch let e as URLError where e.code != .cancelled {
-            // The request may have arrived although its answer did not: look before calling it failed.
+        } catch let e where deployMayHaveStarted(e) {
+            // The request may have arrived although its answer did not (a lost connection, a 502 or 504 from a gateway):
+            // look before calling it failed, so a second tap does not start a second build.
             if let id = try? await recentDeploy(p, since: started) {
                 say(L("The answer got lost, but a deploy of \(p.name) runs. Following it.",
                       "Die Antwort ging verloren, aber ein Deploy von \(p.name) läuft. Er wird verfolgt."))
                 await follow(p, id)
-            } else { say(explain(e), error: true) }
+            } else { say(describe(e, p.provider), error: true) }
         } catch { say(describe(error, p.provider), error: true) }
     }
 
@@ -558,7 +565,7 @@ final class PhoneStore: ObservableObject {
             // A project that is gone: its run and its activity end. A run another window already follows keeps its record.
             guard let p = projects.first(where: { $0.key == run.key }) else { FollowedRuns.remove(run.key); LiveDeploy.end(key: run.key); continue }
             guard running[p.key] == nil else { continue }
-            Task { defer { running[p.key] = nil; deployIds[p.key] = nil }; await follow(p, run.id) }
+            Task { defer { running[p.key] = nil; deployIds[p.key] = nil }; await follow(p, run.id, since: run.started) }
         }
     }
 
@@ -640,6 +647,23 @@ final class PhoneStore: ObservableObject {
         } catch { say(describe(error, p.provider), error: true) }
     }
 
+    /// Render: auto-deploy off ("every push builds" is what costs build minutes) or back on, after Face ID.
+    /// Vercel is not offered here: switching it off there disconnects Git, which the Mac app does and remembers the repo for.
+    func setAutoDeploy(_ p: PhoneProject, on: Bool) async {
+        guard p.provider == .render, running[p.key] == nil else { return }
+        running[p.key] = "starting"; defer { running[p.key] = nil }
+        let word = on ? L("on", "an") : L("off", "aus")
+        if demo { say(L("\(p.name): auto-deploy \(word) (demo).", "\(p.name): Auto-Deploy \(word) (Demo).")); return }
+        guard requireOnline() else { return }
+        guard await authenticate(on ? L("Turn on auto-deploy: \(p.name)", "Auto-Deploy einschalten: \(p.name)")
+                                    : L("Turn off auto-deploy: \(p.name)", "Auto-Deploy abschalten: \(p.name)")) else { return }
+        do {
+            try await Render(key: token(.render) ?? "").setAutoDeploy(p, on: on)
+            say(L("\(p.name): auto-deploy \(word).", "\(p.name): Auto-Deploy \(word)."))
+            await reload()
+        } catch { say(describe(error, p.provider), error: true) }
+    }
+
     // MARK: History and build logs (read only)
 
     /// `quiet`: a failure is not shown as a toast (the caller only wants the numbers, e.g. the typical build time).
@@ -706,23 +730,24 @@ final class PhoneStore: ObservableObject {
     /// Polls (every 6 s, later 15 s and 30 s, see PollEvery) until the deploy ends, at most 20 minutes. When the app goes to the
     /// background meanwhile, iOS gives it some more time (and on iOS 26 a progress in the system),
     /// and the end comes as a notification.
-    private func follow(_ p: PhoneProject, _ id: String, rollback: Bool = false, limit: TimeInterval = 20 * 60,
+    private func follow(_ p: PhoneProject, _ id: String, since: Date? = nil, rollback: Bool = false, limit: TimeInterval = 20 * 60,
                         check: (() async throws -> String)? = nil) async {
         deployIds[p.key] = rollback ? nil : id
         running[p.key] = rollback ? "rollback" : "queued"
         // Kept while this loop runs: an app that is killed meanwhile follows the deploy again at its next launch.
-        if !rollback { FollowedRuns.add(key: p.key, id: id) }
+        if !rollback { FollowedRuns.add(key: p.key, id: id, now: since ?? Date()) }
         // Cleared when this follow ends, however it ends: a cancel mark that was never used (the deploy finished first)
         // must not make a later canceled build of this project look like the person's own cancel.
         defer { FollowedRuns.remove(p.key); userCanceled.remove(p.key) }
         let keep = KeepAlive.start(title: rollback ? L("Rolling back \(p.name)", "\(p.name) wird zurückgerollt") : L("Deploying \(p.name)", "\(p.name) wird deployt"),
                                    subtitle: p.provider.rawValue)
         let live = LiveDeploy.start(p, rollback: rollback)
-        let start = Date(), end = start.addingTimeInterval(limit)
+        // After a restart the clock goes on where it was: progress and the 20 minutes do not begin again.
+        let start = min(since ?? Date(), Date()), end = start.addingTimeInterval(limit)
         // The usual build time of this project, from its history: the progress bar is not a guess of five minutes.
         let typical = BuildTime.typical(await history(p, quiet: true) ?? [])
         var outcome: String?, ok = false, failed = false, replaced = false, lastError: String?
-        var canceledByUser = false
+        var canceledByUser = false, canceledByOthers = false
         // The person may never have been asked: the end of this deploy is reported to them in the background.
         // The system question comes after our own sentence (an alert in the window), not in the middle of the deploy.
         if await Notes.needsAsk, !UserDefaults.standard.bool(forKey: "notesAskDeclined") { askNotes = true }
@@ -730,12 +755,21 @@ final class PhoneStore: ObservableObject {
             try? await Task.sleep(for: .seconds(PollEvery.seconds(elapsed: Date().timeIntervalSince(start))))
             let s: String
             do { s = try await (check ?? { try await self.status(p, id) })().lowercased() }
-            catch let e as APIError where e.status == 401 || (e.status == 404 && Date().timeIntervalSince(start) > 15) {
-                // A refused key or a deploy that is gone will not get better in 20 minutes of polling.
-                // Right after the start a 404 can still be the provider catching up: the first 15 s do not count.
-                outcome = "\(p.name): " + describe(e, p.provider); break
+            catch {
+                switch PollFailure.decide(error, elapsed: Date().timeIntervalSince(start)) {
+                case .stop:
+                    // A refused key (401, 403) or a deploy that is gone will not get better in 20 minutes of polling.
+                    outcome = "\(p.name): " + describe(error, p.provider)
+                case .wait(let s):
+                    // Rate limited: keep quiet until the limit is free (at most to the end of this follow).
+                    lastError = explain(error)
+                    try? await Task.sleep(for: .seconds(min(s, max(0, end.timeIntervalSinceNow))))
+                    continue
+                case .retry:
+                    lastError = explain(error); continue
+                }
+                break
             }
-            catch { lastError = explain(error); continue }
             lastError = nil
             if !rollback { running[p.key] = s }
             keep.update(PhoneProject.stateWord(s), fraction: BuildTime.fraction(elapsed: Date().timeIntervalSince(start), typical: typical))
@@ -760,6 +794,11 @@ final class PhoneStore: ObservableObject {
                 userCanceled.remove(p.key)
                 outcome = L("Build of \(p.name) canceled.", "Build von \(p.name) abgebrochen."); canceledByUser = true; break
             }
+            // Canceled in the dashboard or by a colleague: neutral like `DeployRule.failed`, not a red failure.
+            if !rollback && ["cancelled", "canceled"].contains(s) {
+                outcome = L("Build of \(p.name) was canceled by someone else.", "Build von \(p.name) wurde von jemand anderem abgebrochen.")
+                canceledByOthers = true; break
+            }
             if PhoneProject.failedStates.contains(s) || ["deactivated", "cancelled", "canceled"].contains(s) {
                 outcome = "\(p.name): \(PhoneProject.stateWord(s))"; failed = true; break
             }
@@ -767,16 +806,16 @@ final class PhoneStore: ObservableObject {
         let text = outcome ?? L("\(p.name): no final state after \(Int(limit / 60)) minutes. Check it on \(p.provider.rawValue).",
                                 "\(p.name): nach \(Int(limit / 60)) Minuten kein Endstand. Prüfe es bei \(p.provider.rawValue).")
             + (lastError.map { " (\($0))" } ?? "")
-        say(text, error: !ok && !replaced && !canceledByUser)
-        keep.finish(success: ok || canceledByUser)
-        live.finish(ok ? .live : canceledByUser ? .unknown : failed ? .failed : .unknown,
-                    ok ? (rollback ? L("Rolled back", "Zurückgerollt") : L("Live", "Live")) : canceledByUser ? L("Canceled", "Abgebrochen")
+        say(text, error: !ok && !replaced && !canceledByUser && !canceledByOthers)
+        keep.finish(success: ok || canceledByUser || canceledByOthers)
+        live.finish(ok ? .live : canceledByUser || canceledByOthers ? .unknown : failed ? .failed : .unknown,
+                    ok ? (rollback ? L("Rolled back", "Zurückgerollt") : L("Live", "Live")) : canceledByUser || canceledByOthers ? L("Canceled", "Abgebrochen")
                        : failed ? text.replacingOccurrences(of: "\(p.name): ", with: "")
                        : L("No final state", "Kein Endstand"))
         // One note per project replaces the last good news; an end that is not good stays (it has its own id).
         // A cancel the person made themselves needs none.
         if UIApplication.shared.applicationState != .active && !canceledByUser {
-            await Notes.post(text, project: p.key, projectName: p.name, id: ok || replaced ? nil : "deploy-\(p.key)-\(Int(Date().timeIntervalSince1970))")
+            await Notes.post(text, project: p.key, projectName: p.name, id: ok || replaced || canceledByOthers ? nil : "deploy-\(p.key)-\(Int(Date().timeIntervalSince1970))")
         }
         await reload()
     }

@@ -18,12 +18,14 @@ struct WaitingIntent: AppIntent {
     /// Project names and failures are not for a locked phone.
     static let authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
 
-    /// The dialog for Siri, and the number of waiting PRs as a value a Shortcut can use (-1: nothing read yet).
+    /// The dialog for Siri, and the number of waiting PRs as a value a Shortcut can use. Nothing read yet is an error,
+    /// not a value: "-1" would make "is not 0" true in an automation.
     func perform() async throws -> some IntentResult & ProvidesDialog & ReturnsValue<Int> {
-        let (text, prs) = await MainActor.run { () -> (String, Int) in
-            guard let l = Spoken.last() else { return (L("Nothing read yet: open Deploy Center once.", "Noch nichts gelesen: öffne Deploy Center einmal."), -1) }
+        let (text, prs) = await MainActor.run { () -> (String, Int?) in
+            guard let l = Spoken.last() else { return (L("Nothing read yet: open Deploy Center once.", "Noch nichts gelesen: öffne Deploy Center einmal."), nil) }
             return (Spoken.waiting(l.projects, at: l.at, hideNames: PhoneStore.lockOnOpen), l.projects.waitingPRCount)
         }
+        guard let prs else { throw IntentRejected(text: text) }
         return .result(value: prs, dialog: IntentDialog(stringLiteral: text))
     }
 }
@@ -106,6 +108,12 @@ struct DeployCenterShortcuts: AppShortcutsProvider {
                     shortTitle: "What waits", systemImageName: "clock")
         AppShortcut(intent: FailuresIntent(), phrases: ["Failed deploys in \(.applicationName)", "What failed in \(.applicationName)"],
                     shortTitle: "Failed deploys", systemImageName: "exclamationmark.triangle")
+        // With a project: "Open Atlas in Deploy Center" (also in Spotlight and the Shortcuts gallery). Nothing starts by itself.
+        AppShortcut(intent: OpenProjectIntent(), phrases: ["Open \(\.$target) in \(.applicationName)", "Show \(\.$target) in \(.applicationName)"],
+                    shortTitle: "Open a project", systemImageName: "folder")
+        // Only opens the confirmation: the deploy itself still needs a tap and Face ID.
+        AppShortcut(intent: PrepareDeployIntent(), phrases: ["Prepare a deploy of \(\.$project) in \(.applicationName)", "Deploy \(\.$project) with \(.applicationName)"],
+                    shortTitle: "Prepare a deploy", systemImageName: "paperplane")
     }
 }
 

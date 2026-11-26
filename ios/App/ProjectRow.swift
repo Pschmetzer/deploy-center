@@ -62,6 +62,7 @@ extension PhoneProject {
             guard let n = pendingCommits else { return prs + L("waiting, count unknown", "wartet, Anzahl unbekannt") }
             return prs + (n == 1 ? L("1 commit waiting", "1 Commit wartet") : L("\(n) commits waiting", "\(n) Commits warten"))
         }
+        if neverDeployed { return L("never deployed", "noch nie deployt") }
         if paused { return L("paused", "pausiert") }
         if rewritten { return L("history rewritten", "Verlauf neu geschrieben") }
         if let h = otherHost { return L("on \(h): not checked", "auf \(h): nicht geprüft") }

@@ -35,6 +35,29 @@ struct APIError: LocalizedError {
     var isAuth: Bool { !rateLimited && (status == 401 || status == 403) }
 }
 
+/// A POST that failed without a clear "no": the request may have arrived and started a build anyway.
+/// A lost connection, a timeout and a 5xx from the service or a gateway (502, 504) all qualify.
+func deployMayHaveStarted(_ error: Error) -> Bool {
+    if let u = error as? URLError { return u.code != .cancelled }
+    if let e = error as? APIError { return e.status >= 500 && !e.rateLimited }
+    return false
+}
+
+/// What `follow` does with a failed poll.
+enum PollFailure: Equatable {
+    case stop                 // a refused key or a deploy that is gone: polling will not help
+    case wait(TimeInterval)   // rate limited until then
+    case retry                // a transient error: the next poll tries again
+    /// A 404 right after the start can still be the provider catching up: the first 15 s do not count.
+    static func decide(_ error: Error, elapsed: TimeInterval, now: Date = Date()) -> PollFailure {
+        guard let e = error as? APIError else { return .retry }
+        if e.rateLimited { return .wait(max(1, e.retryAt.map { $0.timeIntervalSince(now) } ?? 0)) }
+        if e.isAuth || e.status == 401 { return .stop }
+        if e.status == 404 && elapsed > 15 { return .stop }
+        return .retry
+    }
+}
+
 /// A network error in words; everything else as it describes itself.
 func explain(_ error: Error) -> String {
     if let u = error as? URLError {
@@ -377,7 +400,7 @@ struct Vercel {
         // The newest production attempt per project shows a build the project's target does not show yet.
         var deps: [JSON] = []
         do { deps = ((try await http.get(t("/v6/deployments?limit=100&target=production")) as? JSON)?["deployments"] as? [JSON]) ?? [] }
-        catch { notes.append(L("Running builds unknown: \(error.localizedDescription)", "Laufende Builds unbekannt: \(error.localizedDescription)")) }
+        catch { notes.append(L("Running builds unknown: \(explain(error))", "Laufende Builds unbekannt: \(explain(error))")) }
         var latest: [String: JSON] = [:]
         for d in deps {
             guard let n = d.str("name") else { continue }
@@ -667,6 +690,11 @@ struct Render {
             end = next
         }
         return lines
+    }
+    /// Render's "Auto-Deploy": "off", or "commit" (On Commit) again. The same two values `deploys render off|on` sets.
+    static func autoDeployBody(on: Bool) -> JSON { ["autoDeployTrigger": on ? "commit" : "off"] }
+    func setAutoDeploy(_ p: PhoneProject, on: Bool) async throws {
+        _ = try await http.request("PATCH", "/services/\(p.id)", body: Self.autoDeployBody(on: on))
     }
     /// Pause, resume or restart a service (Render's suspend, resume, restart).
     func service(_ p: PhoneProject, _ action: RenderAction) async throws {

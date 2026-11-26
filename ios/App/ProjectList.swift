@@ -64,7 +64,7 @@ struct ProjectList: View {
                         Text(L("Offline", "Offline"))
                     }
                     // By position: two notes with the same wording are two rows, not one id twice.
-                    ForEach(Array(store.errors.enumerated()), id: \.offset) { Text($0.element).foregroundStyle(.red) }
+                    ForEach(Array(store.errors.enumerated()), id: \.offset) { Text($0.element).foregroundStyle(Color.errorText) }
                     if !store.stale.isEmpty {
                         Text(L("Shown as last read: ", "Angezeigt wie zuletzt gelesen: ") + store.stale.map(\.rawValue).sorted().joined(separator: ", "))
                     }

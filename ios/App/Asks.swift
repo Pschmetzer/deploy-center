@@ -93,7 +93,7 @@ struct DeployQuestions: ViewModifier {
                 Button(L("Deploy all", "Alle deployen")) { Task { await store.deployMany(all) } }
                 Button(L("Cancel", "Abbrechen"), role: .cancel) {}
             } message: { all in
-                Text(all.map(\.name).joined(separator: ", ") + L(". Each build can cost build minutes. One \(store.unlockName) question for all.",
+                Text(PhoneProject.nameList(all.map(\.name)) + L(". Each build can cost build minutes. One \(store.unlockName) question for all.",
                                                                   ". Jeder Build kann Build-Minuten kosten. Eine \(store.unlockName)-Frage für alle."))
             }
             .confirmationDialog(L("Roll back \(asks.rollback?.project.name ?? "")?", "\(asks.rollback?.project.name ?? "") zurückrollen?"),

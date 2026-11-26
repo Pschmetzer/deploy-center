@@ -544,5 +544,116 @@ do {
           "refresh: no out-of-date entry when it is already past or there is no snapshot")
 }
 
+// Followed runs keep their start across a restart (ideas E1)
+UserDefaults.standard.removeObject(forKey: FollowedRuns.defaultsKey)
+FollowedRuns.add(key: "Vercel/r", id: "d1", now: sNow)
+FollowedRuns.add(key: "Vercel/r", id: "d1", now: sNow.addingTimeInterval(600))
+check(FollowedRuns.fresh(now: sNow.addingTimeInterval(601)).first?.started == sNow, "followed runs: the same deploy keeps its first start")
+FollowedRuns.add(key: "Vercel/r", id: "d2", now: sNow.addingTimeInterval(700))
+check(FollowedRuns.fresh(now: sNow.addingTimeInterval(701)).first?.started == sNow.addingTimeInterval(700), "followed runs: a new deploy of the project starts afresh")
+FollowedRuns.remove("Vercel/r")
+
+// A deploy that may have started (ideas E2)
+check(deployMayHaveStarted(APIError(status: 502, message: "")), "deploy: a 502 may have started the build")
+check(deployMayHaveStarted(APIError(status: 504, message: "")), "deploy: a 504 may have started the build")
+check(deployMayHaveStarted(URLError(.timedOut)), "deploy: a timeout may have started the build")
+check(!deployMayHaveStarted(URLError(.cancelled)), "deploy: a cancel did not start one")
+check(!deployMayHaveStarted(APIError(status: 403, message: "")), "deploy: a 403 started nothing")
+check(!deployMayHaveStarted(APIError(status: 429, message: "", rateLimited: true)), "deploy: a rate limit started nothing")
+
+// What follow does with a failed poll (ideas E3)
+let pNow = Date(timeIntervalSince1970: 1_800_000_000)
+check(PollFailure.decide(APIError(status: 401, message: ""), elapsed: 60, now: pNow) == .stop, "poll: 401 stops")
+check(PollFailure.decide(APIError(status: 403, message: "no"), elapsed: 60, now: pNow) == .stop, "poll: 403 without a limit stops")
+check(PollFailure.decide(APIError(status: 404, message: ""), elapsed: 5, now: pNow) == .retry, "poll: an early 404 is retried")
+check(PollFailure.decide(APIError(status: 404, message: ""), elapsed: 60, now: pNow) == .stop, "poll: a later 404 stops")
+check(PollFailure.decide(APIError(status: 403, message: "", rateLimited: true, retryAt: pNow.addingTimeInterval(90)), elapsed: 60, now: pNow) == .wait(90),
+      "poll: a GitHub 403 limit waits until it is free")
+check(PollFailure.decide(APIError(status: 429, message: "", rateLimited: true), elapsed: 60, now: pNow) == .wait(1), "poll: a 429 without a time waits a moment")
+check(PollFailure.decide(APIError(status: 503, message: ""), elapsed: 60, now: pNow) == .retry, "poll: a 503 is retried")
+check(PollFailure.decide(URLError(.notConnectedToInternet), elapsed: 60, now: pNow) == .retry, "poll: offline is retried")
+
+// A project that was never deployed (ideas E6)
+func neverCase(_ f: (inout PhoneProject) -> Void) -> PhoneProject {
+    var p = PhoneProject(provider: .vercel, id: "p1", name: "atlas"); p.deployable = true; p.headSha = "abc1234"; p.headAt = sNow; f(&p); return p
+}
+check(neverCase { _ in }.neverDeployed && neverCase { _ in }.group == .waiting && !neverCase { _ in }.upToDate, "never deployed: commits but no production deploy is waiting")
+check(!neverCase { $0.liveSha = "abc1234"; $0.liveAt = sNow; $0.liveState = "READY" }.neverDeployed, "never deployed: not once something is live")
+check(!neverCase { $0.paused = true }.neverDeployed, "never deployed: not a paused project")
+check(!neverCase { $0.headSha = nil; $0.headAt = nil }.neverDeployed, "never deployed: nothing to deploy without a commit")
+check(!neverCase { $0.fetchError = "x" }.neverDeployed, "never deployed: not when the read failed")
+check(!neverCase { $0.liveState = "BUILDING" }.neverDeployed, "never deployed: not while it builds")
+// Background timeouts are short, foreground ones are not (ideas E17)
+check(HTTP.timeout == 30 && HTTP.longestWait == 8, "timeouts: the foreground waits longer")
+check(HTTP.$inBackground.withValue(true) { (HTTP.timeout, HTTP.longestWait) } == (10, 2), "timeouts: the background run waits less")
+// Text colors keep 4.5:1 on white (ideas E45, E94)
+for (name, c) in [("warning", Contrast.warning), ("error", Contrast.error), ("success", Contrast.success), ("active", Contrast.active)] {
+    check(Contrast.ratio(c, Contrast.white) >= 4.5, "contrast: \(name) text reaches 4.5:1 on white")
+}
+check(abs(Contrast.ratio(Contrast.RGB(r: 0, g: 0, b: 0), Contrast.white) - 21) < 0.01, "contrast: black on white is 21:1")
+check(Contrast.ratio(Contrast.RGB(r: 0.204, g: 0.78, b: 0.349), Contrast.white) < 4.5, "contrast: the system green is not enough (why the colors exist)")
+// The health card reads every project at every redraw: the cache decodes UserDefaults once (ideas E19, E88)
+HistoryCache.clear()
+for i in 0..<40 { HistoryCache.save([DeployRecord(id: "d\(i)", state: "READY", at: sNow, finishedAt: sNow.addingTimeInterval(60))], for: "H/\(i)") }
+let hcBefore = HistoryCache.decodeCount
+let hcProjects = (0..<40).map { PhoneProject(provider: .vercel, id: "\($0)", name: "n\($0)") }
+var hcAverage: (score: Int, projects: Int)?
+for _ in 0..<5 { hcAverage = PhoneHealth.average(hcProjects, history: { HistoryCache.load("H/" + String($0.dropFirst("Vercel/".count))) }, now: sNow) }
+check(HistoryCache.decodeCount == hcBefore, "history cache: no decode while the cache is warm")
+check(HistoryCache.load("H/39") != nil && HistoryCache.load("H/0") != nil, "history cache: the 40 projects are all there")
+_ = hcAverage
+HistoryCache.clear()
+// Auto-deploy off on Render: the same two values as `deploys render off|on` (ideas E69)
+check(Render.autoDeployBody(on: false) as NSDictionary == ["autoDeployTrigger": "off"] as NSDictionary, "render: auto-deploy off sends autoDeployTrigger off")
+check(Render.autoDeployBody(on: true) as NSDictionary == ["autoDeployTrigger": "commit"] as NSDictionary, "render: auto-deploy on sends autoDeployTrigger commit")
+Stub.reset()
+Stub.routes["/v1/services/srv-1"] = (200, [:], #"{"id":"srv-1","autoDeployTrigger":"off"}"#)
+do {
+    let r = Render(key: "k", session: Stub.session)
+    try await r.setAutoDeploy(PhoneProject(provider: .render, id: "srv-1", name: "atlas"), on: false)
+    let req = Stub.seen.last
+    check(req?.httpMethod == "PATCH" && req?.url?.path == "/v1/services/srv-1", "render: setAutoDeploy PATCHes the service")
+} catch { check(false, "render: setAutoDeploy failed: \(error)") }
+// Error texts (ideas E81)
+check(APIError(status: 403, message: "no scope").errorDescription?.contains("403") == true && APIError(status: 403, message: "no scope").errorDescription?.contains("no scope") == true, "error text: 403 names the status and the message")
+check(APIError(status: 404, message: "gone").errorDescription?.contains("404") == true, "error text: 404")
+check(APIError(status: 500, message: "").errorDescription?.contains("500") == true, "error text: 5xx")
+check(APIError(status: 429, message: "").errorDescription?.isEmpty == false, "error text: 429 without a message still says something")
+check(APIError(status: 403, message: "Try again after 14:05", rateLimited: true).errorDescription == "Try again after 14:05", "error text: a rate limit with its time shows the time")
+check(!APIError(status: 403, message: "", rateLimited: true).isAuth && APIError(status: 403, message: "").isAuth && APIError(status: 401, message: "").isAuth, "error text: only a 403 without a limit is a key problem")
+check(explain(URLError(.notConnectedToInternet)).contains("internet"), "explain: offline")
+check(explain(URLError(.timedOut)).contains("No answer"), "explain: timeout")
+check(explain(URLError(.cannotFindHost)).contains("cannot be reached"), "explain: host not found")
+check(explain(URLError(.secureConnectionFailed)).contains("secure connection"), "explain: TLS")
+check(explain(URLError(.cancelled)) == "Canceled.", "explain: canceled")
+check(explain(NSError(domain: NSCocoaErrorDomain, code: 3840)).contains("not JSON"), "explain: an HTML answer instead of JSON")
+
+// The rule for states (ideas E84)
+check(!DeployRule.failed(latest: "canceled", building: false), "rule: canceled is neutral")
+check(DeployRule.failed(latest: "build_failed", building: false) && DeployRule.failed(latest: "update_failed", building: false), "rule: Render failures count")
+check(!DeployRule.building(live: "deactivated", latest: "deactivated"), "rule: a replaced Render deploy is not building")
+check(DeployRule.building(live: nil, latest: "build_in_progress"), "rule: Render build_in_progress is building")
+
+// The snapshot file is read across versions (ideas E86)
+func fixture(_ name: String) -> URL { URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures/" + name) }
+let v1Snap = DeploySnapshot.read(fixture("snapshot-v1.json"))
+check(v1Snap?.waitingPRs == 2 && v1Snap?.projects.count == 2 && v1Snap?.projects.first?.id == "Vercel/atlas" && v1Snap?.saving?.month == 60, "snapshot: a file of the first app still decodes")
+check(v1Snap?.byPlatform == nil && v1Snap?.language == nil && v1Snap?.connected == nil, "snapshot: fields that came later are nil")
+let futureSnap = DeploySnapshot.read(fixture("snapshot-future.json"))
+check(futureSnap?.demo == true && futureSnap?.failed == 1 && futureSnap?.projects.first?.key == "Vercel/prj_1" && futureSnap?.language == "de", "snapshot: unknown fields are ignored, known ones kept")
+
+// The demo data stands on its own (ideas E87)
+let demoProjects = DemoData.projects()
+check(!demoProjects.isEmpty && Set(demoProjects.map(\.key)).count == demoProjects.count, "demo: projects exist and their keys are unique")
+check(demoProjects.contains { $0.group == .waiting } && demoProjects.contains { $0.group == .attention }, "demo: waiting and failing projects are shown")
+// Sorting, the name list and the team id (ideas E7, E13, E60)
+func named(_ n: String, _ id: String = "1") -> PhoneProject { PhoneProject(provider: .vercel, id: id, name: n) }
+check(PhoneProject.nameOrder(named("app2"), named("app10")), "sort: app2 comes before app10")
+check(PhoneProject.nameOrder(named("Ärger"), named("Zebra")) && PhoneProject.nameOrder(named("alpha"), named("Beta")), "sort: umlauts and case sort as a person expects")
+check(PhoneProject.nameOrder(named("web", "a"), named("web", "b")) && !PhoneProject.nameOrder(named("web", "b"), named("web", "a")), "sort: the same name is ordered by key")
+check(PhoneProject.nameList(["a", "b"]) == "a, b", "name list: a short list is shown whole")
+check(PhoneProject.nameList((1...40).map { "p\($0)" }) == "p1, p2, p3, p4, p5 and 35 more", "name list: 40 projects become five and a count")
+check(TokenShape.teamProblem("team_abc123") == nil && TokenShape.teamProblem("") == nil && TokenShape.teamProblem("my-team") != nil, "team id: a slug is refused, an id and nothing are fine")
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
