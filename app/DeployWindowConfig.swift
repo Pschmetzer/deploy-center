@@ -42,6 +42,17 @@ struct DeployWindowConfig: Equatable {
         guard p.count == 2, p[0].count == 2, p[1].count == 2, let h = Int(p[0]), let m = Int(p[1]) else { return false }
         return (0...23).contains(h) && (0...59).contains(m) || (h == 24 && m == 0)
     }
+    /// "2026-12-24": four digits, two, two, and a day that exists (not 2026-02-30).
+    static func validDate(_ s: String) -> Bool {
+        let p = s.split(separator: "-", omittingEmptySubsequences: false)
+        guard p.count == 3, p[0].count == 4, p[1].count == 2, p[2].count == 2,
+              let y = Int(p[0]), let m = Int(p[1]), let d = Int(p[2]) else { return false }
+        var c = DateComponents(); c.year = y; c.month = m; c.day = d
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        guard let date = cal.date(from: c) else { return false }
+        let back = cal.dateComponents([.year, .month, .day], from: date)
+        return back.year == y && back.month == m && back.day == d
+    }
     /// Why the rules cannot be saved, or nil.
     var problem: String? {
         for r in deny {
@@ -49,6 +60,9 @@ struct DeployWindowConfig: Equatable {
                 return L("\"\(t)\" is not a time like 15:00", "\"\(t)\" ist keine Uhrzeit wie 15:00")
             }
             if let d = r.days.first(where: { !Self.weekdays.contains($0) }) { return L("Unknown day \"\(d)\"", "Unbekannter Tag \"\(d)\"") }
+            if let d = r.dates.first(where: { !Self.validDate($0) }) {
+                return L("\"\(d)\" is not a date like 2026-12-24", "\"\(d)\" ist kein Datum wie 2026-12-24")
+            }
         }
         return nil
     }
