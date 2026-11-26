@@ -19,8 +19,11 @@ enum FollowedRuns {
         else if let d = try? JSONEncoder().encode(r) { UserDefaults.standard.set(d, forKey: defaultsKey) }
     }
     static func fresh(now: Date = Date()) -> [Run] { all().filter { now.timeIntervalSince($0.started) < maxAge } }
+    /// The same deploy keeps the time it was first followed (a restart must not reset the 20 minutes);
+    /// a new deploy of the project starts afresh.
     static func add(key: String, id: String, now: Date = Date()) {
-        save(all().filter { $0.key != key } + [Run(key: key, id: id, started: now)])
+        let old = all().first { $0.key == key && $0.id == id }
+        save(all().filter { $0.key != key } + [Run(key: key, id: id, started: old?.started ?? now)])
     }
     static func remove(_ key: String) { save(all().filter { $0.key != key }) }
 }
