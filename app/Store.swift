@@ -1439,15 +1439,21 @@ final class Store: ObservableObject {
     }
 
     /// One row. `force` (a reason) goes out inside a closed deploy window, as the footer's dialog does.
-    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, force: String? = nil) {
+    func deployOne(_ item: Item, preview: Bool, sha: String? = nil, clearCache: Bool = false, force: String? = nil, windowChecked: Bool = false) {
         let job = Job(item: item, preview: preview, sha: sha, clearCache: clearCache, force: force)
         // A preview is never held by the deploy window. A live deploy from a row, the details or the
         // palette is: the script would refuse it anyway, so say why here instead of a failed row.
-        guard !preview, !observer, force == nil else {
+        guard !preview, !observer, force == nil, !windowChecked else {
             guard namesTyped([item], preview: preview, sha: sha) else { return }
             enqueue([job]); return
         }
+        // One check per project: a second click while the first still asks the deploy window (or waits for a typed
+        // name) does nothing, so the name is asked once and the first check does not clear the other's message.
+        let rowKey = Self.key(item)
+        guard !checkingDeploy.contains(rowKey) else { return }
+        checkingDeploy.insert(rowKey)
         Task {
+            defer { checkingDeploy.remove(rowKey) }
             busyMessage = L("Checking the deploy window …", "Prüfe das Deploy-Fenster …")
             let window = await deployWindow()
             busyMessage = nil
@@ -1462,6 +1468,8 @@ final class Store: ObservableObject {
             enqueue([job])
         }
     }
+    /// Rows whose deploy-window check from `deployOne` is still running.
+    private var checkingDeploy: Set<String> = []
     /// Set by the palette: one project to deploy; the window asks about the deploy window like for a row.
     @Published var pendingDeploy: Item?
 
@@ -1747,6 +1755,13 @@ final class Store: ObservableObject {
     /// The rollback itself; the automatic one after a failed check does not wait for a person.
     func rollbackNow(_ item: Item) {
         guard !refusedAsObserver() else { return }
+        // Like `enqueue`: a rollback does not overwrite a deploy that waits or runs for the same project.
+        if itemNow(item)?.state.isActive ?? false {
+            say(L("\(item.name) is busy", "\(item.name) ist beschäftigt"),
+                L("A deploy of this project waits or runs. Cancel it or wait until it is done, then roll back.",
+                  "Ein Deploy dieses Projekts wartet oder läuft. Abbrechen oder abwarten, dann zurückrollen."), ok: false)
+            return
+        }
         Notify.ask()
         if let at = unsureStarts[Self.key(item)], Date().timeIntervalSince(at) < Self.unsureWait {
             say(L("\(item.name) may be busy already", "\(item.name) ist vielleicht schon beschäftigt"),
@@ -1754,9 +1769,10 @@ final class Store: ObservableObject {
             return
         }
         clearPreview(item)
+        // The claim is visible before the Task suspends: an `enqueue` in between sees an active row and skips it.
+        let p = item.platform
+        set(p, item.id, .starting)
         Task {
-            let p = item.platform
-            set(p, item.id, .starting)
             do {
                 let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self, timeout: 300)
                 unsureStarts[Self.key(item)] = nil

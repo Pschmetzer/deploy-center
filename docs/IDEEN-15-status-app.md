@@ -15,3 +15,4 @@ Nummern wie in [IDEEN-15.md](IDEEN-15.md). „erledigt“ heißt umgesetzt und p
 | 7, 8, 9, 12, 13, 14, 15, 16, 48 | erledigt | Eigentümerprüfung |
 | 3, 11 (Sessions, Demo-Kurznamen), 18, 53, 56, 75 | erledigt | Mitteilungen und Sessions |
 | 1, 2, 17 | erledigt | Redirect-Prüfung, Umgebung |
+| 4, 19, 20, 21, 54, 55, 70 | erledigt | Races, Claude-Verbindung |

@@ -167,6 +167,8 @@ struct ContentView: View {
     @State private var freezeReason: String?
     /// What "Deploy anyway" starts, with the reason, once the deploy window was found closed.
     @State private var frozenRun: ((String) -> Void)?
+    /// A deploy run is being started (owner check, deploy window check): a second ⌘↩ meanwhile does nothing.
+    @State private var startingDeploy = false
     @State private var askingWhy = false
     @State private var whyMissing = false
     @State private var forceText = ""
@@ -1063,6 +1065,8 @@ struct ContentView: View {
         let chosen = scopes
         let frozen = confirmedKeys.isEmpty ? Set(selectedAll.map { Store.key($0) }) : confirmedKeys
         let count = frozen.count
+        guard !startingDeploy else { return }
+        startingDeploy = true
         let critical = allItems.contains { frozen.contains(Store.key($0)) && store.isCritical($0) }
         let restore = {
             chosen.forEach { p in
@@ -1071,6 +1075,7 @@ struct ContentView: View {
             }
         }
         Task {
+            defer { startingDeploy = false }
             if OwnerCheck.needed(projects: count) || (OwnerCheck.on && critical),
                !(await OwnerCheck.confirm(L("put \(count) projects live", "\(count) Projekte live schalten"))) { return }
             if let w = await store.deployWindow(), w.denied {
@@ -1097,7 +1102,7 @@ struct ContentView: View {
                 frozenRun = { why in store.deployOne(item, preview: false, sha: sha, clearCache: clearCache, force: why) }
                 freezeReason = w.reason ?? ""; return
             }
-            store.deployOne(item, preview: false, sha: sha, clearCache: clearCache)
+            store.deployOne(item, preview: false, sha: sha, clearCache: clearCache, windowChecked: true)
         }
     }
 

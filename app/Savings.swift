@@ -232,14 +232,17 @@ final class SavingsModel: ObservableObject {
 
     func loadSimulation(days: Int = 30) async {
         guard !loadingSimulation else { return }
+        // Set before the task exists: two quick calls (two clicks, window opening plus "Recalculate") must not
+        // both pass the guard and run two expensive simulations, one of which "Cancel" could not stop.
+        loadingSimulation = true; simulationStartedAt = Date()
         let t = Task { await runSimulation(days: days) }
         simulationTask = t
         await t.value
-        simulationTask = nil
+        // Only this call's own handle: a newer call may have stored its task in the meantime.
+        if simulationTask == t { simulationTask = nil }
     }
 
     private func runSimulation(days: Int) async {
-        loadingSimulation = true; simulationStartedAt = Date()
         defer { loadingSimulation = false; simulationStartedAt = nil }
         do {
             let data = try await Tool.run(["simulate", "--json", "--days", "\(days)"], timeout: 300)
