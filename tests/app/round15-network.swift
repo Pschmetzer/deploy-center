@@ -7,7 +7,7 @@ import AppKit
     let env = Tool.childEnvironment(["PATH": "/usr/bin", "HOME": "/h", "LANG": "en_US.UTF-8", "LC_ALL": "C", "DEPLOYS_CONFIG": "/c", "VERCEL_TOKEN": "t",
                                      "RENDER_API_KEY": "k", "GH_TOKEN": "g", "ANTHROPIC_API_KEY": "a", "GITHUB_TOKEN": "x", "AWS_SECRET_ACCESS_KEY": "s",
                                      "AWS_PROFILE": "p", "OPENAI_API_KEY": "o", "NPM_TOKEN": "n"])
-    expect("env: kept", Set(env.keys), ["PATH", "HOME", "LANG", "LC_ALL", "DEPLOYS_CONFIG", "VERCEL_TOKEN", "RENDER_API_KEY", "GH_TOKEN", "AWS_PROFILE"])
+    expect("env: kept", env.keys.sorted(), ["PATH", "HOME", "LANG", "LC_ALL", "DEPLOYS_CONFIG", "VERCEL_TOKEN", "RENDER_API_KEY", "GH_TOKEN", "AWS_PROFILE"].sorted())
     for k in ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY", "OPENAI_API_KEY", "NPM_TOKEN"] { expect("env: \(k) dropped", env[k] == nil, true) }
 
     func ok(_ s: String) -> Bool { PublicRedirect.allows(URL(string: s)) }
