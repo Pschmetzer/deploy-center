@@ -628,7 +628,7 @@ final class Store: ObservableObject {
         guard !booted else { return }
         booted = true
         if UserDefaults.standard.bool(forKey: "hideDock") { NSApp.setActivationPolicy(.accessory) }
-        LogoCache.sweep()
+        Task.detached(priority: .utility) { LogoCache.sweep() }
         if !UserDefaults.standard.bool(forKey: "migratedCacheV2") {
             for p in Platform.allCases { try? FileManager.default.removeItem(at: Self.cacheDir.appendingPathComponent("\(p.cli)-v1.json")) }
             UserDefaults.standard.set(true, forKey: "migratedCacheV2")
@@ -2185,7 +2185,7 @@ final class Store: ObservableObject {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 guard !Task.isCancelled, let self else { return }
                 // A new deploy of the row is checked on its own.
-                if self.itemNow(item)?.state.isActive == true { return }
+                if self.itemNow(item)?.state.isActive == true { self.watches[key] = nil; return }
                 let code = await Self.probe(url, timeout: 20)
                 let up = code != nil ? true : await Self.networkUp()
                 let v = Self.siteVerdict(code: code, networkUp: up)
