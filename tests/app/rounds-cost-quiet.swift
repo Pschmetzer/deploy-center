@@ -106,7 +106,7 @@ import AppKit
         let closed = try! JSONDecoder().decode(FreezeReply.self, from: Data(#"{"configured":true,"closedNow":true,"reason":"Release week","rules":[{"n":1,"days":["fri"],"from":"15:00","to":"24:00","reason":"Release week"}]}"#.utf8))
         expect("freeze: closed text", closed.visible && closed.closed && closed.footerText().contains("Release week"), true)
         expect("freeze: demo hides the reason", closed.footerText(demo: true).contains("Release week"), false)
-        expect("freeze: rule text", FreezeReply.ruleText(closed.rules![0]), "fri 15:00-24:00")
+        expect("freeze: rule text", FreezeReply.ruleText(closed.rules![0]), "\(DeployWindowSettings.dayName("fri")) 15:00-24:00")
         let open = try! JSONDecoder().decode(FreezeReply.self, from: Data(#"{"configured":true,"closedNow":false,"reason":null,"rules":[{"n":1,"days":null,"from":"22:00","to":"24:00"},{"n":2}]}"#.utf8))
         expect("freeze: open with two rules", "\(open.visible) \(open.closed) \(open.ruleCount)", "true false 2")
         expect("freeze: no rules, nothing shown", try! JSONDecoder().decode(FreezeReply.self, from: Data(#"{"configured":false,"closedNow":false,"rules":[]}"#.utf8)).visible, false)

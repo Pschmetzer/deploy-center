@@ -19,6 +19,9 @@ MainActor.assumeIsolated {
     suite_ux2()
     suite_ux()
     suite_local_sessions()
+    suite_round15_code()
+    suite_round15_bugs2()
+    suite_round15_tests()
     insightsAppTests(expect); insightsAppTests2(expect)
 }
 

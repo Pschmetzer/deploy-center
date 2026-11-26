@@ -120,6 +120,7 @@ budget_main() {  # budget_main [set <usd> [--strict] | off]
   case "${1:-}" in
     set)
       [[ "${2:-}" =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "Usage: deploys budget set <dollars a month> [--strict]"
+      case "$2" in 0|0.*[!1-9]|0.0*|00*) [[ "$2" =~ [1-9] ]] || die "Usage: deploys budget set <dollars a month> [--strict] (0 would stop every deploy-changed --yes: use deploys budget off to remove the budget)" ;; esac
       local strict=false; [ "${3:-}" != --strict ] || strict=true
       jq -n --argjson v "$2" --argjson s "$strict" '{monthlyUsd:$v, strict:$s}' > "$BUDGET" || die "Could not write $BUDGET."
       echo "Budget: \$$2 a month of Vercel build charges. deploy-changed --yes stops before going over it$([ "$strict" = true ] && echo ", and when the spending cannot be read")." ;;

@@ -38,6 +38,13 @@ enum JournalStats {
         /// From a failure to the next good deploy of the same project, median, in seconds.
         let restoreMedian: Double?
     }
+    /// The days of the window `[end - days, end]` that the journal really covers: it keeps the last 500 entries
+    /// only, so with many deploys it starts later than the window and "per week" must not divide by days it lacks.
+    nonisolated static func coveredDays(_ days: Int, oldest: Date?, end: Date) -> Int {
+        guard let oldest, days > 0 else { return days }
+        let start = max(oldest, end.addingTimeInterval(-Double(days) * 86400))
+        return max(1, min(days, Int((end.timeIntervalSince(start) / 86400).rounded(.up))))
+    }
     nonisolated static func dora(_ list: [JournalEntry], days: Int) -> Dora {
         let o = outcomes(list).sorted { $0.at < $1.at }
         let good = o.filter { $0.kind == .live || $0.kind == .forced }.count
@@ -202,7 +209,9 @@ struct JournalStatsView: View {
 
     /// In parts of their own: as one body it was too long for the type checker on CI.
     @ViewBuilder private func figures(_ p: (recent: [JournalEntry], before: [JournalEntry])) -> some View {
-        let d = JournalStats.dora(p.recent, days: days), db = JournalStats.dora(p.before, days: days)
+        let oldest = entries.map(\.at).min(), now = Date()
+        let d = JournalStats.dora(p.recent, days: JournalStats.coveredDays(days, oldest: oldest, end: now))
+        let db = JournalStats.dora(p.before, days: JournalStats.coveredDays(days, oldest: oldest, end: now.addingTimeInterval(-Double(days) * 86400)))
         Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
             GridRow {
                 Text(""); Text(L("Now", "Jetzt")).bold(); Text(L("The \(days) days before", "Die \(days) Tage davor")).foregroundStyle(.secondary)
