@@ -33,7 +33,7 @@ outages_print() {
 }
 
 outages_csv() {
-  jq -r '"project,from,to,seconds,failures,open", (.outages[] | [(.project | if test("^[=+@-]") then "'" + . else . end | @csv), .from, (.to // ""), .seconds, .failures, .open] | join(","))'
+  jq -r '"project,from,to,seconds,failures,open", (.outages[] | [(.project | if test("^[=+@-]") then ([39] | implode) + . else . end), .from, (.to // ""), .seconds, .failures, .open] | @csv)'
 }
 
 x_outages_main() {
