@@ -37,6 +37,19 @@ deploys flaky --within 2h --min 1
 neueste Start oder Fehlschlag des Projekts ist ein Fehlschlag. Eine Notiz mit `deploys note <Projekt> "Text"` erscheint in der
 Übergabe. `flaky` ist ein Hinweis, dass ein erneuter Versuch half, kein Urteil.
 
+## besttime und slo
+
+```bash
+deploys besttime                     # die Zeitfenster (Wochentag und Stunde, UTC) mit den besten Deploys, die mit den meisten Fehlschlägen, das nächste gute
+deploys besttime --next              # nur das: "Wed 11:00 (2026-12-02T11:00:00Z)"
+deploys slo set 95                   # ein Ziel: 95 % der Deploys jedes Projekts klappen (slo.json im Konfigurationsordner)
+deploys slo --days 30                # jedes Projekt dagegen; Exit 1, wenn eines darunter liegt (für Cron und CI)
+deploys slo off
+```
+
+`besttime` liest nur dein eigenes Journal und kennt das Deploy-Fenster nicht: schau mit `deploys freeze` nach, bevor du auf ein
+Fenster planst. Ein Zeitfenster zählt ab `--min` (5) Starts und Fehlschlägen. `slo` zählt wie `deploys digest`: Starts gegen Starts plus Fehlschläge.
+
 ## Einen neuen hinzufügen
 
 `lib/x-<name>.sh` neben `deploys` legen. Die Datei definiert `x_<name>_main` (Bindestriche im Namen werden zu Unterstrichen)

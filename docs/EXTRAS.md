@@ -37,6 +37,19 @@ deploys flaky --within 2h --min 1
 start or failure is a failure. Write a note with `deploys note <project> "text"` and it shows up in the handover.
 `flaky` is a hint that a retry helped, not a verdict.
 
+## besttime and slo
+
+```bash
+deploys besttime                     # the slots (weekday and hour, UTC) that went best, the ones that failed most, the next good one
+deploys besttime --next              # only that: "Wed 11:00 (2026-12-02T11:00:00Z)"
+deploys slo set 95                   # a goal: 95 % of the deploys of each project work (slo.json in the config folder)
+deploys slo --days 30                # each project against it; exit 1 when one is below (a cron or CI gate)
+deploys slo off
+```
+
+`besttime` reads your own journal only and does not know the deploy window: look at `deploys freeze` before you plan on a
+slot. A slot needs `--min` (5) starts and failures to count. `slo` counts like `deploys digest`: starts against starts plus failures.
+
 ## Adding one
 
 Put `lib/x-<name>.sh` next to `deploys`. It defines `x_<name>_main` (dashes in the name become underscores) and says what it
