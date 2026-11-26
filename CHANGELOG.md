@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The delivery figures ("Deploys a week") divide by the days the journal really covers (it keeps the last 500 entries), so a busy Mac no longer shows too few. Esc no longer closes a message with an Undo or Cancel button (the rollback countdown stays stoppable by a click). The watch after a deploy cleans up after itself when a newer deploy starts.
 - Local session counter: `deploys local-sessions [--json]` lists the Claude Code sessions on this Mac (title, folder, idle time, CPU, RAM) and finds tasks that should have been bundled: more than 3 sessions on one repo, each started within 10 minutes of the one before, and the same task running twice; two sessions in one folder and sessions idle for over an hour are flagged too. The count turns yellow only at 30 (`deploys local-sessions set max-local|bundle-to|burst-min`). The menu shows the count with a green or yellow dot and a "Bundle tasks" menu with the extras; ending a session always asks first (`deploys local-sessions stop <pid> --yes`). Read-only MCP tool `deploys_local_sessions`. The number of running cloud sessions cannot be read on the Mac; `deploys sessions` shows them as GitHub sees them ([docs/LOCAL-SESSIONS.md](docs/LOCAL-SESSIONS.md)).
 - Performance guard: a Docker stack that is started again after an idle stop is left alone for 24 hours instead of being stopped again on the next pass.
 
