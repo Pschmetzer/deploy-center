@@ -377,7 +377,7 @@ struct Vercel {
         // The newest production attempt per project shows a build the project's target does not show yet.
         var deps: [JSON] = []
         do { deps = ((try await http.get(t("/v6/deployments?limit=100&target=production")) as? JSON)?["deployments"] as? [JSON]) ?? [] }
-        catch { notes.append(L("Running builds unknown: \(error.localizedDescription)", "Laufende Builds unbekannt: \(error.localizedDescription)")) }
+        catch { notes.append(L("Running builds unknown: \(explain(error))", "Laufende Builds unbekannt: \(explain(error))")) }
         var latest: [String: JSON] = [:]
         for d in deps {
             guard let n = d.str("name") else { continue }

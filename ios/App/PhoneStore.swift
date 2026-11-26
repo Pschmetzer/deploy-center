@@ -427,7 +427,7 @@ final class PhoneStore: ObservableObject {
                 let da = a.oldestPendingAt ?? .distantFuture, db = b.oldestPendingAt ?? .distantFuture
                 if da != db { return da < db }
             }
-            return a.name.lowercased() < b.name.lowercased()
+            return PhoneProject.nameOrder(a, b)
         }
     }
 
