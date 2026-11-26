@@ -49,4 +49,44 @@ cli team add ../x >/dev/null 2>&1; expect "team add ../x refused" "$?" "1"
 cli team add ./x >/dev/null 2>&1; expect "team add ./x refused" "$?" "1"
 cli nosuchcmd --help >/dev/null 2>&1; expect "unknown command --help exits 2" "$?" "2"
 
+# --- af_mask: formats that used to pass, spaces in a password, escaped quotes, database URLs ---
+m() { printf '%s\n' "$1" | af_mask; }
+# Obviously made-up values (like the samples in cli-r12b-tests.sh), only as long as the masker's patterns need.
+for t in 'ya29.abcdefghijklmnopqrstu' 'GOCSPX-abcdefghijklmnop' 'shpat_abcdefghijklmnop' \
+  'pypi-abcdefghijklmnop' 'dckr_pat_abcdefghijkl' 'SK00000000000000000000000000000000' \
+  'ops_eyJabcdefghijklmnop'; do
+  expect "af_mask: $t" "$(m "x $t y")" "x [masked] y"
+done
+expect "af_mask: curl -u user:pass" "$(m 'curl -u admin:hunter2hunter2 https://x.test')" "curl -u [masked] https://x.test"
+expect "af_mask: password with spaces" "$(m 'password: my secret pass phrase')" "password: [masked]"
+expect "af_mask: client_secret with a space" "$(m 'client_secret=abc def')" "client_secret=[masked]"
+expect "af_mask: escaped quote in a quoted value" "$(m 'token="abc\"def ghi" ok')" "token=[masked] ok"
+expect "af_mask: slash in a database password" "$(m 'postgres://user:p/ss@db/app x')" "postgres://user:[masked]@db/app x"
+expect "af_mask: plain text stays" "$(m 'say hello world')" "say hello world"
+# a long run of odd input: no crash, never longer than the cap
+long="$(head -c 20000 /dev/zero | tr '\0' 'a')"
+expect "af_mask: a very long line is cut" "$(printf '%s\n' "$long" | af_mask | wc -c | tr -d ' ' | awk '{ print ($1 < 4100) }')" "1"
+
+# --- journal: the detail is masked when it is written ---
+: > "$DEPLOYS_JOURNAL"
+journal_add vercel web ok 'forced: token=ghp_abcdefghijklmnop1234 done'
+expect "journal_add masks the detail" "$(grep -c ghp_ "$DEPLOYS_JOURNAL")" "0"
+expect "journal_add keeps the rest" "$(jq -r .detail "$DEPLOYS_JOURNAL" | grep -c forced)" "1"
+
+# --- hook hosts: every spelling of a private IPv6 address ---
+. ./providers/hook.sh
+for h in 0:0:0:0:0:ffff:7f00:1 0000:0000:0000:0000:0000:ffff:7f00:0001 ::127.0.0.1 ::ffff:10.0.0.1 0:0:0:0:0:0:7f00:1 '[::ffff:a9fe:a9fe]' zz::1; do
+  hook_private_host "$h"; expect "hook_private_host: $h is private" "$?" "0"
+done
+for h in 2606:4700:4700::1111 2001:4860:4860::8888 0:0:0:0:0:ffff:808:808; do
+  hook_private_host "$h"; expect "hook_private_host: $h is public" "$?" "1"
+done
+
+# --- API bases must be https ---
+for pv in heroku:HEROKU_API netlify:NETLIFY_API cloudflare:CLOUDFLARE_API_BASE; do
+  p="${pv%%:*}"; v="${pv##*:}"
+  got="$(env -u DEPLOYS_TESTING "$v=http://api.example.test" DEPLOYS_LIB=1 bash -c ". ./deploys >/dev/null 2>&1; . ./providers/$p.sh 2>/dev/null; echo \"\${HEROKU_API:-}\${NETLIFY_API:-}\${CLOUDFLARE_API:-}\"")"
+  case "$got" in https://api.*) ok "$p: http:// base is not used" ;; *) fail "$p: http:// base refused" "got [$got]" ;; esac
+done
+
 [ "$fails" = 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
