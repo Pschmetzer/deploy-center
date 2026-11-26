@@ -91,7 +91,20 @@ Two more hooks, both read-only, both on by default and each with its own switch.
   `Deploy window: closed (…)` from `deploys window`. It never answers *allow* and never *deny*, so your own permission
   rules stay as they are; it only makes sure a person sees the question. It waits at most `DEPLOYS_HOOK_TIMEOUT`
   seconds (8) for each read and asks without the extra line when the CLI does not answer. Off with the option
-  `deploy_gate` or `DEPLOYS_DEPLOY_GATE=off`.
+  `deploy_gate` or `DEPLOYS_DEPLOY_GATE=off`. The command is read word by word, so wrappers (`command`, `env`,
+  `nohup`, `time`, `sudo`, `xargs`, `eval`), an option with a value (`deploys --config x deploy web`), `(…)` and `{ …; }`,
+  `for`/`if` bodies and an unreadable program (`$D deploy web`, `$(which deploys) deploy web`) are all asked about. A
+  second class asks before a command **switches a safeguard off**: `autodeploy allow`, `prepare run --yes`, `cancel`,
+  `ignore`, `freeze clear|remove`, `guard schedule off`, and a write (`sed -i`, `>`, `tee`, `mv`, `rm`) to
+  `~/.config/deploys/{window,rules,ignored,overrides,vercel-repos,schedule}.json`.
+- [`scripts/before-config-edit.sh`](scripts/before-config-edit.sh) (PreToolUse, `Edit|Write|MultiEdit`) asks before
+  Claude edits one of those same files with an editor tool. Same switch as above.
+- [`hooks/perf-gate.sh`](hooks/perf-gate.sh) is not part of the plugin's `hooks.json`: copy it to `~/.claude/hooks/`
+  and add the entry `deploys perf hook` prints. It holds heavy commands (build, test, install; also behind `env`,
+  `bash -c`, `sudo`, `npx -y`, `node_modules/.bin/`) until the Mac has room. Only a command that *is*
+  `deploys perf gate|wait` passes unchecked. Settings: `DEPLOYS_PERF_GATE=0` (off), `DEPLOYS_PERF_LIB`,
+  `DEPLOYS_PERF_MAX_WAIT` (default 10m), `DEPLOYS_PERF_HEAVY_EXTRA` (an extended regular expression for more commands)
+  and `~/.config/deploys/heavy.txt` (one expression per line).
 - [`scripts/after-failure.sh`](scripts/after-failure.sh) (PostToolUseFailure, and PostToolUse for a deploy whose
   output says it failed) tells you and Claude, in one line, that the deploy failed and that
   `/deploy-center:deploys-diagnose <project>` reads the log. It calls nothing, and the note to Claude says: do not deploy

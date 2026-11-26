@@ -79,7 +79,7 @@ digest_main() {
   local days=7 savings=1 jf now out sv="null" fmt=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
+      --days) case "${2:-}" in ''|*[!0-9]*|0|???????*) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
       --no-savings) savings=0 ;;
       --format) fmt="${2:-}"; shift; case "$fmt" in markdown|text|json) ;; *) die "--format is markdown, text or json" ;; esac ;;
       *) die "Unknown option $1. Usage: deploys digest [--days 7] [--json | --format markdown] [--no-savings]" ;;

@@ -267,6 +267,8 @@ and tells you to deploy in Deploy Center or with `deploys vercel deploy app-web`
 |---|---|---|
 | `DEPLOYS_MCP_ALLOW_DEPLOY` | off | `1` adds `deploys_deploy` and `deploys_rollback`. `preview` adds only `deploys_deploy`, for preview deploys. |
 | `DEPLOYS_MCP_CONFIRM` | `ask` | `ask`: the server asks you (elicitation) and refuses clients that cannot ask. `client`: rely on the client's own approval (for Claude Desktop and other clients without elicitation). |
+| `DEPLOYS_MCP_ALLOW_REPOS` | the repos of `deploys_list` | `deploys_ci` and `deploys_sessions` answer only for repos of your own projects. Add more as `owner/name,owner/name`, or `*` for every repo the GitHub token sees. |
+| `DEPLOYS_CONFIG` | `~/.config/deploys` | Where the server keeps `mcp-starts.json` (the hourly start cap) and the CLI its settings. |
 | `DEPLOYS_MCP_WRITE_TIMEOUT` | `300` | Seconds for a deploy or rollback to start. |
 | `DEPLOYS_BIN` | search | The `deploys` to run. |
 | `DEPLOYS_MCP_TIMEOUT` | `90` | Seconds per command. |

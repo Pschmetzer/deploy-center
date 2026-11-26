@@ -50,7 +50,7 @@ timeline_main() {
   local days=3 project="" limit=50 jf now
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
+      --days) case "${2:-}" in ''|*[!0-9]*|0|???????*) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
       --limit) case "${2:-}" in ''|*[!0-9]*|0) die "--limit takes a number, 1 or more" ;; esac; limit="$2"; shift ;;
       --project) [ -n "${2:-}" ] || die "--project takes a project name"; project="$2"; shift ;;
       *) die "Unknown option $1. Usage: deploys timeline [--days 3] [--project <name>] [--limit 50] [--json]" ;;
@@ -118,7 +118,7 @@ recovery_main() {
   local days=30 project="" jf now out
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
+      --days) case "${2:-}" in ''|*[!0-9]*|0|???????*) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
       --project) [ -n "${2:-}" ] || die "--project takes a project name"; project="$2"; shift ;;
       *) die "Unknown option $1. Usage: deploys recovery [--days 30] [--project <name>] [--json]" ;;
     esac
@@ -161,7 +161,7 @@ when_main() {
   local days=90 by=weekday jf now out
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
+      --days) case "${2:-}" in ''|*[!0-9]*|0|???????*) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
       --by) case "${2:-}" in weekday|hour) by="$2" ;; *) die "--by takes weekday or hour" ;; esac; shift ;;
       *) die "Unknown option $1. Usage: deploys when [--days 90] [--by weekday|hour] [--json]" ;;
     esac

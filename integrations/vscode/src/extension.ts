@@ -8,7 +8,7 @@ import { costStatusText, costTooltip, Freeze, freezeStatusText, freezeTooltip, M
 import { count, setTranslator, t } from "./i18n";
 import { coalesce } from "./coalesce";
 import { aiPrompt, maskSecrets } from "./log";
-import { costLine, describe, platformLabel, Project, statusText, summarize, followStep } from "./model";
+import { costLine, describe, platformLabel, Project, statusText, summarize, followStep, safeExternalUrl } from "./model";
 import { parseRemotes, Scope, scopeProjects } from "./repo";
 
 // Every text for people in the editor's language (l10n/bundle.l10n.<lang>.json), English otherwise.
@@ -365,7 +365,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     if (res.ok) {
       const openIt = t("Open deploy");
       const btn = await (res.url ? vscode.window.showInformationMessage(res.text, openIt) : vscode.window.showInformationMessage(res.text));
-      if (btn === openIt && res.url) void vscode.env.openExternal(vscode.Uri.parse(res.url));
+      if (btn === openIt && safeExternalUrl(res.url)) void vscode.env.openExternal(vscode.Uri.parse(safeExternalUrl(res.url) as string));
     } else void vscode.window.showErrorMessage(res.text);
     if (res.ok) void this.follow(p); else this.refreshLater();
   }
@@ -408,7 +408,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     this.output.appendLine(text);
     const openIt = t("Open preview");
     const btn = await (d.url ? vscode.window.showInformationMessage(text, openIt) : vscode.window.showInformationMessage(text));
-    if (btn === openIt && d.url) void vscode.env.openExternal(vscode.Uri.parse(d.url));
+    if (btn === openIt && safeExternalUrl(d.url)) void vscode.env.openExternal(vscode.Uri.parse(safeExternalUrl(d.url) as string));
   }
 
   /** What a rollback would do, from the deploy history. It only reads; going back is the separate "Roll back…" after it. */
@@ -543,7 +543,7 @@ export class Controller implements vscode.TreeDataProvider<Project> {
     if (r.code !== 0) { void vscode.window.showErrorMessage(`${p.name}: ${errorLine(r, "deploys open")}`); return; }
     // On a Mac the CLI has opened the browser already; elsewhere it prints the address.
     const url = urlIn(r.stdout);
-    if (url) void vscode.env.openExternal(vscode.Uri.parse(url));
+    if (safeExternalUrl(url)) void vscode.env.openExternal(vscode.Uri.parse(safeExternalUrl(url) as string));
   }
 
   /** A project from a tree item or command argument; asked for when called from the palette. */
