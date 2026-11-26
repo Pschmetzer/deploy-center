@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Deploy window: a date that is not `YYYY-MM-DD` (or does not exist) is refused when saving instead of being ignored silently; the tooltip of the footer note names the weekdays in the app's language. Nightly: picking another hour keeps minutes set by hand (`03:30` becomes `04:30`, not `04:00`).
 - Local session counter: `deploys local-sessions [--json]` lists the Claude Code sessions on this Mac (title, folder, idle time, CPU, RAM) and finds tasks that should have been bundled: more than 3 sessions on one repo, each started within 10 minutes of the one before, and the same task running twice; two sessions in one folder and sessions idle for over an hour are flagged too. The count turns yellow only at 30 (`deploys local-sessions set max-local|bundle-to|burst-min`). The menu shows the count with a green or yellow dot and a "Bundle tasks" menu with the extras; ending a session always asks first (`deploys local-sessions stop <pid> --yes`). Read-only MCP tool `deploys_local_sessions`. The number of running cloud sessions cannot be read on the Mac; `deploys sessions` shows them as GitHub sees them ([docs/LOCAL-SESSIONS.md](docs/LOCAL-SESSIONS.md)).
 - Performance guard: a Docker stack that is started again after an idle stop is left alone for 24 hours instead of being stopped again on the next pass.
 
