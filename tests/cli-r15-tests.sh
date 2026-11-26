@@ -131,4 +131,25 @@ DEPLOYS_LOCKS="$DEPLOYS_LOCKS" cli unlock web >/dev/null 2>&1
 expect "unlock opens it again" "$(lock_denied web)" ""
 cli lock 'a;b' x >/dev/null 2>&1; expect "lock: a strange name is refused" "$?" "2"
 
+# --- selfupdate_newer and http_notfound_hint (no test named them before) ---
+newer() { selfupdate_newer "$1" "$2" && echo yes || echo no; }
+expect "selfupdate_newer: 0.10.0 is newer than 0.9.10" "$(newer 0.10.0 0.9.10)" yes
+expect "selfupdate_newer: 0.9.10 is not newer than 0.10.0" "$(newer 0.9.10 0.10.0)" no
+expect "selfupdate_newer: the same version is not newer" "$(newer 0.14.0 0.14.0)" no
+expect "selfupdate_newer: 1.0 against 0.99.9" "$(newer 1.0 0.99.9)" yes
+expect "selfupdate_newer: a missing part counts as 0" "$(newer 0.14 0.14.0)" no
+expect "http_notfound_hint: a service id" "$(http_notfound_hint /v1/services/srv-1)" ' (not found: no service "srv-1"; renamed or deleted?)'
+expect "http_notfound_hint: a path under /api/" "$(http_notfound_hint /api/)" ' (not found: the path /api/; renamed or deleted?)'
+expect "http_notfound_hint: a bare versioned path" "$(http_notfound_hint /v1/projects)" ' (not found: the path /v1/projects; renamed or deleted?)'
+
+# --- lib/perfdocker.sh: databases stop last and start first (a fake docker logs the calls) ---
+printf '#!/bin/bash\necho "docker $*" >> "%s/docker.log"\nexit 0\n' "$tmp" > "$tmp/bin/docker"; chmod +x "$tmp/bin/docker"
+stack='{"stack":"shop","ids":"web1 web2 db1","dbIds":"db1"}'
+: > "$tmp/docker.log"; PATH="$tmp/bin:$PATH" perfdocker_act stop "$stack" >/dev/null 2>&1
+expect "perfdocker: stop takes the web containers first, the database last" "$(grep -v inspect "$tmp/docker.log" | tr '\n' '|')" "docker stop web1 web2|docker stop db1|"
+: > "$tmp/docker.log"; DEPLOYS_PERF_DB_WAIT=0 PATH="$tmp/bin:$PATH" perfdocker_act start "$stack" >/dev/null 2>&1
+expect "perfdocker: start brings the database up first" "$(grep -v inspect "$tmp/docker.log" | tr '\n' '|')" "docker start db1|docker start web1 web2|"
+: > "$tmp/docker.log"; PATH="$tmp/bin:$PATH" perfdocker_act stop '{"stack":"x","ids":"a b","dbIds":""}' >/dev/null 2>&1
+expect "perfdocker: a stack without a database is one stop" "$(grep -v inspect "$tmp/docker.log" | tr '\n' '|')" "docker stop a b|"
+
 [ "$fails" = 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }
