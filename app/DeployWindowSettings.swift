@@ -66,8 +66,12 @@ struct DeployWindowSettings: View {
                 if done { Text(L("Saved", "Gespeichert")).font(.caption).foregroundStyle(.secondary) }
                 Button(L("Revert", "Zurücksetzen")) { config = saved; error = nil }.disabled(config == saved)
                 Button(L("Save", "Speichern")) {
-                    error = config.save()
-                    if error == nil { saved = config; done = true }
+                    Task {
+                        if DeployWindowConfig.loosens(from: saved, to: config),
+                           !(await OwnerCheck.confirm(L("loosen the deploy window", "das Deploy-Fenster lockern"))) { return }
+                        error = config.save()
+                        if error == nil { saved = config; done = true }
+                    }
                 }
                 .disabled(config == saved || config.problem != nil)
             }

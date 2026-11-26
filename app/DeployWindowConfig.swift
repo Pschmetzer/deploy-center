@@ -80,6 +80,12 @@ struct DeployWindowConfig: Equatable {
         return d
     }
 
+    /// True when saving `new` over `old` removes or changes a block (a freeze is a safety rule like the guard,
+    /// so loosening it asks for the owner check; adding a block does not).
+    static func loosens(from old: DeployWindowConfig, to new: DeployWindowConfig) -> Bool {
+        old.deny.contains { r in !new.deny.contains(r) }
+    }
+
     static func load() -> DeployWindowConfig { parse(try? Data(contentsOf: url)) }
     /// Writes the rules (none: `"deny": []`, other keys stay). An error text when it failed.
     func save() -> String? {

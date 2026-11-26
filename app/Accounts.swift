@@ -14,7 +14,9 @@ protocol SecretStore {
 
 struct KeychainSecrets: SecretStore {
     private func query(_ service: String, _ account: String) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account,
+         // Never in iCloud Keychain: a key of this Mac stays on this Mac.
+         kSecAttrSynchronizable as String: false]
     }
     func read(service: String, account: String) -> String? {
         var q = query(service, account); q[kSecReturnData as String] = true; q[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -27,6 +29,7 @@ struct KeychainSecrets: SecretStore {
         let status = SecItemUpdate(query(service, account) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if status == errSecSuccess { return true }
         var q = query(service, account); q[kSecValueData as String] = data
+        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         return SecItemAdd(q as CFDictionary, nil) == errSecSuccess
     }
     func delete(service: String, account: String) { SecItemDelete(query(service, account) as CFDictionary) }
@@ -102,6 +105,9 @@ struct AccountsCard: View {
     @State private var key = ""
     @State private var message: String?
     @State private var tick = 0
+    @State private var removing: RemoveAsk?
+    @State private var switching: String?
+    struct RemoveAsk: Identifiable { let host: String, label: String; var id: String { host + "/" + label } }
 
     private var hosts: [ProviderInfo] { store.enabledProviders.filter { $0.id != "vercel" } }
 
@@ -118,12 +124,18 @@ struct AccountsCard: View {
                                 Text(n)
                                 Spacer()
                                 if n != active {
+                                    if switching == h.id + "/" + n { ProgressView().controlSize(.small) }
                                     Button(L("Switch", "Wechseln")) {
-                                        Task { guard await OwnerCheck.confirm(L("switch the \(h.id) account to \(n)", "das \(h.id)-Konto auf \(n) umschalten")) else { return }
+                                        // One switch at a time: a second click while the script still tries the key does nothing.
+                                        guard switching == nil else { return }
+                                        switching = h.id + "/" + n
+                                        Task { defer { switching = nil }
+                                            guard await OwnerCheck.confirm(L("switch the \(h.id) account to \(n)", "das \(h.id)-Konto auf \(n) umschalten")) else { return }
                                             message = await Accounts.activate(host: h.id, label: n); tick += 1; if message == nil, let p = Platform.allCases.first(where: { $0.cli == h.id }) { await store.load(p, fresh: true) } }
                                     }
+                                    .disabled(switching != nil)
                                 }
-                                Button(role: .destructive) { Accounts.remove(host: h.id, label: n); tick += 1 } label: { Image(systemName: "trash") }
+                                Button(role: .destructive) { removing = RemoveAsk(host: h.id, label: n) } label: { Image(systemName: "trash") }
                                     .buttonStyle(.borderless).accessibilityLabel(L("Remove account \(n)", "Konto \(n) entfernen"))
                             }
                             .accessibilityElement(children: .combine)
@@ -150,6 +162,19 @@ struct AccountsCard: View {
                 Text(L("Keys stay in the macOS keychain. Switching saves the key for the script, which tries it first.",
                        "Schlüssel bleiben im macOS-Schlüsselbund. Beim Wechsel wird der Schlüssel fürs Skript gespeichert; es prüft ihn zuerst."))
                     .font(.caption).foregroundStyle(.secondary)
+            }
+            .confirmationDialog(L("Remove this account?", "Dieses Konto entfernen?"), isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } }),
+                                titleVisibility: .visible, presenting: removing) { r in
+                Button(L("Remove \(r.label)", "\(r.label) entfernen"), role: .destructive) {
+                    Task {
+                        guard await OwnerCheck.confirm(L("remove the \(r.host) account \(r.label)", "das \(r.host)-Konto \(r.label) entfernen")) else { return }
+                        Accounts.remove(host: r.host, label: r.label); tick += 1
+                    }
+                }
+                Button(L("Cancel", "Abbrechen"), role: .cancel) {}
+            } message: { r in
+                Text(L("The key of \(r.label) is deleted from the keychain and cannot be restored. A key the script already uses stays active there until you switch to another account.",
+                       "Der Schlüssel von \(r.label) wird aus dem Schlüsselbund gelöscht und lässt sich nicht wiederherstellen. Ein Schlüssel, den das Skript schon nutzt, bleibt dort aktiv, bis du auf ein anderes Konto wechselst."))
             }
         }
     }
