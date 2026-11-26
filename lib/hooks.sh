@@ -137,7 +137,9 @@ HOOK
     mv "$d/$kind" "$d/$kind.local" || { rm -f "$d/$kind.new" "$d/$kind.deploys.new"; die "Could not move the old $kind aside."; }
     echo "The $kind that was there is now $kind.local and runs first."
   fi
-  mv "$d/$kind.deploys.new" "$d/$kind.deploys" && mv "$d/$kind.new" "$d/$kind" || die "Could not install the hook in $d."
+  mv "$d/$kind.deploys.new" "$d/$kind.deploys" || die "Could not install the hook in $d."
+  # The second move failing must not leave the wrapper's half behind: put the first one back.
+  mv "$d/$kind.new" "$d/$kind" || { rm -f "$d/$kind.deploys"; die "Could not install the hook in $d."; }
   if [ "$kind" = pre-push ]; then echo "Installed: before each push, $repo says which builds the push would start ($d/pre-push)."
   else echo "Installed: before each commit, $repo checks the staged changes for keys and tokens ($d/pre-commit)."; fi
 }
