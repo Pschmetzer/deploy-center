@@ -238,7 +238,8 @@ final class SavingsModel: ObservableObject {
         let t = Task { await runSimulation(days: days) }
         simulationTask = t
         await t.value
-        simulationTask = nil
+        // Only this call's own handle: a newer call may have stored its task in the meantime.
+        if simulationTask == t { simulationTask = nil }
     }
 
     private func runSimulation(days: Int) async {

@@ -1769,9 +1769,10 @@ final class Store: ObservableObject {
             return
         }
         clearPreview(item)
+        // The claim is visible before the Task suspends: an `enqueue` in between sees an active row and skips it.
+        let p = item.platform
+        set(p, item.id, .starting)
         Task {
-            let p = item.platform
-            set(p, item.id, .starting)
             do {
                 let r = try await Tool.json([p.cli, "rollback", item.id], as: Started.self, timeout: 300)
                 unsureStarts[Self.key(item)] = nil

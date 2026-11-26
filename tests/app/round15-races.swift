@@ -16,7 +16,12 @@ import AppKit
     do { try ClaudeFiles.writeIfUnchanged(mine, to: file, from: old) } catch is ClaudeFiles.Changed { threw = true } catch {}
     expect("write if unchanged: a change in between throws", threw, true)
     expect("write if unchanged: their content stays", FileManager.default.contents(atPath: file) == theirs, true)
-    expect("write if unchanged: a new file from nil", (try? ClaudeFiles.writeIfUnchanged(mine, to: dir + "/n/c.json", from: nil)) != nil, true)
+    do {
+        let fresh = dir + "/n/c.json"
+        let backup = try ClaudeFiles.writeIfUnchanged(mine, to: fresh, from: nil)
+        expect("write if unchanged: a new file has no backup", backup == nil, true)
+        expect("write if unchanged: a new file from nil", FileManager.default.contents(atPath: fresh) == mine, true)
+    } catch { expect("write if unchanged: new file creation succeeds", "\(error)", "no error") }
 
     expect("allow switch: stays on after a failed write", ClaudeLink.stillAllows(failed: true, desktopConnected: false, desktopAllows: false, codeConnected: false, codeAllows: false), true)
     expect("allow switch: stays on while the config allows", ClaudeLink.stillAllows(failed: false, desktopConnected: true, desktopAllows: true, codeConnected: false, codeAllows: false), true)
