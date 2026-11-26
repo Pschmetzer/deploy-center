@@ -115,6 +115,8 @@ jobs:
           scripts/check-bash32.sh
       - name: CLI round 12 B tests (http, hooks, watch, verify, completion, release)
         run: bash tests/cli-r12b-tests.sh
+      - name: CLI round 15 tests (locale, team window, exit codes, masking)
+        run: bash tests/cli-r15-tests.sh
       - name: Insights tests (timeline, recovery, when)
         run: bash tests/insights-tests.sh
       - name: Nightly check tests (new findings only, scan limit, leaks reported)
@@ -244,6 +246,8 @@ jobs:
         run: bash tests/cli-fixes-tests.sh
       - name: CLI round 12 B tests
         run: bash tests/cli-r12b-tests.sh
+      - name: CLI round 15 tests
+        run: bash tests/cli-r15-tests.sh
       - name: Insights tests
         run: bash tests/insights-tests.sh
       - name: Nightly check tests

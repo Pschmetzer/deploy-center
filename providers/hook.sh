@@ -68,6 +68,37 @@ hook_mask() {
   echo "${u%%://*}://$host/•••"
 }
 
+# hook_v6_groups <ipv6>: the eight groups of an address, four hex digits each, one line ("0000:0000:...:0001"); nothing
+# when it is no IPv6 text. Resolves "::" and a trailing dotted IPv4, so every spelling of one address looks the same.
+hook_v6_groups() {
+  local a="$1" left right v4 l r i n out="" g
+  case "$a" in *[!0-9a-f:.]*|"") return 1 ;; esac
+  case "$a" in *.*)
+    v4="${a##*:}"; a="${a%"$v4"}"
+    [[ "$v4" =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
+    a="$a$(printf '%x:%x' $(( BASH_REMATCH[1] * 256 + BASH_REMATCH[2] )) $(( BASH_REMATCH[3] * 256 + BASH_REMATCH[4] )))" ;;
+  esac
+  case "$a" in *::*::*) return 1 ;; esac
+  case "$a" in
+    *::*) left="${a%%::*}"; right="${a#*::}" ;;
+    *) left="$a"; right="" ;;
+  esac
+  l=(); r=()
+  if [ -n "$left" ]; then IFS=: read -r -a l <<< "$left"; fi
+  if [ -n "$right" ]; then IFS=: read -r -a r <<< "$right"; fi
+  n=$(( 8 - ${#l[@]} - ${#r[@]} ))
+  case "$a" in *::*) [ "$n" -ge 1 ] || return 1 ;; *) [ "$n" -eq 0 ] || return 1 ;; esac
+  for g in ${l[@]+"${l[@]}"}; do out="$out $g"; done
+  i=0; case "$a" in *::*) while [ "$i" -lt "$n" ]; do out="$out 0"; i=$((i + 1)); done ;; esac
+  for g in ${r[@]+"${r[@]}"}; do out="$out $g"; done
+  local res="" sep=""
+  for g in $out; do
+    [[ "$g" =~ ^[0-9a-f]{1,4}$ ]] || return 1
+    res="$res$sep$(printf '%04x' "0x$g")"; sep=":"
+  done
+  printf '%s' "$res"
+}
+
 # hook_private_host <host>: succeeds when the host is this machine, a private or link-local
 # address or a cloud metadata name: a hook URL there is a request into the user's own network
 # (an agent could aim `hook add` at http://169.254.169.254/ and read what comes back as an error).
@@ -82,6 +113,15 @@ hook_private_host() {
       # Also multicast (ff..), site-local (fec0..), NAT64 (64:ff9b::), 6to4 (2002::), Teredo (2001:0::),
       # documentation (2001:db8::) and discard (100::) ranges: they carry or hide an IPv4 or never route.
       case "$h" in ::|::1|fc*|fd*|fe8*|fe9*|fea*|feb*|fec*|fed*|fee*|fef*|ff*|::ffff:*|0:0:0:0:0:0:0:*|64:ff9b:*|2002:*|2001:0:*|2001:db8:*|100::*) return 0 ;; esac
+      # Any other spelling of the same address (0:0:0:0:0:ffff:7f00:1, ::127.0.0.1, 0000:...:0001): written out in
+      # full, an IPv4 inside (::a.b.c.d, ::ffff:a.b.c.d) is judged as that IPv4. One that cannot be read is refused.
+      o="$(hook_v6_groups "$h")" || return 0
+      case "$o" in
+        0000:0000:0000:0000:0000:0000:*|0000:0000:0000:0000:0000:ffff:*)
+          IFS=: read -r _ _ _ _ _ _ o1 o2 <<< "$o"
+          hook_private_host "$(( 0x${o1:0:2} )).$(( 0x${o1:2:2} )).$(( 0x${o2:0:2} )).$(( 0x${o2:2:2} ))" && return 0 ;;
+        0000:0000:0000:0000:0000:0000:0000:*|fc*|fd*|fe[89a-f]*|ff*|0064:ff9b:*|2002:*|2001:0000:*|2001:0db8:*|0100:*) return 0 ;;
+      esac
       return 1 ;;
   esac
   # An IPv4 written any other way than four decimal numbers (2130706433, 0x7f.1, 017.0.0.1)
