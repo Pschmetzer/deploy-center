@@ -76,6 +76,11 @@ const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
 const info = await s.init();
+{
+  // Every tool that frames its answer as untrusted data is named in the instructions (listed from the code).
+  const need = ["deploys_preview", "deploys_journal_search", "deploys_notes", "deploys_explain", "deploys_diff", "deploys_history", "deploys_risk", "deploys_logs"];
+  check("instructions name every untrusted-data tool", need.every((n) => (info?.instructions ?? "").includes(n)), info?.instructions?.slice(0, 400));
+}
 check("initialize names the server", info?.serverInfo?.name === "deploys", JSON.stringify(info?.serverInfo));
 const pkgVersion = JSON.parse(readFileSync(join(here, "..", "mcp", "package.json"), "utf8")).version;
 check("the server's version is package.json's", info?.serverInfo?.version === pkgVersion, `${info?.serverInfo?.version} vs ${pkgVersion}`);
@@ -255,6 +260,10 @@ check("journal report passes the month", !r.error && /2026-03/.test(r.text) && c
   check("journal search: result filter", jf.total === 1 && jf.entries[0].detail.includes("missing module"), JSON.stringify(jf));
   const jq = body((await s.call("deploys_journal_search", { query: "FREEZE", limit: 1 })).text);
   check("journal search: query is case-insensitive and limit applies", jq.total === 1 && jq.shown === 1 && jq.entries[0].name === "api", JSON.stringify(jq));
+  const jo = body((await s.call("deploys_journal_search", { limit: 1, offset: 1 })).text);
+  check("journal search: offset reads on past the newest", jo.total === 4 && jo.shown === 1 && jo.offset === 1 && jo.entries[0].result === "forced", JSON.stringify(jo));
+  const jo2 = await s.call("deploys_journal_search", { offset: -1 });
+  check("journal search: a negative offset is refused", jo2.error === true, jo2.text);
   await s.call("deploys_journal_search", { project: "app-web", since: "2026-11-02" });
   check("journal search: project and since go to the CLI", /journal export --since 2026-11-02 --project app-web/.test(callLog()), callLog().slice(-200));
   const jb = await s.call("deploys_journal_search", { since: "yesterday; rm" });
