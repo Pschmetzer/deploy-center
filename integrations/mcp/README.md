@@ -112,6 +112,7 @@ a different one needs `DEPLOYS_BIN`.
 | `deploys_env_diff(project)` | `deploys env-diff <project> --json` | Variable names only in production or only in preview. Names, never values. Read-only. |
 | `deploys_preview(project)` | `deploys preview <project> --json` | What a production deploy would do and a verdict. Framed as untrusted data. Starts nothing. |
 | `deploys_perf(consumers?)` | `deploys perf status --json` (or `perf consumers --json`) | How full the Mac is (green/yellow/red), the biggest consumers, and whether a heavy check may start now. Read-only. |
+| `deploys_repos(refresh?)` | `deploys repos last --json` (`refresh`: `repos status --json`) | The local checkouts: up to date, behind, on a merged branch, or needing a person (changes, conflict). Read-only. |
 | `deploys_local_sessions()` | `deploys local-sessions --json` | The Claude Code sessions on this Mac: tasks started together on one repo that belong in one to three sessions, the same task twice, two in one folder, idle ones. Read-only. |
 | `deploys_health(days?, project?, ci?)` | `deploys health --days <n> [--project p] [--no-ci] --json` | 0–100 health per project, worst first. Read-only. |
 | `deploys_sessions(hours?, repo?)` | `deploys sessions [--hours n] [--repo o/n] --json` | Claude Code cloud sessions on GitHub: merged (a slot is free), waiting, stuck, with pull request and session links. Read-only. |

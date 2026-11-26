@@ -69,6 +69,7 @@
 #   deploys streak [--days 90] [--project <p>]   deploys in a row without a failure, per project
 #   deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
 #   deploys clean [--root <dir>] [--worktrees] [--yes] | clean schedule on|off   free disk space in old worktrees (a report without --yes)
+#   deploys repos status|sync [--yes]|last|schedule on|off   keep local checkouts on top of origin/main (docs/REPOS.md)
 #   deploys when [--days 90] [--by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
 #   deploys health [--days 30] [--project <p>] [--no-ci]   0-100 per project from failures, recovery, age of the last deploy, CI
 #   deploys local-sessions [--json] | stop <pid> --yes | set <key> <n>   Claude Code sessions on this Mac; tasks started together, twins (docs/LOCAL-SESSIONS.md)
@@ -452,7 +453,7 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions; do
+for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions repos; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done
@@ -1756,7 +1757,7 @@ job_on() {
   <key>StandardOutPath</key><string>$(xml_text "$log")</string>
   <key>StandardErrorPath</key><string>$(xml_text "$log")</string>
   $start
-  <key>ProcessType</key><string>Background</string>
+  <key>ProcessType</key><string>Background</string>${JOB_RUN_AT_LOAD:+<key>RunAtLoad</key><true/>}
   <key>LowPriorityIO</key><true/>
 </dict></plist>
 PLIST
@@ -3872,7 +3873,7 @@ case "${1:-} ${2:-}" in
     sed -n '/^# Exit codes: /,/^#$/p' "$SELF" | sed 's/^# \{0,1\}//'
     echo "Every command: the table is in docs/CLI.md (Exit codes)." ;;
 
-  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*|"local-sessions "*|"clean "*)
+  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*|"local-sessions "*|"clean "*|"repos "*)
     case "$1" in env-diff) _f=envdiff_main ;; group) _f=groups_main ;; local-sessions) _f=localsessions_main ;; *) _f="${1}_main" ;; esac
     declare -F "$_f" >/dev/null || die "$1 needs its file in lib/ next to deploys."
     "$_f" "${@:2}" ;;

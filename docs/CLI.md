@@ -34,6 +34,9 @@ deploys weeks [--days 7] [--project <name>] [--json]   # the last --days days ag
 deploys export [--format csv|json] [--what journal|costs|all] [--days 30] [--project <name>] [--out <file>]   # journal and Vercel costs with a fixed schema (below); secrets in details masked, files 0600
 deploys clean [--root <dir>] [--days 2] [--worktrees] [--min-free <GB>] [--yes] [--json]   # free disk space in old git worktrees: ignored build output, with --worktrees merged worktrees without changes (a report without --yes)
 deploys clean schedule on|off|status [--min-free 60]   # daily at 04:30, build output only, when less than <GB> are free
+deploys repos status [--no-fetch] [--json]   # local checkouts against origin/main: what a sync would do (changes nothing; docs/REPOS.md)
+deploys repos sync [--yes] [--json]           # fast-forward clean checkouts, back to main from merged branches; never one with changes
+deploys repos last [--json] | repos schedule on|off|status   # the last result; every 30 minutes and at login
 deploys streak [--days 90] [--project <name>] [--json]   # deploys in a row without a failure per project: now and longest (from the journal; reads only)
 deploys note <project> "text"           # one line in the journal (result `note`, 200 characters); it shows in `timeline`. A text that looks like a secret is refused. Touches no platform.
 deploys when [--days 90] [--by weekday|hour] [--json]   # on which weekday or hour of the day your deploys failed more often (UTC); a slot needs 5 tries to count
@@ -303,6 +306,9 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_HTTP_TRACE` | `1`: one line per call to a platform on stderr (method, path without query, status, time; no header, no body); `--debug` sets it |
 | `DEPLOYS_QUIET`, `DEPLOYS_DEBUG` | what the global `--quiet` and `--debug` set: only the result; the trace of the calls |
 | `DEPLOYS_PARALLEL` | how many platform or git host reads run at once in a list (default 8, at most 32; 3 while GitHub's budget is under 1000) |
+| `DEPLOYS_REPOS_PARALLEL` | how many repos `deploys repos` looks at at once (default 4) |
+| `DEPLOYS_REPOS_IDLE_MIN` | minutes a linked worktree must be unused before `deploys repos sync` removes it (default 1440) |
+| `DEPLOYS_REPOS_NO_GH`, `DEPLOYS_REPOS_NO_LSOF` | `1`: `deploys repos` asks no `gh` for merged pull requests / no `lsof` for processes inside a worktree |
 | `HTTP_DEADLINE` | seconds one platform call may take in all, tries and waits included (default 120) |
 | `DEPLOYS_CLOUDFLARE_PER_PAGE` | page size of the Cloudflare project list (default 10) |
 | `DEPLOYS_ANTHROPIC_API_KEY` | the key for `deploys ai`, before `ANTHROPIC_API_KEY` and the keychain |

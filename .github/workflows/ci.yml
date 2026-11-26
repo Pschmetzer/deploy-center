@@ -131,6 +131,8 @@ jobs:
         run: bash tests/localsessions-tests.sh
       - name: Clean tests (deploys clean)
         run: bash tests/clean-tests.sh
+      - name: Repo upkeep tests (deploys repos)
+        run: bash tests/repos-tests.sh
       - name: Preview tests (deploys preview)
         run: bash tests/preview-tests.sh
       - name: Performance guard tests (perf status, gate, clean, the hook)
@@ -262,6 +264,8 @@ jobs:
         run: bash tests/localsessions-tests.sh
       - name: Clean tests (deploys clean)
         run: bash tests/clean-tests.sh
+      - name: Repo upkeep tests (deploys repos)
+        run: bash tests/repos-tests.sh
       - name: Preview tests
         run: bash tests/preview-tests.sh
       - name: Performance guard tests

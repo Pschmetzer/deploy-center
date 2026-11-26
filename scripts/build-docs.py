@@ -72,6 +72,8 @@ PAGES = [
      "deploys perf shows how full the Mac is, holds heavy checks like tsc or next build until there is room, and finds orphaned dev processes."),
     ("local-sessions", "Local session counter", "Using it", "docs/LOCAL-SESSIONS.md",
      "deploys local-sessions counts the Claude Code sessions on this Mac and finds tasks started together that belong in one to three sessions."),
+    ("repos", "Repo upkeep", "Using it", "docs/REPOS.md",
+     "deploys repos keeps the local checkouts of your projects on top of origin/main and reports the ones that need you."),
     ("savings", "Savings: simulate and ledger", "Using it", "docs/SAVINGS.md",
      "deploys simulate estimates what auto-deploy would cost a month, deploys ledger what turning it off saved, on Vercel and Render."),
     ("team", "Team mode", "Using it", "docs/TEAM.md",
