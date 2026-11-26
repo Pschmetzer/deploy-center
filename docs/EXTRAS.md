@@ -90,6 +90,19 @@ through (use [rules and the deploy window](SAFE-DEPLOY.md) for that). `add` and 
 in observer mode; a point that looks like a secret is refused. `deploys lint` names the file, the rule and the problem
 (`rule 2: "from" must be HH:MM`) and exits 1; `deploys doctor` checks tools and access, `lint` checks your files.
 
+## changelog: release notes by kind
+
+```bash
+deploys changelog web                  # Markdown: Breaking changes, Features, Fixes, Performance, Documentation, ...
+deploys changelog web --authors --format text
+deploys changelog web --json
+```
+
+Reads the same commits as `deploys notes web --json` (what is merged but not live) and sorts them by the conventional-commit
+prefix of the title (`feat:`, `fix(scope):`, `docs:` …). A `!` after the type, or "BREAKING CHANGE" in the title, puts a commit
+under "Breaking changes". A title without a prefix goes under "Other"; dependency-bot commits are listed apart. Authors are left out
+unless you ask. Nothing is written or deployed.
+
 ## Adding one
 
 Put `lib/x-<name>.sh` next to `deploys`. It defines `x_<name>_main` (dashes in the name become underscores) and says what it

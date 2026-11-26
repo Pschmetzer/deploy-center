@@ -90,6 +90,19 @@ zurück und lässt keinen durch (dafür gibt es [Regeln und das Deploy-Fenster](
 `checklists.json` und sind im Beobachtermodus verweigert; ein Punkt, der nach einem Geheimnis aussieht, wird abgelehnt. `deploys lint` nennt Datei, Regel und
 Problem (`rule 2: "from" must be HH:MM`) und endet mit 1; `deploys doctor` prüft Werkzeuge und Zugang, `lint` deine Dateien.
 
+## changelog: Release-Notizen nach Art
+
+```bash
+deploys changelog web                  # Markdown: Breaking changes, Features, Fixes, Performance, Documentation, ...
+deploys changelog web --authors --format text
+deploys changelog web --json
+```
+
+Liest dieselben Commits wie `deploys notes web --json` (gemergt, aber nicht live) und sortiert sie nach dem Conventional-Commit-Präfix
+des Titels (`feat:`, `fix(scope):`, `docs:` …). Ein `!` hinter der Art oder „BREAKING CHANGE" im Titel stellt einen Commit unter „Breaking
+changes". Ein Titel ohne Präfix kommt unter „Other"; Commits von Abhängigkeits-Bots stehen für sich. Autoren fehlen, solange du sie nicht
+verlangst. Es wird nichts geschrieben oder deployt.
+
 ## Einen neuen hinzufügen
 
 `lib/x-<name>.sh` neben `deploys` legen. Die Datei definiert `x_<name>_main` (Bindestriche im Namen werden zu Unterstrichen)
