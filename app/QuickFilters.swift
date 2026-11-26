@@ -167,5 +167,6 @@ struct QuickFilterBar: View {
         .help(help)
         .accessibilityLabel(title + (count.map { $0 > 0 ? ", \($0)" : "" } ?? ""))
         .accessibilityAddTraits(on ? [.isSelected] : [])
+        .accessibilityValue(on ? L("on", "an") : L("off", "aus"))
     }
 }

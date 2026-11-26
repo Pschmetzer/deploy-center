@@ -421,7 +421,7 @@ struct JournalView: View {
                 }
                 Spacer()
                 if let took { Text(took).font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
-                Text(e.at.formatted(date: .omitted, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                Text(uiTime(e.at)).font(.caption).foregroundStyle(.secondary)
             }
             if let detail, !detail.isEmpty {
                 Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(2).padding(.leading, 26)

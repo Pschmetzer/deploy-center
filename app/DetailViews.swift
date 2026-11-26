@@ -301,7 +301,7 @@ struct LogText: NSViewRepresentable {
                 if onlyErrors && !bad { continue }
                 let line = Self.shown(raw, bad: bad, noColour: noColour)
                 var attrs: [NSAttributedString.Key: Any] = [.font: bad && noColour ? bold : font,
-                                                            .foregroundColor: bad ? NSColor.systemRed : NSColor.textColor]
+                                                            .foregroundColor: bad ? NSColor.dangerText : NSColor.textColor]
                 if n == firstError { attrs[.backgroundColor] = NSColor.systemRed.withAlphaComponent(0.12) }
                 let start = base + out.length
                 out.append(NSAttributedString(string: line + "\n", attributes: attrs))

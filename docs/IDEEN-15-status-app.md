@@ -18,3 +18,4 @@ Nummern wie in [IDEEN-15.md](IDEEN-15.md). „erledigt“ heißt umgesetzt und p
 | 4, 19, 20, 21, 54, 55, 70 | erledigt | Races, Claude-Verbindung |
 | 25, 28, 29, 30, 31, 36, 37, 42, 43, 44, 49, 50, 52 | erledigt | Kleine Fehler 1 |
 | 22 | entfällt | das Skript nimmt `main` ohnehin als Vorgabe; Ref-Auflösung gehört ins CLI |
+| 45 (Teil), 73, 74, 76, 77, 81, 85, 86, 87, 88, 89, 90, 97 (Teil) | erledigt | Barrierefreiheit 1 |

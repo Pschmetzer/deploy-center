@@ -167,7 +167,7 @@ private struct GuardLastRun: View {
     }
 
     private func title(_ s: GuardStatus, _ t: Double) -> String {
-        let when = Date(timeIntervalSince1970: t).formatted(date: .abbreviated, time: .shortened)
+        let when = uiDate(Date(timeIntervalSince1970: t), date: .abbreviated, time: .shortened)
         let dry = s.lastDry == true ? L(" (report only)", " (nur Bericht)") : ""
         return L("Last run: ", "Letzter Lauf: ") + when + dry + " · \(s.lastActions.count)"
     }

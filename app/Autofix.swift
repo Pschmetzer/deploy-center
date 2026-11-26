@@ -104,12 +104,12 @@ struct AutofixSettings: View {
                 DisclosureGroup(L("Last hand-overs (\(fires.count))", "Letzte Übergaben (\(fires.count))")) {
                     ForEach(fires.sorted { $0.at > $1.at }.prefix(10)) { f in
                         HStack {
-                            Text(Date(timeIntervalSince1970: f.at).formatted(date: .abbreviated, time: .shortened))
+                            Text(uiDate(Date(timeIntervalSince1970: f.at), date: .abbreviated, time: .shortened))
                                 .foregroundStyle(.secondary)
                             Text(Demo.mask(f.project))
                             Spacer()
                             if f.status == "failed" { Image(systemName: "xmark.octagon.fill").foregroundStyle(.red).accessibilityHidden(true) }
-                            Text(Self.label(f)).foregroundStyle(f.status == "failed" ? .red : .secondary)
+                            Text(Self.label(f)).foregroundStyle(f.status == "failed" ? Color.dangerText : Color.secondary)
                             if let n = f.prNumber, let s = f.prUrl, let url = URL(string: s), !Demo.on {
                                 Button("PR #\(n)") { SafeLink.open(url) }.buttonStyle(.link)
                             }
