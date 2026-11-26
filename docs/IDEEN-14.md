@@ -13,7 +13,7 @@ Wird mit jedem PR dieser Spur nachgeführt.
 3. ⬜ **Test-Zähler je Suite** – `tests/all.sh` zeigt neben der Zeit auch, wie viele `ok`-Zeilen eine Suite druckte; ein Sinken fällt auf.
 4. ⬜ **Schnelle Teilmenge** – `tests/all.sh --changed`: nur die Suiten, deren Quelldateien sich gegen `origin/main` geändert haben
    (Abbildung Datei → Suite in `tests/suites.txt`).
-5. ⬜ **Flaky-Erkennung** – die Nachtläufe zählen, welche Tests in zwei Läufen verschieden ausgehen, und melden sie.
+5. ✅ **Flaky-Erkennung** – `scripts/flaky-check.sh` führt die Suiten zweimal aus und meldet jede Testzeile, die verschieden ausgeht; der Wochenlauf von CI (Job `flaky`, nur bei `schedule`) ruft es mit `--quick` auf.
 
 ## B. Bauen und Editor
 
@@ -42,5 +42,5 @@ Wird mit jedem PR dieser Spur nachgeführt.
 
 15. ⬜ **Gemeinsamer Cache** für Homebrew-Pakete und `vendor/Sparkle` im macOS-Lauf (die macOS-Minuten zählen zehnfach).
 16. ⬜ **Laufzeiten sichtbar** – die Zeit je Suite aus `tests/all.sh` in der Zusammenfassung des Laufs, ein Rückblick über die letzten Läufe.
-17. ⬜ **Abhängigkeits-Updates** – Dependabot für GitHub-Actions-Pins (die Schritte sind auf Commit-Hashes festgenagelt).
+17. ✅ **Abhängigkeits-Updates** – Dependabot für GitHub-Actions-Pins (die Schritte sind auf Commit-Hashes festgenagelt).
 18. ⬜ **Nur Dokumentation geändert** – Läufe überspringen die macOS-Tests, wenn ein PR nur `docs/` oder `site/` berührt.

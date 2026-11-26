@@ -207,6 +207,8 @@ expect "ci.yml runs every shell suite (the app suite aside)" "$miss" ""
 miss=""
 for s in tests/*-tests.sh; do case "$s" in tests/app-tests.sh|tests/cli-tests.sh|tests/savings-tests.sh) continue ;; esac; grep -q "$s" tests/suites.txt || miss="$miss $s"; done
 expect "suites.txt (the list all.sh runs) names every shell suite" "$miss" ""
+expect "flaky-check.sh: a wrong call exits 2" "$(bash scripts/flaky-check.sh --runs 1 >/dev/null 2>&1; echo $?)" "2"
+expect "flaky-check.sh: two runs of a small suite agree" "$(bash scripts/flaky-check.sh --only clean-tests >/dev/null 2>&1; echo $?)" "0"
 expect "CODEOWNERS: lib/ and site/install.sh" "$(grep -c '^/lib/ \|^/site/install.sh ' .github/CODEOWNERS)" "2"
 expect "examples pin the current release" "$(grep -h 'DEPLOYS_VERSION: "' examples/*.yml | grep -vc "\"$(cat VERSION)\"")" "0"
 
