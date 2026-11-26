@@ -25,6 +25,7 @@ MainActor.assumeIsolated {
     suite_round15_tests()
     suite_round15_security()
     suite_round15_notify_sessions()
+    suite_round15_network()
     insightsAppTests(expect); insightsAppTests2(expect)
 }
 

@@ -206,12 +206,24 @@ enum Tool {
     /// What one command may print before it is ended (stdout and stderr together).
     nonisolated static let maxOutput = 32_000_000
 
+    /// Names the script and the tools under it need, and the prefixes of the hosts' own variables. Nothing else
+    /// is handed down: an `ANTHROPIC_API_KEY`, `AWS_SECRET_ACCESS_KEY` or `GITHUB_TOKEN` in the app's
+    /// environment must not reach every script call (the MCP server filters its environment the same way).
+    nonisolated static let envNames: Set<String> = ["PATH", "HOME", "USER", "LOGNAME", "SHELL", "TMPDIR", "TERM", "LANG", "NO_COLOR", "SSH_AUTH_SOCK",
+        "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "AWS_PROFILE", "AWS_REGION", "AWS_DEFAULT_REGION",
+        "__CF_USER_TEXT_ENCODING", "XPC_SERVICE_NAME"]
+    nonisolated static let envPrefixes = ["DEPLOYS_", "VERCEL_", "RENDER_", "GH_", "LC_", "XDG_", "NETLIFY_", "FLY_", "RAILWAY_", "CLOUDFLARE_", "DIGITALOCEAN_",
+        "COOLIFY_", "HEROKU_", "KOYEB_", "NORTHFLANK_", "FIREBASE_", "DENO_", "GITLAB_", "GITHUB_PAGES_", "GOOGLE_OAUTH_"]
+    nonisolated static func childEnvironment(_ env: [String: String]) -> [String: String] {
+        env.filter { k, _ in envNames.contains(k) || envPrefixes.contains { k.hasPrefix($0) } }
+    }
+
     private static func runProcess(_ args: [String], stdin: String?, timeout: Double, running: Running) async throws -> Data {
         try await withCheckedThrowingContinuation { cont in
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/bin/bash")
             p.arguments = [path] + args
-            var env = ProcessInfo.processInfo.environment
+            var env = childEnvironment(ProcessInfo.processInfo.environment)
             env["PATH"] = searchPath
             // The app journals what it starts itself; the script then writes no second line.
             env["DEPLOYS_CALLER"] = "app"
