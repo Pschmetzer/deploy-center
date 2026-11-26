@@ -167,6 +167,8 @@ struct ContentView: View {
     @State private var freezeReason: String?
     /// What "Deploy anyway" starts, with the reason, once the deploy window was found closed.
     @State private var frozenRun: ((String) -> Void)?
+    /// A deploy run is being started (owner check, deploy window check): a second ⌘↩ meanwhile does nothing.
+    @State private var startingDeploy = false
     @State private var askingWhy = false
     @State private var whyMissing = false
     @State private var forceText = ""
@@ -779,7 +781,7 @@ struct ContentView: View {
                 Text("DEMO").font(.caption.weight(.bold)).foregroundStyle(.white)
                     .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Color.purple))
                     .help(L("Demo mode: names are stand-ins. ⇧⌘D turns it off.", "Demo-Modus: Namen sind Platzhalter. ⇧⌘D schaltet ihn aus."))
-                    .accessibilityLabel(L("Demo mode is on", "Demo-Modus ist an"))
+                    .accessibilityLabel(L("Demo mode is on: names are replaced by stand-ins", "Demo-Modus ist an: Namen sind durch Platzhalter ersetzt"))
             }
 
             TextField(L("Search", "Suchen"), text: $search).textFieldStyle(.roundedBorder)
@@ -1063,6 +1065,8 @@ struct ContentView: View {
         let chosen = scopes
         let frozen = confirmedKeys.isEmpty ? Set(selectedAll.map { Store.key($0) }) : confirmedKeys
         let count = frozen.count
+        guard !startingDeploy else { return }
+        startingDeploy = true
         let critical = allItems.contains { frozen.contains(Store.key($0)) && store.isCritical($0) }
         let restore = {
             chosen.forEach { p in
@@ -1071,6 +1075,7 @@ struct ContentView: View {
             }
         }
         Task {
+            defer { startingDeploy = false }
             if OwnerCheck.needed(projects: count) || (OwnerCheck.on && critical),
                !(await OwnerCheck.confirm(L("put \(count) projects live", "\(count) Projekte live schalten"))) { return }
             if let w = await store.deployWindow(), w.denied {
@@ -1097,7 +1102,7 @@ struct ContentView: View {
                 frozenRun = { why in store.deployOne(item, preview: false, sha: sha, clearCache: clearCache, force: why) }
                 freezeReason = w.reason ?? ""; return
             }
-            store.deployOne(item, preview: false, sha: sha, clearCache: clearCache)
+            store.deployOne(item, preview: false, sha: sha, clearCache: clearCache, windowChecked: true)
         }
     }
 
@@ -1832,20 +1837,26 @@ struct ContentView: View {
             Button(L("Latest messages …", "Letzte Meldungen …")) { showMessages = true }
                 .disabled(store.messages.isEmpty)
         } label: {
-            Text(L("More", "Mehr"))
+            Text(L("More", "Mehr") + (store.unreadFailures > 0 ? " (\(store.unreadFailures))" : ""))
+                .foregroundStyle(store.unreadFailures > 0 ? Color.dangerText : Color.primary)
         }
         .fixedSize()
         .help(L("Select all changed, preview deploy, deploy history, messages", "Alle mit Änderungen anhaken, Vorschau-Deploy, Deploy-Verlauf, Meldungen"))
         .accessibilityLabel(L("More actions", "Weitere Aktionen"))
+        .accessibilityValue(store.unreadFailures > 0 ? L("\(plural(store.unreadFailures, "unread failure", "unread failures"))", "\(plural(store.unreadFailures, "ungelesener Fehler", "ungelesene Fehler"))") : "")
+        .onChange(of: showMessages) { _, on in if on { store.markMessagesSeen() } }
         .popover(isPresented: $showMessages) {
             VStack(alignment: .leading, spacing: 6) {
                 ScrollView {
                 VStack(alignment: .leading, spacing: 6) {
                 ForEach(store.messages) { m in
                     HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? Color.good : .red)
-                        Text(uiTime(m.date)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? Color.good : Color.dangerText)
+                            .accessibilityHidden(true)
+                        Text(uiTimeOrDay(m.date)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        // The status as a word: the symbol alone says nothing to VoiceOver.
                         Text(Demo.scrub(m.text, items: allItems)).font(.caption).textSelection(.enabled)
+                            .accessibilityLabel((m.ok ? L("Success: ", "Erfolg: ") : L("Error: ", "Fehler: ")) + Demo.scrub(m.text, items: allItems))
                         Spacer(minLength: 0)
                         // A line about one project opens its build log (failed ones first of all).
                         if let item = messageItem(m) {

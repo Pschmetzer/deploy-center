@@ -25,6 +25,11 @@ enum SessionsNews {
     static func fresh(_ rows: [SessionsReport.Row], seen: Set<String>) -> [SessionsReport.Row] {
         rows.filter { told.contains($0.state) && !seen.contains(key($0)) }
     }
+    /// The keys to remember. Pruned to the rows still in the window only when every repo was read: a repo that
+    /// failed this time has no rows in `live`, and forgetting its keys would tell them as news next time.
+    static func kept(seen: Set<String>, live: Set<String>, complete: Bool) -> Set<String> {
+        complete ? seen.intersection(live) : seen
+    }
     /// The notifications for the news: finished ones as one note ("3 sessions done"), the others one each.
     static func notes(_ news: [SessionsReport.Row], hold: Int) -> [(id: String, title: String, body: String)] {
         var out: [(id: String, title: String, body: String)] = []
@@ -99,7 +104,7 @@ enum SessionsNews {
         news.forEach { seen.insert(SessionsNews.key($0)) }
         // Only keys of rows still in the window are kept, so the memory does not grow without end.
         let live = Set(r.sessions.map(SessionsNews.key))
-        d.set(Array(seen.intersection(live)), forKey: seenKey)
+        d.set(Array(SessionsNews.kept(seen: seen, live: live, complete: r.errors.isEmpty)), forKey: seenKey)
     }
 
     /// `deploys sessions add|remove <owner/name>`, then a fresh look.
@@ -119,10 +124,10 @@ struct SessionsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
-            if let e = watch.error { Text(e).foregroundStyle(.red).font(.callout).textSelection(.enabled) }
+            if let e = watch.error { Text(Demo.mask(e)).foregroundStyle(Color.dangerText).font(.callout).textSelection(.enabled) }
             if let r = watch.report {
                 ForEach(r.errors, id: \.repo) { e in
-                    Text(L("\(e.repo): not read – \(e.error)", "\(e.repo): nicht gelesen – \(e.error)")).foregroundStyle(.orange).font(.callout)
+                    Text(L("\(Demo.mask(e.repo)): not read – \(Demo.mask(e.error))", "\(Demo.mask(e.repo)): nicht gelesen – \(Demo.mask(e.error))")).foregroundStyle(Color.warningText).font(.callout)
                 }
                 if r.sessions.isEmpty {
                     Text(r.repos.isEmpty ? L("No repo is watched yet. Add one below (owner/name).", "Noch kein Repo beobachtet. Unten eines hinzufügen (owner/name).")
@@ -197,17 +202,19 @@ struct SessionRow: View {
         HStack(spacing: 10) {
             Image(systemName: icon).foregroundStyle(color).frame(width: 18).help(stateText)
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title ?? row.branch).lineLimit(1)
-                Text((multiRepo ? row.repo + " · " : "") + row.branch + " · " + stateText + detail)
+                Text(Demo.mask(row.title ?? row.branch)).lineLimit(1)
+                Text((multiRepo ? Demo.mask(row.repo) + " · " : "") + Demo.mask(row.branch) + " · " + stateText + detail)
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer()
             if let s = row.session, let u = URL(string: s) {
-                Button { NSWorkspace.shared.open(u) } label: { Image(systemName: "sparkles") }
+                Button { SafeLink.open(u) } label: { Image(systemName: "sparkles") }
                     .buttonStyle(.borderless).help(L("Open the Claude session", "Claude-Session öffnen"))
+                    .accessibilityLabel(L("Open the Claude session of \(row.title ?? row.branch)", "Claude-Session von \(row.title ?? row.branch) öffnen"))
             }
             if let s = row.url, let u = URL(string: s), let n = row.pr {
-                Button("#\(n)") { NSWorkspace.shared.open(u) }.buttonStyle(.borderless).help(L("Open the pull request", "Pull Request öffnen"))
+                Button("#\(n)") { SafeLink.open(u) }.buttonStyle(.borderless).help(L("Open the pull request", "Pull Request öffnen"))
+                    .accessibilityLabel(L("Open pull request \(n) of \(row.title ?? row.branch)", "Pull Request \(n) von \(row.title ?? row.branch) öffnen"))
             }
         }
         .padding(.vertical, 2)

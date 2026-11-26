@@ -79,7 +79,10 @@ struct NightlySettings: View {
 
             Toggle(L("Claude fixes new findings", "Claude behebt neue Funde"), isOn: Binding(
                 get: { status?.fix ?? false },
-                set: { on in Task { await run(["nightly", "fix", on ? "on" : "off"]) } }))
+                set: { on in Task {
+                    // Switching on lets Claude open sessions and pull requests by itself: same check as the guard.
+                    if on, !(await OwnerCheck.confirm(L("let Claude fix new findings", "Claude neue Funde beheben lassen"))) { return }
+                    await run(["nightly", "fix", on ? "on" : "off"]) } }))
                 .disabled(busy || status == nil)
             Text(L("New vulnerable packages and serious Semgrep findings go to a bug scan with Claude Code on this Mac, at most \(status?.maxScans ?? 2) a night. It opens a pull request; you review and merge. Leaked keys are only reported: rotate them.",
                    "Neue verwundbare Pakete und ernste Semgrep-Funde gehen an einen Bug-Scan mit Claude Code auf diesem Mac, höchstens \(status?.maxScans ?? 2) pro Nacht. Er öffnet einen Pull Request; du prüfst und mergst. Geleakte Schlüssel werden nur gemeldet: Tausche sie aus."))
@@ -89,7 +92,9 @@ struct NightlySettings: View {
             if status?.scheduled == true {
                 Toggle(L("Claude reviews the week's changes", "Claude prüft die Änderungen der Woche"), isOn: Binding(
                     get: { status?.review ?? false },
-                    set: { on in Task { await run(["nightly", "review", on ? "on" : "off"]) } }))
+                    set: { on in Task {
+                        if on, !(await OwnerCheck.confirm(L("let Claude review the week's changes", "Claude die Änderungen der Woche prüfen lassen"))) { return }
+                        await run(["nightly", "review", on ? "on" : "off"]) } }))
                     .disabled(busy)
                 if status?.review == true {
                     Picker(L("On", "Am"), selection: Binding(
@@ -116,7 +121,7 @@ struct NightlySettings: View {
                 else { Text(Demo.scrub(message, items: store.allItems)).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(.secondary) }
             }
             if let s = status, let t = s.lastRun {
-                Text(L("Last run: ", "Letzter Lauf: ") + Date(timeIntervalSince1970: t).formatted(date: .abbreviated, time: .shortened)
+                Text(L("Last run: ", "Letzter Lauf: ") + uiDate(Date(timeIntervalSince1970: t), date: .abbreviated, time: .shortened)
                      + " · " + Self.summary(s, at: t))
                     .font(.caption).foregroundStyle(.secondary)
             }
@@ -129,11 +134,13 @@ struct NightlySettings: View {
                             Text(Demo.scrub(Self.label(r), items: store.allItems)).foregroundStyle(r.newLeaks > 0 ? Color.warningText : .secondary)
                             if let s = r.prUrl, let url = URL(string: s), !Demo.on {
                                 Button("PR") { SafeLink.open(url) }.buttonStyle(.link)
+                                    .accessibilityLabel(L("Open the pull request of \(Demo.on ? Demo.mask(r.repo) : r.repo)", "Pull Request von \(Demo.on ? Demo.mask(r.repo) : r.repo) öffnen"))
                             }
                             Button(status?.skip.contains(r.repo) == true ? L("Include", "Aufnehmen") : L("Skip", "Auslassen")) {
                                 Task { await run(["nightly", status?.skip.contains(r.repo) == true ? "unskip" : "skip", r.repo]) }
                             }
                             .buttonStyle(.link).disabled(busy)
+                            .accessibilityLabel((status?.skip.contains(r.repo) == true ? L("Include repo ", "Repo aufnehmen: ") : L("Skip repo ", "Repo auslassen: ")) + (Demo.on ? Demo.mask(r.repo) : r.repo))
                         }
                         .font(.caption)
                     }

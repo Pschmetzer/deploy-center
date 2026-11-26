@@ -36,8 +36,10 @@ enum ClaudeAI {
     /// A token limit as people write it: "1000000", "1.000.000", "1 000 000", "500k", "1 Mio", "2m"; nil when it is not a positive number (IDEEN-11 257).
     nonisolated static func parseCap(_ text: String) -> Int? {
         var t = text.lowercased().filter { !$0.isWhitespace }
+        // "5 Tsd." ends in a dot; "t" alone is not a suffix (English "T" is a trillion, German "t" is unclear).
+        while t.hasSuffix(".") && t.dropLast().contains(where: { $0.isLetter }) { t.removeLast() }
         var mult = 1
-        for (suffix, m) in [("mio", 1_000_000), ("m", 1_000_000), ("k", 1_000), ("t", 1_000)] where t.hasSuffix(suffix) {
+        for (suffix, m) in [("mio", 1_000_000), ("tsd", 1_000), ("m", 1_000_000), ("k", 1_000)] where t.hasSuffix(suffix) {
             t.removeLast(suffix.count); mult = m; break
         }
         // "1,5m" and "1.5 Mio" are decimals; "1.000.000" and "500.000k" are thousands groups.

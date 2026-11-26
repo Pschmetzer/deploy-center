@@ -23,6 +23,11 @@ struct RulesConfig: Equatable {
             }
         }
     }
+    /// True when `new` has an enabled rule that deploys and `old` did not have it: the deploys script then
+    /// ships by itself, which is as much auto-deploy as the guard's allowance (so saving asks for the owner check).
+    static func addsDeploy(from old: RulesConfig, to new: RulesConfig) -> Bool {
+        new.rules.contains { $0.enabled && $0.then == .deploy && !old.rules.contains($0) }
+    }
     struct Rule: Equatable, Identifiable {
         var id = UUID()
         var name = ""
@@ -232,7 +237,13 @@ struct RulesSettings: View {
                 }
                 Spacer()
                 Button(L("Revert", "Zurücksetzen")) { config = saved; error = nil }.disabled(config == saved)
-                Button(L("Save", "Speichern")) { error = config.save(); if error == nil { saved = config } }
+                Button(L("Save", "Speichern")) {
+                    Task {
+                        if RulesConfig.addsDeploy(from: saved, to: config),
+                           !(await OwnerCheck.confirm(L("save a rule that deploys by itself", "eine Regel speichern, die selbst deployt"))) { return }
+                        error = config.save(); if error == nil { saved = config }
+                    }
+                }
                     .disabled(config == saved || config.problem != nil)
             }
             if let p = config.problem ?? error { ErrorText(p) }

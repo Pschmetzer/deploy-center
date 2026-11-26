@@ -19,11 +19,7 @@ final class CertificateProbe: NSObject, URLSessionTaskDelegate, @unchecked Senda
     /// A redirect to localhost or a private address is not followed (IDEEN-11 220).
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
-        let host = request.url?.host?.lowercased() ?? ""
-        let privateHost = host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".localhost") || host.hasSuffix(".internal")
-            || host.hasPrefix("127.") || host.hasPrefix("10.") || host.hasPrefix("192.168.") || host.hasPrefix("169.254.") || host == "::1"
-            || host.range(of: #"^172\.(1[6-9]|2[0-9]|3[01])\."#, options: .regularExpression) != nil
-        completionHandler(request.url?.scheme == "https" && !privateHost ? request : nil)
+        completionHandler(PublicRedirect.allows(request.url) ? request : nil)
     }
 
     /// The leaf certificate's end, nil when nothing answered or it could not be read.
@@ -58,5 +54,23 @@ final class CertificateProbe: NSObject, URLSessionTaskDelegate, @unchecked Senda
               let n = entry[kSecPropertyKeyValue] as? NSNumber else { return nil }
         // Seconds since 2001-01-01, as CFAbsoluteTime.
         return Date(timeIntervalSinceReferenceDate: n.doubleValue)
+    }
+}
+
+/// One rule for every redirect the app follows on its own: only https, only a public host (also by DNS).
+/// A page that answers "moved" to `http://`, localhost or a cloud metadata address is not followed, so the
+/// status that decides a warning or an automatic rollback never comes from there.
+enum PublicRedirect {
+    nonisolated static func allows(_ url: URL?) -> Bool {
+        guard let url, LogoCache.allowed(url) else { return false }
+        return LogoCache.resolvesPublic(url.host ?? "")
+    }
+}
+
+/// Per-request delegate for `URLSession.bytes(for:delegate:)`: refuses a redirect `PublicRedirect` refuses.
+final class PublicRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest) async -> URLRequest? {
+        PublicRedirect.allows(request.url) ? request : nil
     }
 }

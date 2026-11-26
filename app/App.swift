@@ -114,7 +114,7 @@ struct SettingsView: View {
             page(.team) { _ in TeamSettings(store: store) }
             page(.help) { _ in helpSection; shortcutsSection }
         }
-        .frame(width: 560, height: SettingsTab.resolve(tabRaw).height)
+        .frame(minWidth: 560, minHeight: SettingsTab.resolve(tabRaw).height)
         // The window keeps its place (it covered the main window's banners when it always opened on top of it).
         .background(WindowAccessor { $0.setFrameAutosaveName("DeployCenterSettings") })
         .task {
@@ -362,7 +362,7 @@ struct SettingsView: View {
             if let switchResult { Text(switchResult).font(.caption).foregroundStyle(.secondary) }
             if let providerError {
                 HStack(alignment: .top) {
-                    Text(providerError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    Text(providerError).font(.caption).foregroundStyle(Color.dangerText).textSelection(.enabled)
                     Spacer()
                     if let f = failedSwitch, let info = store.providers.first(where: { $0.id == f.id }) {
                         Button(L("Try again", "Nochmal")) { switchProvider(info, on: f.on) }.disabled(switching != nil)
@@ -475,7 +475,13 @@ struct SettingsView: View {
             Toggle(L("Ask for a tick before database migrations go live", "Vor dem Live-Gang von Datenbank-Migrationen ein Häkchen verlangen"), isOn: $migrationCheck)
                 .help(L("When the waiting commits change migration files, every live deploy of them asks first.",
                         "Ändern die wartenden Commits Migrationsdateien, fragt jeder Live-Deploy davon erst nach."))
-            Toggle(L("Ask for Touch ID or the password before risky steps", "Vor riskanten Schritten nach Touch ID oder dem Passwort fragen"), isOn: $ownerCheck)
+            Toggle(L("Ask for Touch ID or the password before risky steps", "Vor riskanten Schritten nach Touch ID oder dem Passwort fragen"), isOn: Binding(
+                get: { ownerCheck },
+                // Switching it off is itself a risky step: whoever reaches the unlocked Mac must not end the check with one click.
+                set: { on in
+                    if on { ownerCheck = true; return }
+                    Task { if await OwnerCheck.confirm(L("switch the owner check off", "die Eigentümerprüfung ausschalten")) { ownerCheck = false } }
+                }))
                 .help(L("Deploying several projects at once, a rollback by hand, and allowing auto-deploy. The automatic rollback after a failed check does not wait.",
                         "Mehrere Projekte auf einmal deployen, ein Rollback von Hand und Auto-Deploy erlauben. Das automatische Zurückrollen nach einem fehlgeschlagenen Check wartet nicht."))
             if ownerCheck, !OwnerCheck.available {
