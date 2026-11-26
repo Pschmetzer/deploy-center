@@ -74,6 +74,8 @@ deploys window                          # is the deploy window (window.json) ope
 deploys freeze                          # the closed times of window.json, numbered, and whether deploys are closed now (--json too)
 deploys freeze add fri 15:00            # close Fridays from 15:00 (<days>: fri, fri,sat, mon-fri, weekend, weekdays, daily; <to> is 24:00 unless given)
 deploys freeze add sat,sun 0 --reason "weekend"   # a reason is shown in the refusal
+deploys lock api "migration running"    # close one project for starts until it is unlocked (a start then needs --force "why"; the journal says so)
+deploys unlock api                      # open it again; `deploys lock` (or `lock list --json`) shows what is locked
 deploys freeze import holidays.ics [--dry-run]   # closed dates from a calendar file (all-day events close their days; repeating events are skipped)
 deploys freeze remove 2 | clear         # take away rule 2 (the numbers `freeze` shows), or every rule
 deploys deploy my-project --force "hotfix"   # inside a closed window; the reason is journaled
@@ -298,6 +300,7 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_JOURNAL` | the deploy journal file (default: the app's, on Linux in the config folder) |
 | `DEPLOYS_NOTIFY` | `0`: no macOS notifications from autofix and guard |
 | `DEPLOYS_TEAM_TTL` | seconds a shared `deploy-center.json` is cached (default 600) |
+| `DEPLOYS_LOCKS` | the file of `deploys lock` (default `project-locks.json` in the config folder) |
 | `DEPLOYS_WATCH_EVERY` | seconds between the redraws of `status --watch` (default 10) |
 | `DEPLOYS_CHECK_TIMEOUT` | seconds a `check` may run (default 900) |
 | `DEPLOYS_SEMGREP_CONFIG` | the semgrep rule set `check` uses (default `p/default`) |
