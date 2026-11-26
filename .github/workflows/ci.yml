@@ -133,6 +133,8 @@ jobs:
         run: bash tests/clean-tests.sh
       - name: Extra commands (lib/x-*.sh, tests/x/)
         run: bash tests/x-tests.sh
+      - name: Repo upkeep tests (deploys repos)
+        run: bash tests/repos-tests.sh
       - name: Preview tests (deploys preview)
         run: bash tests/preview-tests.sh
       - name: Performance guard tests (perf status, gate, clean, the hook)
@@ -280,6 +282,8 @@ jobs:
         run: bash tests/clean-tests.sh
       - name: Extra commands (lib/x-*.sh)
         run: bash tests/x-tests.sh
+      - name: Repo upkeep tests (deploys repos)
+        run: bash tests/repos-tests.sh
       - name: Preview tests
         run: bash tests/preview-tests.sh
       - name: Performance guard tests

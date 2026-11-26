@@ -188,3 +188,12 @@ integrations/tests/run.sh integrations/*
 integrations/tests/run.sh deploys
 integrations/tests/run.sh lib/*
 integrations/tests/run.sh providers/*
+tests/x-tests.sh deploys
+tests/x-tests.sh lib/*
+tests/x-tests.sh tests/fixtures/*
+tests/x-tests.sh docs/*
+tests/repos-tests.sh deploys
+tests/repos-tests.sh lib/*
+tests/repos-tests.sh tests/fixtures/*
+tests/repos-tests.sh docs/*
+tests/x-tests.sh tests/x/*
