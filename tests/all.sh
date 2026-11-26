@@ -57,11 +57,11 @@ while read -r path flags; do
   suites+=("$path")
 done < tests/suites.txt
 
-if [ "$list" = 1 ]; then printf '%s\n' ${suites[@]+"${suites[@]}"}; exit 0; fi
 if [ "${#suites[@]}" -eq 0 ]; then
   [ "$changed" = 1 ] && { echo "all.sh: no suite is affected by the changes" >&2; exit 0; }
   echo "all.sh: no suite matches" >&2; exit 2
 fi
+if [ "$list" = 1 ]; then printf '%s\n' ${suites[@]+"${suites[@]}"}; exit 0; fi
 
 failed=() times=()
 for s in "${suites[@]}"; do
