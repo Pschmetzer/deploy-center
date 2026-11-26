@@ -19,7 +19,7 @@
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
 <meta property="article:author" content="https://deploycenter.app/">
-<meta property="article:modified_time" content="2026-11-23">
+<meta property="article:modified_time" content="2026-11-26">
 <meta property="article:published_time" content="2026-11-20">
 <meta property="og:title" content="Roll back automatically when a deploy breaks the site · Deploy Center">
 <meta property="og:description" content="Ask the live site after every deploy and go back to the previous deployment on a 5xx: deploys verify, its exit codes, and the countdown in the app.">
@@ -50,7 +50,7 @@
   "url": "https://deploycenter.app/guides/automatic-rollback-after-deploy/",
   "mainEntityOfPage": "https://deploycenter.app/guides/automatic-rollback-after-deploy/",
   "datePublished": "2026-11-20",
-  "dateModified": "2026-11-23",
+  "dateModified": "2026-11-26",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -181,7 +181,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Roll back automatically when a deploy breaks the site</h1>
 <p class="answer">Run <code>deploys verify &lt;project&gt; --path /health</code> after a deploy. It asks the site three times and, if all three answers are 5xx or nothing, counts down 10 seconds and rolls production back, unless you press Ctrl-C or pass <code>--no-rollback</code>.</p>
-<p class="meta">Last updated <time datetime="2026-11-23">23 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-26">26 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 <p class="langnote"><a href="/de/anleitungen/automatischer-rollback-nach-deploy/" hreflang="de" lang="de">Deutsche Fassung</a></p>
 
 <h2 id="run">1. Run the check after a deploy</h2>
