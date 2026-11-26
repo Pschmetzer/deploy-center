@@ -1,6 +1,6 @@
 # Deploy Center – Ideen, Runde 15 (Stand 0.14.0)
 
-Gegen IDEEN-2 bis 14 und CHANGELOG abgeglichen. Status je Punkt wird im PR nachgeführt. Blöcke: A Mac-App, B CLI/Provider, C Integrationen, D Website/Docs/CI.
+Gegen IDEEN-2 bis 14 und CHANGELOG abgeglichen. Status je Punkt wird im PR nachgeführt. Blöcke: A Mac-App, B CLI/Provider, C Integrationen, D Website/Docs/CI, E iOS.
 
 # A. Mac-App
 
@@ -710,3 +710,155 @@ Tags: [Bug] [SEO] [A11y] [Perf] [Doku] [CI] [Feature] [Test]
 149. [Doku] `CONTRIBUTING.md` nennt `bash tests/all.sh`, aber nicht `tests/all.sh --only <name>` und `--quick` im Einstieg; neue Beitragende starten sonst den ganzen macOS-Lauf.
 150. [Doku] `marketing/FACTS.md:5,11` nennt 0.11.0 (Idee 826 kennt das), neu: Zahlen "16 Hosts" und "Performance-Guard" fehlen ebenso in der Tabelle "What the app does" (für 0.7 geschrieben); ein Skript, das FACTS aus `VERSION`, `providers/` und `deploys --help` erzeugt, wäre die dauerhafte Lösung.
 151. [Doku] Kein Changelog-Stil-Test für `## Unreleased`: Die zwei Einträge dort (Performance-Guard-Docker, Cloud Sessions) sind lang; `check-docs.py` könnte Zeilen über 500 Zeichen warnen, damit Release-Notizen lesbar bleiben (Notizen gehen in Sparkle-Dialog und GitHub-Release).
+
+# E. iPhone/iPad-App
+
+# Neue Ideen: iPhone/iPad-App (ios/, widgets/, shared/)
+
+Stand: origin/main b6a3832 (Branch fix/perf-docker-restart), 2026-11-26. Gelesen wurden alle Swift-Dateien in `ios/App`, `ios/Common`, `shared/`, `widgets/DeployWidget.swift`, `ios/Tests`, `ios/*.sh`, `ios/AppStore/*`, `ios/Config`, `project.pbxproj` und der iOS-Job in `ci.yml`.
+Jeder Punkt wurde per grep gegen `docs/IDEEN*.md` und `CHANGELOG.md` geprüft (inkl. der iOS-Abschnitte IDEEN-6 §4, IDEEN-11 "iOS und Widgets", IDEEN-12 §C) und gegen den Code. Nahe Verwandte sind mit `#nr` genannt; Mac-Ideen gleichen Themas zählen nicht als Treffer. "(prüfen)" = API-Detail nicht am Gerät bestätigt.
+
+## Bugs
+
+1. [Bug] PhoneStore.swift:555-563,709-721,714 – `resumeFollowed` gibt `follow` nur `run.id`; `follow` startet mit `start = Date()` und neuen 20 min, und `FollowedRuns.add` überschreibt `started`. Nach jedem Neustart beginnt der Fortschritt bei 0 und ein hängender Build wird über Neustarts endlos weiterverfolgt. `run.started` übergeben, Restzeit = 20 min − Alter.
+2. [Bug] PhoneStore.swift:528 – Nur `URLError` löst die Suche nach einem schon gestarteten Deploy aus. Ein 502/504 vom Gateway (POST wird nie wiederholt, Clients.swift:149) kann den Build trotzdem gestartet haben; der Toast sagt "Fehler", der zweite Tipp startet einen zweiten Build. 5xx genauso behandeln.
+3. [Bug] PhoneStore.swift:733-738 – Die Poll-Schleife bricht nur bei 401/404 ab. 403 ohne Limit (`APIError.isAuth`, Clients.swift:35) und anhaltendes 429 laufen 20 Minuten still weiter; `isAuth` nutzen, bei `retryAt` bis dahin schlafen.
+4. [Bug] PhoneStore.swift:709 – Festes 20-Minuten-Limit: Docker-Builds auf Render dauern länger, die Meldung "kein Endstand" ist dann falsch. Limit = max(20 min, 4 × `BuildTime.typical`), und beim Ablauf "läuft noch" statt Fehler-Ton.
+5. [Bug] PhoneStore.swift:759-765 – Ein im Dashboard oder von Kollegen abgebrochener Build gilt in `follow` als `failed` (roter Toast, Live Activity `.failed`, aktive Mitteilung), obwohl `DeployRule.failed` (DeployRule.swift:20) "canceled" neutral führt. Eigene Phase "von anderen abgebrochen".
+6. [Bug] DeployRule.swift:27-31 – Ein Projekt ohne Production-Deploy (`liveSha` und `liveAt` nil) ist nie `changed`, landet in "Aktuell" und zeigt "up to date", obwohl Commits da sind; "Noch nie deployt" fehlt. (Mac-Pendant #42 betrifft nur Row.swift.)
+7. [Bug] PhoneStore.swift:422-431 – `sorted` vergleicht `lowercased()`: "app10" steht vor "app2", Umlaute falsch, gleichnamige Projekte aus zwei Teams haben undefinierte Reihenfolge, die Liste springt zwischen Ladevorgängen. `localizedStandardCompare` plus Tie-Break `key`.
+8. [Bug] RecentDeploysView.swift:17,73 – Es werden nur die 8 zuletzt aktiven Projekte gelesen, der Leerzustand sagt aber "Keine Deploys in den letzten 7 Tagen"; Projekte ab Platz 9 fehlen still. Hinweis "8 aktivste Projekte" oder alle mit 4 parallel.
+9. [Bug] SettingsView.swift:100 – Der Schalter heißt "Melden, wenn etwas wartet oder fehlschlägt", meldet aber auch "ist live"/"wieder live" (PhoneStore.swift:877-881) und abgelehnte Schlüssel (DeployCenterApp.swift:158). Text angleichen oder Schalter pro Art.
+10. [Bug] PhoneStore.swift:187 – Ohne Gerätecode setzt `unlock()` einfach `locked = false`: "Beim Öffnen entsperren" ist an und schützt nichts, ohne Hinweis. Das Einschalten (SettingsView.swift:83) prüft `canEvaluatePolicy` nicht; dort warnen.
+11. [Bug] Views.swift:19,175 – `UIScreen.main.isCaptured` ist seit iOS 16 veraltet und meint bei Stage Manager/externem Display den falschen Bildschirm. `windowScene.screen` und Szenen-Benachrichtigung nutzen.
+12. [Bug] Clients.swift:380, PhoneStore.swift:481,484 – `error.localizedDescription` statt `explain(error)`: Systemsprache statt App-Sprache, englische URLError-Texte in der deutschen App.
+13. [Bug] SettingsView.swift:266 – Die Team-ID wird nicht geprüft (`k != .vercelTeam`). Ein eingefügter Team-Slug ("my-team") statt `team_…` gibt erst beim Laden 403. `TokenShape` um Präfix `team_` erweitern.
+14. [Bug] Views.swift:85-90 + pbxproj:226 – `openKey`/`confirmDeployKey` liegen im geteilten Store; bei mehreren Stage-Manager-Fenstern springen alle Fenster auf dasselbe Projekt und jedes öffnet seine eigene Deploy-Bestätigung. Nur die aktive Szene bedienen.
+15. [Bug] LiveDeploy.swift:24 – `try? Activity.request` verschluckt Fehler. Bei "Alle deployen" mit mehr Projekten als das System Live Activities zulässt, fehlen sie still und ohne Log. Fehler loggen und eine Sammel-Activity ("3 von 7 live") anbieten.
+16. [Bug] DeploySnapshot.swift:104-118 + DeployWidget.swift:188-192 – `filtered(...)` lässt `saving` unverändert: das gefilterte Widget zeigt bei "nur Vercel"/"nur Fehler" die Gesamt-Ersparnis neben plattformbezogenen Zahlen.
+17. [Bug] PhoneStore.swift:257-261 + DeployCenterApp.swift:135 – Läuft schon ein Vordergrund-Laden, hängt sich der Hintergrundlauf daran und erbt dessen 30-s-Timeouts statt `inBackground` (TaskLocal gilt nur für das eigene Laden). Das Budget (22 s) reißt. `inBackground` als Parameter von `load` führen.
+18. [Bug] PhoneStore.swift:20,243-245 – Es gibt genau einen Meldungsplatz. Bei "Alle deployen" überschreibt jedes Ergebnis das vorige; nur das letzte Projekt wird gemeldet. Kleine Warteschlange oder Sammelmeldung "5 Deploys: 4 live, 1 fehlgeschlagen".
+
+## Concurrency und Performance
+
+19. [Perf] HealthViews.swift:9-10 + HistoryCache.swift:11-21 – `PhoneHealthCard.body` ruft `HistoryCache.load` je Projekt, jeder Aufruf dekodiert das ganze UserDefaults-Dictionary (bis 40 Projekte × 15 Einträge). Bei 100 Projekten sind das ~100 JSON-Decodes bei jedem Neuzeichnen der Liste. Einmal laden und im Store halten.
+20. [Perf] HistoryCache.swift:15-20 – `save` dekodiert und kodiert den gesamten Cache und schreibt UserDefaults auf dem Main Thread, bei jedem `history()` (auch am Start jedes `follow`). In eine Datei (Application Support, vom Backup ausgenommen) hinter einem Actor.
+21. [Perf] PhoneStore.swift:690-691 – `LogMask.mask` (13 Regex × bis 2000 Zeilen) läuft synchron im `@MainActor`-`buildLog`. Auf `Task.detached` auslagern, die View zeigt solange den Spinner.
+22. [Perf] PhoneStore.swift:337,382 – `Background.readLast()`/`writeLast` (JSON aller Projekte, Datei, xattr) laufen bei jedem Laden synchron auf dem MainActor. In einen Hintergrund-Actor.
+23. [Perf] PhoneStore.swift:837-856 – `writeSnapshot` (Encode, alte Datei lesen, atomar schreiben, xattr) auf dem Main Thread, auch in `simulate` (:808). `sameShown` vor dem Schreiben prüfen und die Datei in einer Task schreiben.
+24. [Concurrency] PhoneStore.swift:259 – `reload()` wartet auf ein laufendes Laden mit einer 200-ms-Schleife. Eine `CheckedContinuation`-Liste weckt sofort und spart Aufwachen.
+25. [Perf] RecentDeploysView.swift:73-75 – Die Verläufe der 8 Projekte werden nacheinander gelesen (`await` in `for`). `TaskGroup` mit 4 parallel wie in `fillAll` (PhoneStore.swift:407).
+26. [Perf] Views.swift:73-80 + PhoneStore.swift:105-113 – Bei jedem `.active` leert `forgetKeptTokens()` den Cache; der nächste `body` liest bis zu vier Keychain-Items synchron auf dem Main Thread (bei langsamem Keychain Ruckler beim Aufwachen). Asynchron neu lesen wie `refreshLink`, Cache erst dann tauschen.
+27. [Perf] PhoneStore.swift:307 – `teamCache = nil` bei jedem `loadVercel`: ein zusätzlicher `/v2/teams`-Aufruf bei jedem Laden, auch im 22-s-Hintergrundbudget. Pro Token eine Stunde halten.
+28. [Perf] PhoneStore.swift:781,639 – Jedes Deploy-Ende und jede Render-Aktion liest ALLE Projekte neu (bis ~100 Aufrufe). Nur das betroffene Projekt neu lesen (`reload(only:)`).
+29. [Perf] PhoneStore.swift:723 – `follow` wartet vor dem ersten Poll auf `history(...)` (bei Vercel zwei Aufrufe); mit `async let` parallel starten.
+30. [Perf] Clients.swift:484-485 – `Vercel.history` ruft `productionId` und die Liste nacheinander; `async let`.
+31. [Concurrency] PhoneStore.swift:501-509 – `deployMany` startet alle Builds gleichzeitig als lose `Task`s: Vercel/Render-Parallelitätslimits und 429 treffen die letzten. Höchstens 2-3 gleichzeitig, Rest in einer Queue, mit Sammelzustand (zu #18).
+32. [Concurrency] LiveDeploy.swift:34,41,48,65,72 – Jedes `update`/`end` ist ein loser `Task`; die Reihenfolge ist nicht garantiert. Ein später gestartetes `update` kann ein `end` überholen. Pro Activity eine serielle `AsyncStream`-Queue.
+33. [Perf] PhoneStore.swift:79-81 – Der `NWPath` wird nur auf `satisfied` ausgewertet, `isConstrained` (Datensparmodus) und `isExpensive` nicht. Hintergrundlauf und History-Vorlesen (RecentDeploysView) im Datensparmodus einschränken. (Mac #193 gilt nur für die Mac-App.)
+34. [Perf] DeployCenterApp.swift:111 – `earliestBeginDate` ist immer +20 min. Kürzer, solange etwas baut oder wartet; länger (z. B. 2 h), wenn lange nichts geschah. iOS verteilt Hintergrundzeit nach Nutzen.
+35. [Perf] PhoneStore.swift:738 – Offline während `follow` läuft die Schleife mit Fehlern weiter (alle 6-30 s ein Netzversuch). Bei `offline` auf den Pfad-Wechsel warten statt zu pollen.
+
+## Sicherheit
+
+36. [Sicherheit] DeployWidget.swift:705,773 – Live Activity zeigt den Projektnamen auf dem Sperrbildschirm ohne `.privacySensitive()` (die Widgets haben es, :229). Mit "Beim Öffnen entsperren" neutraler Titel ("Ein Deploy"), da `project` statisch ist beim Start setzen. en.md nennt das nur als Einschränkung, ohne Option.
+37. [Sicherheit] Clients.swift:722,739,763,446 – Pfadsegmente aus API-Antworten (`repo`, `sha`, Projekt-IDs) gehen unkodiert in URLs. `repo` kommt auch aus `meta.githubCommitRepo`, das der Deploy-Auslöser setzt; ein `?`, `#` oder `..` ändert Pfad/Query der GitHub-Anfrage mit dem Token. Segmente einzeln kodieren, `repo` gegen `^[\w.-]+/[\w.-]+$` prüfen (Härtung, niedrig).
+38. [Sicherheit] Clients.swift:81-104 – Kein `URLSessionTaskDelegate`: Weiterleitungen werden ungeprüft gefolgt. `willPerformHTTPRedirection` verwirft Ziele außerhalb von api.vercel.com, api.render.com und api.github.com; zusätzlich in `send` die `host`-Allowlist prüfen.
+39. [Sicherheit] Info.plist – Kein `NSAppTransportSecurity`/`NSPinnedDomains`. Optional SPKI-Pin der CA/Zwischenzertifikate der drei API-Hosts gegen fremde Root-CAs (Firmenproxy), mit Schalter und klarer Meldung bei Pin-Fehler (prüfen: Rotation).
+40. [Sicherheit] PhoneStore.swift:456-471,187 – `evaluatedPolicyDomainState` wird nie gespeichert. Wer den Gerätecode kennt, kann ein Gesicht/einen Finger hinzufügen und im Modus "nur Face ID" deployen. Zustand beim Einschalten merken, bei Änderung Code verlangen.
+41. [Sicherheit] Views.swift:111-122 – `deploycenter://deploy?key=` öffnet die Bestätigung aus jedem Link (Webseite, Nachricht); die Herkunft wird nicht geprüft. Im vorhandenen `SceneDelegate` (DeployCenterApp.swift:67) über `openURLContexts` die `sourceApplication` lesen und Fremd-Links nur das Projekt zeigen lassen.
+42. [Sicherheit] SettingsView.swift:68-72 + Clients.swift:704-708 – Fein granulare GitHub-Token senden kein `X-OAuth-Scopes`, es gibt also gar keine Schreib-Warnung. Dafür sendet GitHub `github-authentication-token-expiration`: Ablauf zeigen und 7 Tage vorher melden. Vercel-Token: `GET /v5/user/tokens/current` (prüfen). (Mac-Idee #507 nennt nur `deploys creds`.)
+43. [Sicherheit] Keychain.swift:35 – Tokens liegen mit `AfterFirstUnlock`, also auch bei gesperrtem Gerät lesbar. Optionaler "Strenger Schutz"-Schalter: `WhenUnlockedThisDeviceOnly`, dafür kein Hintergrundlauf; für Geräte mit hohem Verlustrisiko.
+44. [Sicherheit] LogMask.swift:19 – Neuere Vercel-Präfixe `vcp_`/`vci_`/`vca_`/`vcr_` fehlen in der Regel (und in `af_mask`, mit dem die Fixture verglichen wird); #657 nennt nur den MCP-Server. Vor dem Anzeigen eines Logs bleibt so ein Vercel-Token sichtbar.
+
+## Barrierefreiheit
+
+45. [A11y] ProjectList.swift:67, SettingsView.swift:46,53, ProjectDetail.swift:26-28, DeployHistory.swift:69 – Text in Systemrot/-grün/-blau erreicht im hellen Modus 4,5:1 nicht (ca. 3,6 / 2,2 / 4,0). `warningText` (SettingsView.swift:286) gibt es nur für Orange; semantische dunklere Textfarben plus `accessibilityContrast`.
+46. [A11y] DeployWidget.swift:188-197 – Die Ersparnis-Zeile liegt im `.accessibilityElement(children: .ignore)`-Block, dessen Label `spoken(w)` sie nicht nennt; VoiceOver liest sie nie. In `spoken` aufnehmen.
+47. [A11y] DeployWidget.swift:706-708 – Die erweiterte Dynamic Island zeigt keinen Fortschritt (nur der Sperrbildschirm, :784-787). `ProgressView(timerInterval:)` in die untere Region. (#581 deckt den Sperrbildschirm ab.)
+48. [A11y] HealthViews.swift:14-20 – Der Zustand "Health 82 von 100" unterscheidet sich nur durch Herz-Symbol und Farbe; `HealthFormula.Outcome.rating` ("good/watch/poor") ist da, wird aber nie gezeigt. Wort ergänzen.
+49. [A11y] SettingsView.swift:205-210 – `guarded` lässt den Schalter beim Ausschalten bis zum Face ID unverändert; bei Abbruch springt er ohne Ansage zurück. VoiceOver-Ansage "Sperre bleibt an" und Zustand im `accessibilityValue`.
+50. [A11y] ConnectMac.swift:229,253-254 – Der "Abbrechen"-Knopf des Scanners hat keine Mindestgröße (nur die Taschenlampe bekam 44 pt, :262-263).
+51. [A11y] Assets.xcassets/AccentColor.colorset/Contents.json – Die Akzentfarbe ist leer (System-Blau) ohne Variante für "Kontrast erhöhen"; eine definierte Farbe mit High-Contrast-Variante legt auch den Ton der Mac-App fest.
+
+## UX
+
+52. [UX] RecentDeploysView.swift:21,47-63 – Die Zeilen der Zeitleiste sind nicht antippbar. Ein `NavigationLink` zum Build-Log (`BuildLogView`) oder zum Projekt wäre der natürliche Schritt.
+53. [UX] RecentDeploysView.swift:35 + DeployTimeline.swift:35 – Zeitraum (7 Tage), Menge (60) und Projekte (8) sind fest; Filter "nur fehlgeschlagen", Plattform und Projekt fehlen.
+54. [UX] Views.swift:115-121,722 (widgets) – Es gibt kein `deploycenter://log?key=`. Fehler-Mitteilung, Fehlerzeile im Widget (DeployWidget.swift:432) und Live Activity öffnen nur das Projekt, nicht das Log.
+55. [UX] DeployCenterApp.swift:207, Notes.swift:42 – Beide Anfragen fordern `.alert/.sound/.badge` hart. Mit `.provisional` kommen Hinweise leise ohne Dialog an; "laut" bleibt ein Schalter.
+56. [UX] SettingsView.swift:100-131 – Es gibt keine "Testmitteilung senden". Ohne sie sieht niemand, ob Fokus, Zusammenfassung und Aktionen ("Mit Face ID deployen") so ankommen.
+57. [UX] PhoneStore.swift:875-883 – Der Text der Mitteilung ist nur "X wartet": Commits, PRs und Alter ("3 Commits, 2 PRs, seit 2 Tagen") stehen in `projects`, fehlen aber im Text. (#544 betrifft nur die Fehlerzeile.)
+58. [UX] ProjectRow.swift:74-85 – Die Bestätigung nennt Commits und Kosten, aber nicht die übliche Dauer ("dauert meist 3 Min"), obwohl `BuildTime.typical` (Clients.swift:303) schon da ist und nur den Fortschritt füttert.
+59. [UX] PhoneStore.swift:456-471 – Entsperren (:175) und gleich danach Deploy fragen zweimal nach Face ID. `LAContext.touchIDAuthenticationAllowableReuseDuration` (10-15 s) nur nach dem App-Entsperren. (Mac #42 nennt es nur für die Mac-Bestätigung.)
+60. [UX] Asks.swift:96-97 – Die Bestätigung "Alle deployen" listet alle Namen kommagetrennt; bei 40 Projekten ein Textblock. Auf 5 kürzen, "und 35 weitere".
+61. [UX] Project.swift:112-120 – `Group` kennt nur Attention/Waiting/Live: pausierte Render-Dienste und GitLab-Projekte ("nicht geprüft") stehen unter "Aktuell" und wirken gesund. Eigene Gruppe "Pausiert / nicht geprüft".
+62. [UX] Views.swift:47-54 – Auf breiten iPads öffnen Build-Log und Verlauf per Push in der Detailspalte. Ein `.inspector` für Log/Verlauf neben dem Detail würde die Liste der Deploys und das Log nebeneinander zeigen.
+63. [UX] ProjectList.swift:157 – Die Suche trifft Name, Repo, Domain, Plattform; Commit-Titel (`headMsg`, `liveMsg`, `pendingTitles`) und SHA nicht. "In welchem Projekt steckt a1b2c3d?" ist am Telefon die häufigste Frage.
+64. [UX] QuickActions (DeployCenterApp.swift:83-88) – Nur "Projekt öffnen" und "Aktualisieren". Eine Aktion "Alle wartenden deployen …" öffnet direkt die Sammel-Bestätigung (Face ID bleibt).
+65. [UX] RecentDeploysView.swift – Die Zeitleiste lässt sich nicht teilen. `ShareLink` mit "Diese Woche: 14 Deploys, 2 fehlgeschlagen" (für Stand-up, Ticket) ist ein Fünfzeiler aus vorhandenen Daten.
+
+## Features
+
+66. [Feature] Intents.swift:103-109 – `OpenProjectIntent` und `PrepareDeployIntent` stehen nicht im `AppShortcutsProvider`: keine Siri-Phrasen ("Öffne \(project) in Deploy Center"), nicht in Spotlight und der Shortcuts-Galerie. Parameter-Phrasen plus de-Einträge in `AppShortcuts.xcstrings`.
+67. [Feature] Intents.swift:21-27 – "-1" als Wert für "nichts gelesen" in `ReturnsValue<Int>` bricht Automationen ("wenn > 0" ist wahr für 1, aber "≠ 0" auch für -1). Stattdessen Fehler werfen oder einen zweiten Ausgabewert `isFresh`.
+68. [Feature] widgets/DeployWidget.swift:656-691 – Die Control-Widgets sind nicht konfigurierbar. Ein `ControlConfigurationIntent` mit `ProjectEntity` ergibt einen Knopf "Atlas deployen vorbereiten" für Aktionstaste und Sperrbildschirm (öffnet nur die Bestätigung).
+69. [Feature] Clients.swift/PhoneStore.swift – Die App warnt vor Auto-Deploy (ProjectList.swift:47-54), kann es aber nicht abschalten. Vercel `PATCH /v9/projects/{id}` mit `gitProviderOptions.createDeployments`, Render `autoDeployTrigger: "off"` (prüfen), hinter Face ID: der Kern des Produkts auch unterwegs.
+70. [Feature] LiveDeploy.swift:67-72 – Am Ende nur `end(...)`, keine `AlertConfiguration`. Ein `update(..., alertConfiguration:)` mit dem Endstand vor `end` lässt die Dynamic Island aufspringen und die Watch vibrieren.
+71. [Feature] FailureHint.swift:14-26,30-60 – `topics` sind die Meldungen der Mac-App (Vercel-CLI, `gh auth`, Deploy-Fenster, Anthropic-Schlüssel) und kommen in einem Build-Log nie vor. Es fehlen typische Render/Vercel-Ursachen: "No open ports detected"/"Port scan timeout", Health-Check, `ERR_PNPM_OUTDATED_LOCKFILE`, `prisma generate`, Node-Version, "Invalid environment variables", Docker "failed to solve".
+72. [Feature] DeployHistory.swift:66-80 + Clients.swift:483-491 – `DeployRecord` kennt keinen Auslöser. Vercel `source`/`creator`, Render `trigger` (new_commit, api, manual, rollback; prüfen) zeigen, welche Builds Auto-Deploy waren und welche von Hand (Kern: Build-Minuten sparen).
+73. [Feature] Clients.swift:483-491 – "In Vercel öffnen" je Deploy der Historie über `inspectorUrl` und "Deploy-URL kopieren" fehlen.
+74. [Feature] Project.swift:70-75 + Clients.swift:352-356 – `dashboardURL` gibt es nur für Render ("Vercels Adresse braucht den Team-Slug"), `resolveTeam` liest die Teams aber schon: `slug` mitspeichern, "Im Vercel-Dashboard öffnen" für Menü, Detail und Handoff-`webpageURL`.
+75. [Feature] Clients.swift:369-422 – Vercel-Preview-Deploys sind unsichtbar (`target=production` überall). Eine Leseliste der neuesten Previews (URL, Branch, Status) vor dem Production-Deploy; "Preview öffnen" im Detail. (#559 betrifft nur Promote.)
+76. [Feature] ProjectDetail.swift (neuer Abschnitt) – Aus den gecachten Historien (`HistoryCache`) "Diese Woche: 14 Builds ≈ 46 Min." je Projekt, mit Hinweis auf Auto-Deploy. Heute kennt das iPhone nur die Ersparnis vom Mac (#521).
+77. [Feature] Notes.swift (Kategorie `waiting`) – Eine lokale Erinnerung "Um 18:00 ans Deployen erinnern" (`UNCalendarNotificationTrigger`, Aktion "Mit Face ID deployen") ersetzt den Deploy-Zeitplan des Macs, den es auf dem Telefon nicht gibt.
+78. [Feature] DeployCenterApp.swift:50-62 – Die "live"-Mitteilung (PhoneStore.swift:880) hat keine Aktion "Seite öffnen" (Domain per `.foreground`-Aktion).
+79. [Feature] Intents.swift (neu) – `FailureExplainIntent` "Warum ist X fehlgeschlagen?": liest die erste Fehlerzeile und spricht `FailureHint`. Die Logik (LogMask, FailureHint) ist rein; der Intent braucht nur den Netzaufruf in der App.
+
+## Tests und CI
+
+80. [Test] PhoneStore.swift:743-765 – Die Zustandsmaschine von `follow` (ready, STAGED, deactivated, eigener und fremder Abbruch, 401, 404 in den ersten 15 s) steckt in der UIKit-Klasse und ist ungetestet. Als reine Funktion `FollowDecision.next(...)` extrahieren und in `ios/test.sh` aufnehmen. (Mac-Pendant #135.)
+81. [Test] Clients.swift:18-65 – `explain(URLError)` und `APIError.errorDescription` (alle Codes, beide Sprachen, rateLimited mit `retryAt`) sind ungetestet.
+82. [Test] Clients.swift:376,552,414 – Keine Fixture für Paginierung (`until`, `cursor`), die 1000er-Grenze samt Hinweis und den `latestDeployments`-Rückfall.
+83. [Test] Clients.swift:352-356 – `Vercel.resolveTeam` mit 0, 1 und mehr als 1 Teams; `PhoneStore.vercelTeam` ist daran gekoppelt (#405 ✅ ohne Test).
+84. [Test] DeployRule.swift:27 – Fälle "nie deployt" (Punkt 6), Vercel `DELETED`/`CANCELED`, Render `deactivated` fehlen in `ios/Tests/main.swift`.
+85. [Test] widgets/DeployWidget.swift:196 – Ein Test, der für `spoken(w)` jede im Layout sichtbare Zahl (Ersparnis, Gebaut, Fehler) im gesprochenen Satz verlangt, hätte Punkt 46 verhindert.
+86. [Test] shared/DeploySnapshot.swift:149-151 – Das Versprechen "jede Version, die dekodiert" ohne Golden-Datei: `ios/Tests/fixtures/snapshot-v1.json` einer alten App und eine mit unbekannten Feldern; die Mac-App und das Widget lesen dieselbe Datei.
+87. [Test] ios/test.sh:15-16 – Die Dateiliste ist von Hand. Eine Prüfung, dass jede `ios/App/*.swift` ohne `UIKit/SwiftUI/AppIntents`-Import enthalten ist, verhindert, dass neue reine Logik ungetestet bleibt.
+88. [Test] HistoryCache.swift:11 – Ein Test mit 40 Projekten, der die Zahl der Dekodierungen je `PhoneHealth.average` zählt (Regression von Punkt 19).
+89. [Test] AppShortcuts.xcstrings – Ein Skript-Check, dass jede Phrase `${applicationName}` enthält und in en und de vorhanden ist (`scripts/check-strings.py` kennt nur `L()`-Paare).
+90. [Test] ios/smoke.sh:7-12 – `first_of` nimmt das erste Gerät (head -1). Zusätzlich ein kleines iPhone (SE/16e, 320 pt), Querformat und ein großes iPad prüfen.
+91. [Test] ios/smoke.sh:22-23 – Nur Schriftgröße wird gewechselt. `simctl ui appearance dark`, `increase_contrast enabled` und `reduce_motion` ergänzen; die Layouts mit `warningText`, Toast-Material und Cover hängen daran.
+92. [Test] ios/smoke.sh – `xcrun simctl openurl` für `deploycenter://select|settings|reload|deploy` (Views.swift:115-129) und prüfen, dass die App läuft; heute prüft niemand die URL-Pfade.
+93. [Test] ci.yml:183-187 – Nur ein Debug-Build. Ein Release-Build (`-configuration Release`, `SWIFT_TREAT_WARNINGS_AS_ERRORS`) und `xcodebuild analyze` fehlen; `#if DEBUG` (`-demo`, PhoneStore.swift:67-71, Views.swift:135-155) bricht sonst erst beim Archiv.
+94. [Test] ios/Tests – Eine Kontrast-Prüfung rechnet das WCAG-Verhältnis der Farbkonstanten (`warningText` 0.62/0.30/0 auf Weiß/Schwarz) und hält die behaupteten 4,5:1.
+95. [Test] DeployCenterApp.swift:134-140 – Das Hintergrund-Rennen (Budget gegen `reload`) ist nur in `run()` verdrahtet; `withBudget(_:body:)` auslagern und mit künstlich langsamer Sitzung testen (Punkt 17).
+
+## Code
+
+96. [Code] project.pbxproj:186,205 – `MARKETING_VERSION = 1.0` ist unabhängig von `VERSION`; `scripts/bump.sh` kennt `ios/` nicht. Die Diagnose (PhoneStoreInfo.swift:8) zeigt "1.0 (Build)". Bump erweitern oder die getrennte Zählung dokumentieren.
+97. [Code] PhoneStore.swift:522-541,579-581,593-595,607-625,651-653,670-682,700-703 – Acht `switch p.provider` mit je einem Vercel- und Render-Aufruf. Ein `HostClient`-Protokoll (deploy, cancel, status, history, log, rollback) macht den dritten Anbieter zu einer Datei.
+98. [Code] PhoneStore.swift:19,60,568 – `running`, `deployIds`, `userCanceled` sind drei Dictionaries nach Projektschlüssel mit verstreuten `defer`-Aufräumzeilen (:514,550,561,602,632). Ein `struct RunState` je Projekt.
+99. [Code] SettingsView.swift:15-18, PhoneStore.swift:33,38,172,463, Notes.swift:48 – Die UserDefaults-Schlüssel ("notify", "lockOnOpen", "biometricsOnly", "noSpotlight", "demo") stehen als Literale an mehreren Stellen; Notes.swift:48 liest `lockOnOpen` selbst statt über `PhoneStore.lockOnOpen`. Ein `Defaults`-Enum. (Mac #53/#72 gelten für die Mac-App.)
+100. [Code] FailureHint.swift:66, PhoneStoreInfo.swift:29 – Die GitHub-URL des Repos steht zweimal im Code (Docs-Basis, Issue-Vorlage); ein Umzug lässt Links in ausgelieferten Versionen tot. In eine `Links`-Konstante und in die Info.plist.
+101. [Code] PhoneStore.swift (896 Zeilen) – Schlüssel, Sperre, Laden, Deploy-Fluss, Mitteilungen, Snapshot und Badge in einer `@MainActor`-Klasse, die `ios/test.sh` wegen UIKit nicht kompiliert. Aufteilen in `DeployRunner`, `SnapshotWriter`, `NoteBuilder` (rein, testbar). Löst auch #639 mit.
+
+## App Store und Doku
+
+102. [Store] ios/AppStore/en.md:12, de.md:8 – Der Werbetext nennt "Vercel and Render", obwohl die "Note on names" sagt, Drittmarken stünden nur in der Beschreibung (Guideline 2.3.7). Widerspruch auflösen: Text ohne Markennamen oder die Entscheidung festhalten.
+103. [Store] ios/App/Assets.xcassets/AppIcon.appiconset/Contents.json – Nur ein 1024-px-Bild: keine Dunkel- und Getönt-Varianten (iOS 18). Das System erzeugt eine Ersatzdarstellung; eigene Varianten wirken am Home Screen.
+104. [Store] ios/AppStore/ – Es gibt keine Datei für "Was ist neu" je Version (nur die Store-Seite). `whatsnew.en.md`/`.de.md` plus Prüfung in `check-release.py`, dass die Datei zur Version passt.
+105. [Store] ios/AppStore/en.md:Keywords – Das Feld hat genau 100 Zeichen, kein Spielraum: jede Änderung überschreitet. Ein Skript prüft Name 30, Untertitel 30, Werbetext 170, Keywords 100, Beschreibung 4000 für beide Sprachen (heute nur von Hand gezählt).
+
+## Die zehn wichtigsten
+
+1. Punkt 19 (HealthCard dekodiert O(N²) UserDefaults bei jedem Neuzeichnen).
+2. Punkt 1 (Neustart setzt Verfolgung, Fortschritt und 20-min-Limit zurück).
+3. Punkt 2 (5xx beim POST kann Doppel-Build auslösen).
+4. Punkt 6 (nie deployte Projekte erscheinen als "aktuell").
+5. Punkt 17 (Hintergrundlauf erbt Vordergrund-Timeouts, Budget reißt).
+6. Punkt 36 (Live Activity zeigt Projektnamen auf dem Sperrbildschirm).
+7. Punkt 69 (Auto-Deploy auf dem Telefon abschalten).
+8. Punkt 3 (403/429 beim Verfolgen laufen 20 min still weiter).
+9. Punkt 66 (Siri-Phrasen für Öffnen und Deploy vorbereiten fehlen).
+10. Punkt 45 (Kontrast von Rot/Grün/Blau-Text unter 4,5:1).

@@ -16,6 +16,7 @@ tests/round12-tests.sh
 tests/welle10-tests.sh
 tests/cli-fixes-tests.sh
 tests/cli-r12b-tests.sh
+tests/cli-r15-tests.sh
 tests/insights-tests.sh
 tests/nightly-tests.sh
 tests/bughunt-tests.sh

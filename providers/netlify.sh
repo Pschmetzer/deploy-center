@@ -19,6 +19,12 @@
 #                       url is the build hook: anyone with it can start a build. Kept private.
 
 NETLIFY_API="${NETLIFY_API:-https://api.netlify.com/api/v1}"
+# The key goes with every call: an http:// base would send it in clear text. Only https (and, in tests, localhost).
+case "$NETLIFY_API" in
+  https://*) ;;
+  http://localhost*|http://127.0.0.1*) [ "${DEPLOYS_TESTING:-}" = 1 ] || { echo "Warning: NETLIFY_API must start with https://; using https://api.netlify.com/api/v1" >&2; NETLIFY_API="https://api.netlify.com/api/v1"; } ;;
+  *) echo "Warning: NETLIFY_API must start with https://; using https://api.netlify.com/api/v1" >&2; NETLIFY_API="https://api.netlify.com/api/v1" ;;
+esac
 NETLIFY_KEYCHAIN="deploy-center-netlify"
 NETLIFY_HOOK_TITLE="deploy-center"
 # The line to add to netlify.toml. Exit 0 means "skip this build" to Netlify.
