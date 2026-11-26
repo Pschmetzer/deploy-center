@@ -61,6 +61,21 @@ its next time; a job that runs longer than `DEPLOYS_JOB_TIMEOUT` seconds (600) i
 `docker logs`, with no key in it. `docker run … deploys-cron --check` reads the file and prints the plan; `--once` runs every
 job now and exits.
 
+Jobs only read: each runs with `DEPLOYS_READONLY=1`, and a flag or sub-command that changes something is refused when the file
+is read (`freeze clear`, `doctor --fix`, `digest --post`). `docker stop` ends the scheduler at once (exit 143) and takes the
+running job and its half-written output with it. The heartbeat comes from a ticker of its own, so a job that runs for
+minutes does not make the container "unhealthy".
+
+| Variable | Meaning |
+| --- | --- |
+| `DEPLOYS_JOBS` | the schedule file (default `/config/jobs.conf`) |
+| `DEPLOYS_JOB_TIMEOUT` | seconds a job may run (default 600) |
+| `DEPLOYS_INTEGRATIONS` | where the integrations are (default `/opt/deploy-center/integrations`) |
+| `DEPLOYS_DIR` | the folder with `providers/` (set by the image) |
+| `DEPLOYS_HEARTBEAT_FILE` | the heartbeat file (default `/tmp/scheduler.heartbeat`) |
+| `DEPLOYS_HEARTBEAT_MAX` | how old the heartbeat may be for the healthcheck, in seconds (default 300) |
+| `DEPLOYS_PING_URL` | an `https://` URL asked after every job that worked (healthchecks.io, Uptime Kuma push): a dead man's switch |
+
 The scheduler writes a heartbeat (`/tmp/scheduler.heartbeat`) at every look, and the healthcheck says "unhealthy" when it is more
 than 5 minutes old. [`compose.example.yml`](compose.example.yml) runs it as a service with a read-only root file system, no
 capabilities, keys passed by name from your shell and the same healthcheck; its `once` service (`docker compose run --rm once`)

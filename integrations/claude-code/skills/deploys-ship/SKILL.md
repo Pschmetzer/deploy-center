@@ -28,8 +28,11 @@ If no project was given, run `deploys changed --json`, list what is waiting, and
    this command is not the confirmation. Only a clear yes in the user's next message is.
 4. On yes, deploy exactly this one project, on whichever platform it is (Vercel, Render, Netlify,
    Cloudflare, Amplify, DigitalOcean, Coolify, a deploy hook):
-   `deploys deploy $ARGUMENTS --wait`
-   (`deploys deploy <platform>:<name> --wait` when the name is on two platforms). It checks the
+   `deploys deploy $ARGUMENTS --wait --sha <headSha>`
+   (`deploys deploy <platform>:<name> --wait --sha <headSha>` when the name is on two platforms), with
+   `headSha` of the entry you showed in step 2 (from `deploys changed --json`): a push between the
+   check and the start must not ship a commit nobody looked at. A platform that cannot pin a commit
+   says so; then drop `--sha` and tell the user. It checks the
    deploy window and approvals. If it refuses (window closed, approval missing), report that and
    stop: never add `--force`.
 5. Report the result in one line. If the build failed, offer `/deploy-center:deploys-fix $ARGUMENTS`.
