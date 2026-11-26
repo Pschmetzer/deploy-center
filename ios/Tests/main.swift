@@ -607,12 +607,12 @@ HistoryCache.clear()
 check(Render.autoDeployBody(on: false) as NSDictionary == ["autoDeployTrigger": "off"] as NSDictionary, "render: auto-deploy off sends autoDeployTrigger off")
 check(Render.autoDeployBody(on: true) as NSDictionary == ["autoDeployTrigger": "commit"] as NSDictionary, "render: auto-deploy on sends autoDeployTrigger commit")
 Stub.reset()
-Stub.routes["/services/srv-1"] = (200, [:], #"{"id":"srv-1","autoDeployTrigger":"off"}"#)
+Stub.routes["/v1/services/srv-1"] = (200, [:], #"{"id":"srv-1","autoDeployTrigger":"off"}"#)
 do {
     let r = Render(key: "k", session: Stub.session)
     try await r.setAutoDeploy(PhoneProject(provider: .render, id: "srv-1", name: "atlas"), on: false)
     let req = Stub.seen.last
-    check(req?.httpMethod == "PATCH" && req?.url?.path == "/services/srv-1", "render: setAutoDeploy PATCHes the service")
+    check(req?.httpMethod == "PATCH" && req?.url?.path == "/v1/services/srv-1", "render: setAutoDeploy PATCHes the service")
 } catch { check(false, "render: setAutoDeploy failed: \(error)") }
 // Error texts (ideas E81)
 check(APIError(status: 403, message: "no scope").errorDescription?.contains("403") == true && APIError(status: 403, message: "no scope").errorDescription?.contains("no scope") == true, "error text: 403 names the status and the message")
@@ -636,9 +636,9 @@ check(DeployRule.building(live: nil, latest: "build_in_progress"), "rule: Render
 
 // The snapshot file is read across versions (ideas E86)
 func fixture(_ name: String) -> URL { URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("fixtures/" + name) }
-let oldSnap = DeploySnapshot.read(fixture("snapshot-v1.json"))
-check(oldSnap?.waitingPRs == 2 && oldSnap?.projects.count == 2 && oldSnap?.projects.first?.id == "Vercel/atlas" && oldSnap?.saving?.month == 60, "snapshot: a file of the first app still decodes")
-check(oldSnap?.byPlatform == nil && oldSnap?.language == nil && oldSnap?.connected == nil, "snapshot: fields that came later are nil")
+let v1Snap = DeploySnapshot.read(fixture("snapshot-v1.json"))
+check(v1Snap?.waitingPRs == 2 && v1Snap?.projects.count == 2 && v1Snap?.projects.first?.id == "Vercel/atlas" && v1Snap?.saving?.month == 60, "snapshot: a file of the first app still decodes")
+check(v1Snap?.byPlatform == nil && v1Snap?.language == nil && v1Snap?.connected == nil, "snapshot: fields that came later are nil")
 let futureSnap = DeploySnapshot.read(fixture("snapshot-future.json"))
 check(futureSnap?.demo == true && futureSnap?.failed == 1 && futureSnap?.projects.first?.key == "Vercel/prj_1" && futureSnap?.language == "de", "snapshot: unknown fields are ignored, known ones kept")
 
