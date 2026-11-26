@@ -50,6 +50,17 @@ deploys slo off
 `besttime` liest nur dein eigenes Journal und kennt das Deploy-Fenster nicht: schau mit `deploys freeze` nach, bevor du auf ein
 Fenster planst. Ein Zeitfenster zählt ab `--min` (5) Starts und Fehlschlägen. `slo` zählt wie `deploys digest`: Starts gegen Starts plus Fehlschläge.
 
+## calendar: die Sperrzeiten im Kalender
+
+```bash
+deploys calendar                       # die Sperrzeiten der nächsten 30 Tage als .ics im Terminal
+deploys calendar --days 90 --out sperren.ics
+```
+
+Ein Termin „Deploys closed" je gesperrter Zeit der „deny"-Regeln von `window.json` (der Grund, oder „closed by the deploy window",
+steht im Text). Die Zeiten sind die lokalen Zeiten des Fensters, mit seiner `tz` als Zeitzone des Kalenders, wenn es eine hat.
+[`deploys freeze import`](SAFE-DEPLOY.md) liest eine Kalenderdatei in die andere Richtung. Geschrieben werden nur die Sperren, nicht die geplanten Läufe.
+
 ## Einen neuen hinzufügen
 
 `lib/x-<name>.sh` neben `deploys` legen. Die Datei definiert `x_<name>_main` (Bindestriche im Namen werden zu Unterstrichen)

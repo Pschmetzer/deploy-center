@@ -50,6 +50,17 @@ deploys slo off
 `besttime` reads your own journal only and does not know the deploy window: look at `deploys freeze` before you plan on a
 slot. A slot needs `--min` (5) starts and failures to count. `slo` counts like `deploys digest`: starts against starts plus failures.
 
+## calendar: the freezes in your calendar
+
+```bash
+deploys calendar                       # the closed times of the next 30 days as an .ics file on the terminal
+deploys calendar --days 90 --out freezes.ics
+```
+
+One event "Deploys closed" per closed period of the "deny" rules of `window.json` (the reason, or "closed by the deploy window",
+is its text). Times are the window's own local times, with its `tz` as the calendar's time zone when it has one.
+[`deploys freeze import`](SAFE-DEPLOY.md) reads a calendar file the other way. Only the freezes are written, not the scheduled jobs.
+
 ## Adding one
 
 Put `lib/x-<name>.sh` next to `deploys`. It defines `x_<name>_main` (dashes in the name become underscores) and says what it
