@@ -221,6 +221,9 @@ the deploy journal file (default: the app's, on Linux in the config folder)
 .B DEPLOYS_TEAM_TTL
 seconds a shared deploy\-center.json is cached (default 600)
 .TP
+.B DEPLOYS_WATCH_EVERY
+seconds between the redraws of status \-\-watch (default 10)
+.TP
 .B DEPLOYS_AUTOFIX_PER_DAY, DEPLOYS_AUTOFIX_PER_PROJECT
 autofix caps per 24 h (default 6 and 2; 0 = no cap); also ~/.config/deploys/autofix\-limits.json with perDay and perProject, the variables win
 .TP
