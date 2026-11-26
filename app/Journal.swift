@@ -178,6 +178,13 @@ enum Journal {
         return n >= 3600 ? "\(n / 3600) h \(String(format: "%02d", n % 3600 / 60))" : "\(n / 60):\(String(format: "%02d", n % 60))"
     }
 
+    /// Whether the journal has any entry, without reading and decoding it all.
+    static func hasEntries() -> Bool {
+        migrate()
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? NSNumber
+        return (size?.intValue ?? 0) > 1
+    }
+
     /// Oldest first.
     static func load(limit: Int) -> [JournalEntry] {
         migrate()
@@ -309,7 +316,9 @@ struct JournalView: View {
         return Journal.filter(entries, text: search, kind: kind, since: since, platform: platform)
     }
     /// Names in the details are scrubbed in demo mode, like everywhere on screen.
-    private var names: [Item] {
+    /// Built once per reload, not on every row's redraw (500 rows would build 250 000 items a pass).
+    @State private var names: [Item] = []
+    private static func makeNames(_ entries: [JournalEntry]) -> [Item] {
         Set(entries.map(\.name)).map { Item(id: $0, name: $0, detail: "", platform: .vercel, deployable: false, auto: false, note: nil, link: nil) }
     }
 
@@ -443,7 +452,7 @@ struct JournalView: View {
     private func copy(_ s: String) { Pasteboard.copy(s) }
 
     private func reload() {
-        entries = Journal.load(limit: limit); failed = Journal.failureTable(entries)
+        entries = Journal.load(limit: limit); failed = Journal.failureTable(entries); names = Self.makeNames(entries)
     }
 
     private func save() {

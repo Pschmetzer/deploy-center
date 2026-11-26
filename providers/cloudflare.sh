@@ -23,6 +23,12 @@
 # shellcheck disable=SC2155  # `local x="$(...)"` is only used where the status does not matter.
 
 CLOUDFLARE_API="${CLOUDFLARE_API_BASE:-https://api.cloudflare.com/client/v4}"
+# The key goes with every call: an http:// base would send it in clear text. Only https (and, in tests, localhost).
+case "$CLOUDFLARE_API" in
+  https://*) ;;
+  http://localhost*|http://127.0.0.1*) [ "${DEPLOYS_TESTING:-}" = 1 ] || { echo "Warning: CLOUDFLARE_API_BASE must start with https://; using https://api.cloudflare.com/client/v4" >&2; CLOUDFLARE_API="https://api.cloudflare.com/client/v4"; } ;;
+  *) echo "Warning: CLOUDFLARE_API_BASE must start with https://; using https://api.cloudflare.com/client/v4" >&2; CLOUDFLARE_API="https://api.cloudflare.com/client/v4" ;;
+esac
 CLOUDFLARE_KEYCHAIN="deploy-center-cloudflare"
 CONFIG_DIR="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}"
 CLOUDFLARE_STATE="$CONFIG_DIR/cloudflare.json"

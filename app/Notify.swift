@@ -23,7 +23,7 @@ enum Notify {
     /// handed to the system, so a caller marks it as sent only then.
     static func remind(_ title: String, _ body: String, id: String = NotifyRouter.reminderId, then: (@MainActor (Bool) -> Void)? = nil) {
         let d = UserDefaults.standard
-        guard available, !quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo")) else {
+        guard available, !QuietHours.current(d).isQuiet() else {
             then?(false); return
         }
         add(title, body, id: id, then: then)
@@ -52,7 +52,7 @@ enum Notify {
         let d = UserDefaults.standard
         guard available, !windowInFront, d.object(forKey: "notifications") as? Bool ?? true else { return }
         // Quiet hours (Settings → Notifications): only failures still come.
-        let inQuiet = quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo"))
+        let inQuiet = QuietHours.current(d).isQuiet()
         if !failed, inQuiet {
             // Kept, and delivered as one note when the quiet hours end (the same id replaces the earlier note).
             let held = QuietDigest.adding(title + (body.isEmpty ? "" : ": " + body), to: d.stringArray(forKey: QuietDigest.key) ?? [])
@@ -92,7 +92,7 @@ enum Notify {
     static var wouldShow: Bool {
         let d = UserDefaults.standard
         return available && !windowInFront && d.object(forKey: "notifications") as? Bool ?? true
-            && !quiet(hour: Calendar.current.component(.hour, from: Date()), from: d.integer(forKey: "quietFrom"), to: d.integer(forKey: "quietTo"))
+            && !QuietHours.current(d).isQuiet()
     }
     /// The quiet hours changed: a held digest is scheduled again for the new end, or dropped when quiet hours went off.
     static func rescheduleDigest() {

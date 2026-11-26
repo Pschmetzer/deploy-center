@@ -383,6 +383,18 @@
   <a href="/guides/prometheus-metrics-for-deploys/"><b>Deploy metrics in Grafana, without a server</b><span>Write waiting commits, their age, failed deploys and auto-deploy state as a Prometheus text file for node_exporter and Grafana, with deploys metrics.</span></a>
   <a href="/guides/check-your-setup-deploys-doctor/"><b>Check your setup: tools, logins and keys</b><span>See what is missing before a deploy fails: tools, GitHub login, platform keys and how old they are, one line each with the fix, using deploys doctor and creds.</span></a>
 </div>
+<h2>More hosts</h2>
+<p>These hosts are opt-in in the CLI (<code>deploys providers enable &lt;host&gt;</code>). Each page says what Deploy Center does there, what it cannot do and how to undo it; the <a href="/docs/hosts/">table of all hosts</a> compares them.</p>
+<div class="cards">
+  <a href="/docs/fly-io/"><b>Fly.io</b><span>Fly.io builds only when you run fly deploy: what Deploy Center can do, restart machines, no push switch to flip.</span></a>
+  <a href="/docs/railway/"><b>Railway</b><span>Redeploy, cancel and roll back a service; the push trigger is disconnected in Railway itself.</span></a>
+  <a href="/docs/heroku/"><b>Heroku</b><span>Restart dynos, roll back a release, read the newest build log.</span></a>
+  <a href="/docs/firebase-hosting/"><b>Firebase Hosting</b><span>Make a finished version live or go back to the one before.</span></a>
+  <a href="/docs/github-pages/"><b>GitHub Pages</b><span>Dispatch the Pages workflow, cancel a run, see the newest result.</span></a>
+  <a href="/docs/koyeb/"><b>Koyeb</b><span>Redeploy a service with its current definition and follow the deployment.</span></a>
+  <a href="/docs/northflank/"><b>Northflank</b><span>Start a build of a service's branch or of a given commit.</span></a>
+  <a href="/docs/deno-deploy/"><b>Deno Deploy</b><span>Redeploy the newest deployment of a project as production.</span></a>
+</div>
 <h2>Tools and reading</h2>
 <div class="cards">
   <a href="/compare/"><b>Compare</b><span>Push builds on four hosts, ways to deploy on demand, scheduled deploys and status pages, side by side.</span></a>

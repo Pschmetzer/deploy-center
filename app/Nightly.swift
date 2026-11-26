@@ -50,7 +50,7 @@ struct NightlySettings: View {
 
     private var hour: Binding<Int> {
         Binding(get: { Int(status?.at.prefix(2) ?? "3") ?? 3 },
-                set: { h in Task { await run(["nightly", "schedule", "on", String(format: "%02d:00", h)]) } })
+                set: { h in Task { await run(["nightly", "schedule", "on", Self.timeText(hour: h, keeping: status?.at)]) } })
     }
 
     var body: some View {
@@ -183,6 +183,12 @@ struct NightlySettings: View {
     }
 
     /// 1 Monday … 7 Sunday, in the person's language.
+    /// "HH:MM" for a picked hour that keeps the minutes set by hand ("03:30" picked at 4 is "04:30").
+    static func timeText(hour: Int, keeping old: String?) -> String {
+        let m = old.flatMap { $0.count == 5 ? Int($0.suffix(2)) : nil }.map { (0...59).contains($0) ? $0 : 0 } ?? 0
+        return String(format: "%02d:%02d", max(0, min(23, hour)), m)
+    }
+
     static func weekday(_ d: Int) -> String {
         let names = [L("Monday", "Montag"), L("Tuesday", "Dienstag"), L("Wednesday", "Mittwoch"), L("Thursday", "Donnerstag"),
                      L("Friday", "Freitag"), L("Saturday", "Samstag"), L("Sunday", "Sonntag")]

@@ -17,6 +17,12 @@
 
 HEROKU_KEYCHAIN="deploy-center-heroku"
 HEROKU_API="${HEROKU_API:-https://api.heroku.com}"
+# The key goes with every call: an http:// base would send it in clear text. Only https (and, in tests, localhost).
+case "$HEROKU_API" in
+  https://*) ;;
+  http://localhost*|http://127.0.0.1*) [ "${DEPLOYS_TESTING:-}" = 1 ] || { echo "Warning: HEROKU_API must start with https://; using https://api.heroku.com" >&2; HEROKU_API="https://api.heroku.com"; } ;;
+  *) echo "Warning: HEROKU_API must start with https://; using https://api.heroku.com" >&2; HEROKU_API="https://api.heroku.com" ;;
+esac
 
 declare -F die >/dev/null || die() { echo "Error: $*" >&2; exit 1; }
 # shellcheck source=../lib/http.sh

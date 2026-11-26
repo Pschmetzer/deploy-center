@@ -23,7 +23,7 @@ const callLog = () => { try { return readFileSync(calls, "utf8"); } catch { retu
 // questions (elicitation/create) with a result; without it the client has no elicitation.
 function start(env = {}, { elicit = null } = {}) {
   // The hourly cap is kept in a file; tests turn it off unless they test it.
-  const child = spawn(process.execPath, [server], { env: { ...process.env, DEPLOYS_MCP_MAX_PER_HOUR: "0", DEPLOYS_MCP_TEST: "1", ...env }, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [server], { env: { ...process.env, DEPLOYS_MCP_MAX_PER_HOUR: "0", DEPLOYS_MCP_TEST: "1", DEPLOYS_MCP_ALLOW_REPOS: "*", ...env }, stdio: ["pipe", "pipe", "pipe"] });
   let buf = "", next = 1;
   const asked = [];
   const waiting = new Map();
@@ -76,6 +76,11 @@ const READ = ["deploys_allowed", "deploys_certs", "deploys_changed", "deploys_ci
 // --- read-only by default ---
 let s = start({ DEPLOYS_MCP_ALLOW_DEPLOY: "" });
 const info = await s.init();
+{
+  // Every tool that frames its answer as untrusted data is named in the instructions (listed from the code).
+  const need = ["deploys_preview", "deploys_journal_search", "deploys_notes", "deploys_explain", "deploys_diff", "deploys_history", "deploys_risk", "deploys_logs"];
+  check("instructions name every untrusted-data tool", need.every((n) => (info?.instructions ?? "").includes(n)), info?.instructions?.slice(0, 400));
+}
 check("initialize names the server", info?.serverInfo?.name === "deploys", JSON.stringify(info?.serverInfo));
 const pkgVersion = JSON.parse(readFileSync(join(here, "..", "mcp", "package.json"), "utf8")).version;
 check("the server's version is package.json's", info?.serverInfo?.version === pkgVersion, `${info?.serverInfo?.version} vs ${pkgVersion}`);
@@ -255,6 +260,10 @@ check("journal report passes the month", !r.error && /2026-03/.test(r.text) && c
   check("journal search: result filter", jf.total === 1 && jf.entries[0].detail.includes("missing module"), JSON.stringify(jf));
   const jq = body((await s.call("deploys_journal_search", { query: "FREEZE", limit: 1 })).text);
   check("journal search: query is case-insensitive and limit applies", jq.total === 1 && jq.shown === 1 && jq.entries[0].name === "api", JSON.stringify(jq));
+  const jo = body((await s.call("deploys_journal_search", { limit: 1, offset: 1 })).text);
+  check("journal search: offset reads on past the newest", jo.total === 4 && jo.shown === 1 && jo.offset === 1 && jo.entries[0].result === "forced", JSON.stringify(jo));
+  const jo2 = await s.call("deploys_journal_search", { offset: -1 });
+  check("journal search: a negative offset is refused", jo2.error === true, jo2.text);
   await s.call("deploys_journal_search", { project: "app-web", since: "2026-11-02" });
   check("journal search: project and since go to the CLI", /journal export --since 2026-11-02 --project app-web/.test(callLog()), callLog().slice(-200));
   const jb = await s.call("deploys_journal_search", { since: "yesterday; rm" });
@@ -293,6 +302,36 @@ writeFileSync(calls, "");
 r = await s.call("deploys_sessions", { repo: "acme/web; rm -rf" });
 check("sessions refuses a repo that is no owner/name", r.error === true && callLog().trim() === "", r.text + callLog());
 writeFileSync(calls, "");
+// Round 15: CI and cloud sessions only for the repos of the human's own projects (or DEPLOYS_MCP_ALLOW_REPOS).
+{
+  const s2 = start({ DEPLOYS_MCP_ALLOW_REPOS: "" });
+  await s2.init();
+  writeFileSync(calls, "");
+  let q = await s2.call("deploys_ci", { repo: "stranger/private-repo" });
+  check("ci: a repo outside the projects is refused", q.error === true && /not one of the human's projects/.test(q.text) && !/^ci /m.test(callLog()), q.text + callLog());
+  q = await s2.call("deploys_sessions", { repo: "stranger/private-repo" });
+  check("sessions: a repo outside the projects is refused with a tool error", q.error === true && /not one of the human's projects/.test(q.text), q.text);
+  q = await s2.call("deploys_ci", { repo: "me/app" });
+  check("ci: the repo of a project is allowed", !q.error, q.text);
+  q = await s2.call("deploys_sessions", { repo: "bad repo" });
+  check("sessions: a bad repo is a tool error, not an unexpected one", q.error === true && !/Unexpected error/.test(q.text), q.text);
+  q = await s2.call("deploys_journal_search", { query: "x".repeat(200) });
+  check("journal search: maxLength of the schema is enforced", q.error === true && /too long/.test(q.text), q.text);
+  q = await s2.call("deploys_when", { by: "minute" });
+  check("when: enum of the schema is enforced", q.error === true && /one of: weekday, hour/.test(q.text), q.text);
+  s2.stop();
+  const s3 = start({ DEPLOYS_MCP_ALLOW_REPOS: "stranger/private-repo" });
+  await s3.init();
+  q = await s3.call("deploys_ci", { repo: "Stranger/Private-Repo" });
+  check("ci: DEPLOYS_MCP_ALLOW_REPOS adds a repo (case-insensitive)", !q.error, q.text);
+  s3.stop();
+  const s4 = start({ FAKE_RC: "1" });
+  await s4.init();
+  q = await s4.call("deploys_changed");
+  check("changed: a partial failure keeps the typed data and adds warnings", !q.error && Array.isArray(q.structured?.result) && Array.isArray(q.structured?.warnings) && /\[exit 1/.test(q.structured.warnings[0]), q.text);
+  s4.stop();
+  writeFileSync(calls, "");
+}
 r = await s.call("deploys_idle");
 check("idle defaults to 90 days and lists the project", !r.error && callLog().trim() === "idle --days 90 --json" && /old-api/.test(r.text) && /"days":90/.test(r.text), r.text + callLog());
 writeFileSync(calls, "");

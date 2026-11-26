@@ -2,6 +2,12 @@ import { count, t } from "./i18n";
 // What the deploys CLI prints, read into one list of projects. No vscode here, so it is tested
 // with plain node.
 
+/** An address from the CLI's output that may be opened in the browser: https, or http to this machine. Nothing else (javascript:, file:, a custom scheme). */
+export function safeExternalUrl(u: unknown): string | null {
+  if (typeof u !== "string" || u.length > 2048 || /[\s"'<>\\\u0000-\u001f]/.test(u)) return null;
+  return /^https:\/\/[^/]/.test(u) || /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])([:/]|$)/.test(u) ? u : null;
+}
+
 /** A provider id as the CLI spells it: vercel, render, netlify, cloudflare, amplify, hook, … */
 export type Platform = string;
 

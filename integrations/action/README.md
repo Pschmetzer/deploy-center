@@ -40,6 +40,7 @@ Renovate can keep the tag current. Give the job a `timeout-minutes`: with a wron
 | `strict` | `false` | `true`: with `when-green`, a project whose checks are still running after the wait is left out (`--strict`). |
 | `by-rules` | `false` | `true`: only what a `deploy` rule of `rules.json` matches is started; `hold` rules always count (`--by-rules`). Applies to `deploy: dry-run` as well. |
 | `max-cost` | none | A number of US dollars: fail before anything is deployed when the estimate of the next deploy (`deploys plan --json`) is higher. An estimate, not a bill; when it cannot be priced the action warns and goes on. |
+| `allow-untrusted-event` | `false` | With `deploy: true` the action refuses `pull_request_target`, `workflow_run` and `issue_comment` (they run with secrets for events anyone can start). `true` allows it. |
 | `fail-on-risk` | none | `red` (or `yellow`): fail before anything is deployed when a project with changes has that risk or higher (migrations, lockfiles, config, size; see `deploys risk`). Empty only reports it. |
 | `dry-run` | `false` | `true`: nothing is started, even with `deploy: true`; the plan goes to the job summary and the `plan` output (like `deploy: dry-run`). One switch for a workflow that deploys on `main` and only plans on a pull request: `dry-run: ${{ github.event_name == 'pull_request' }}`. |
 | `only-changed` | `false` | `true`: a quiet run when nothing waits: one line in the summary, no pull request comment, and the output `skipped` is `true`. |
