@@ -207,6 +207,14 @@ expect "ci.yml runs every shell suite (the app suite aside)" "$miss" ""
 miss=""
 for s in tests/*-tests.sh; do case "$s" in tests/app-tests.sh|tests/cli-tests.sh|tests/savings-tests.sh) continue ;; esac; grep -q "$s" tests/suites.txt || miss="$miss $s"; done
 expect "suites.txt (the list all.sh runs) names every shell suite" "$miss" ""
+miss=""
+for s in $(grep -v '^#' tests/suites.txt | awk 'NF {print $1}'); do grep -q "^$s " tests/suites-map.txt || miss="$miss $s"; done
+expect "suites-map.txt (all.sh --changed) has a row for every suite" "$miss" ""
+expect "all.sh --changed: a changed lib file picks the CLI suites, not the app" "$(CHANGED_FILES='lib/clean.sh' bash tests/all.sh --changed --list | grep -c 'clean-tests\|script-tests')/$(CHANGED_FILES='lib/clean.sh' bash tests/all.sh --changed --list | grep -c 'app-tests')" "2/0"
+expect "all.sh --changed: only a site file picks the release suites" "$(CHANGED_FILES='site/index.html' bash tests/all.sh --changed --list | tr '\n' ' ')" "tests/release-tests.sh tests/welle10-tests.sh "
+expect "all.sh --changed: tests/cli-tests.sh picks script-tests.sh" "$(CHANGED_FILES='tests/cli-tests.sh' bash tests/all.sh --changed --list | tr '\n' ' ')" "tests/script-tests.sh "
+expect "all.sh --changed: no change, no suite" "$(CHANGED_FILES='' bash tests/all.sh --changed --list 2>/dev/null | wc -l | tr -d ' ')" "0"
+expect "all.sh --changed refuses an unknown base" "$(CHANGED_BASE=no-such-ref bash tests/all.sh --changed --list >/dev/null 2>&1; echo $?)" "2"
 expect "CODEOWNERS: lib/ and site/install.sh" "$(grep -c '^/lib/ \|^/site/install.sh ' .github/CODEOWNERS)" "2"
 expect "examples pin the current release" "$(grep -h 'DEPLOYS_VERSION: "' examples/*.yml | grep -vc "\"$(cat VERSION)\"")" "0"
 

@@ -10,9 +10,9 @@ Wird mit jedem PR dieser Spur nachgeführt.
    eine Datei je Thema (`suite_<thema>()`), `main.swift` ruft sie nacheinander. Gleiche Zahl `expect(`-Aufrufe vor und nach der Teilung.
 2. ✅ **CLI-Tests je Thema** – `tests/cli-tests.sh` ist ein Lader für `tests/cli/*.sh` (gleiche Reihenfolge, gleiche Shell:
    die Tests teilen sich den e2e-Zustand). `tests/suites.txt` und `tests/all.sh` unverändert.
-3. ⬜ **Test-Zähler je Suite** – `tests/all.sh` zeigt neben der Zeit auch, wie viele `ok`-Zeilen eine Suite druckte; ein Sinken fällt auf.
-4. ⬜ **Schnelle Teilmenge** – `tests/all.sh --changed`: nur die Suiten, deren Quelldateien sich gegen `origin/main` geändert haben
-   (Abbildung Datei → Suite in `tests/suites.txt`).
+3. ✅ **Test-Zähler je Suite** – `tests/all.sh` zeigt neben der Zeit auch, wie viele `ok`-Zeilen eine Suite druckte; ein Sinken fällt auf.
+4. ✅ **Schnelle Teilmenge** – `tests/all.sh --changed`: nur die Suiten, deren Quelldateien sich gegen `origin/main` geändert haben
+   (Abbildung Datei → Suite in `tests/suites-map.txt`, großzügig: lieber eine Suite zu viel).
 5. ⬜ **Flaky-Erkennung** – die Nachtläufe zählen, welche Tests in zwei Läufen verschieden ausgehen, und melden sie.
 
 ## B. Bauen und Editor
@@ -41,6 +41,6 @@ Wird mit jedem PR dieser Spur nachgeführt.
 ## D. CI
 
 15. ⬜ **Gemeinsamer Cache** für Homebrew-Pakete und `vendor/Sparkle` im macOS-Lauf (die macOS-Minuten zählen zehnfach).
-16. ⬜ **Laufzeiten sichtbar** – die Zeit je Suite aus `tests/all.sh` in der Zusammenfassung des Laufs, ein Rückblick über die letzten Läufe.
+16. ✅ **Laufzeiten sichtbar** – die Zeit je Suite aus `tests/all.sh` in der Zusammenfassung des Laufs, als Tabelle in `$GITHUB_STEP_SUMMARY`, wenn `tests/all.sh` Suiten ausführt (CI ruft die Suiten noch einzeln auf); ein Rückblick über mehrere Läufe fehlt noch.
 17. ⬜ **Abhängigkeits-Updates** – Dependabot für GitHub-Actions-Pins (die Schritte sind auf Commit-Hashes festgenagelt).
 18. ⬜ **Nur Dokumentation geändert** – Läufe überspringen die macOS-Tests, wenn ein PR nur `docs/` oder `site/` berührt.
