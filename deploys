@@ -136,6 +136,7 @@
 #   deploys price [set <vercel|render> <usd> | unset <p>]   your price of one build minute (prices.json)
 #   deploys budget [set <usd a month> [--strict] | off]     deploy-changed --yes stops before going over it
 #
+#   deploys more [--json]                     the extra commands (lib/x-*.sh): what each does and its usage
 #   deploys where                             config folder, version, key source, logins
 #   deploys self-update --check [--json]      is a newer release out? only checks and prints (exit 10: yes)
 #   deploys completion zsh|bash|fish          tab completion (eval "$(deploys completion zsh)";
@@ -458,6 +459,10 @@ for _l in risk verify completion nightly selfupdate preview domains forecast env
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done
+unset _l
+# Extra commands: each lib/x-<name>.sh adds `deploys <name>` (function x_<name>_main) without touching this file; `deploys more` lists them.
+# shellcheck source=/dev/null
+for _l in "$LIB_DIR"/x-*.sh; do if [ -f "$_l" ]; then . "$_l"; fi; done
 unset _l
 # rules.json ("when … then …" for the daily deploy): lib/rules.sh. Without it no rule counts.
 # shellcheck source=lib/rules.sh
@@ -4626,6 +4631,7 @@ case "${1:-} ${2:-}" in
 
   *)
     if is_provider "${1:-}"; then provider_cmd "$@"; exit $?; fi
+    case "${1:-}" in ""|*[!a-z0-9-]*) ;; *) _x="x_${1//-/_}_main"; if declare -F "$_x" >/dev/null; then "$_x" "${@:2}"; exit $?; fi ;; esac
     # A typo gets one line with the nearest commands, not the whole help. The commands are read
     # from the case labels of this script, so the list cannot fall behind.
     if [ -n "${1:-}" ]; then
