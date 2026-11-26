@@ -657,7 +657,7 @@ final class Store: ObservableObject {
         }
         // Back in the app: the failures were seen, their second reminders go.
         NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated { Notify.dropEscalations() }
+            MainActor.assumeIsolated { Notify.dropEscalations(); Notify.clearDeliveredSuccesses() }
         }
         // After sleep the lists can be hours old, and the daily reminder may be overdue.
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
@@ -1297,7 +1297,10 @@ final class Store: ObservableObject {
         Notify.post(title, body, project: project, key: key, failed: !ok, rollBack: rollBack, silent: silent)
         show(Toast(text: title, ok: ok, undoLabel: undoLabel, undo: undo), logged: true)
         // With VoiceOver the toast is announced already; saying it twice would stutter.
-        if UserDefaults.standard.bool(forKey: Speech.resultsKey), !NSWorkspace.shared.isVoiceOverEnabled { Speech.say(title) }
+        let spoken = UserDefaults.standard
+        // Quiet hours hold the voice back like they hold the notifications.
+        let hushed = Notify.quiet(hour: Calendar.current.component(.hour, from: Date()), from: spoken.integer(forKey: "quietFrom"), to: spoken.integer(forKey: "quietTo"))
+        if spoken.bool(forKey: Speech.resultsKey), !NSWorkspace.shared.isVoiceOverEnabled, !hushed { Speech.say(title) }
         log(Message(date: Date(), text: title + (body.isEmpty ? "" : " – " + body), ok: ok, project: row ?? key))
     }
     /// Newest first; `messages`' didSet keeps 30 and writes them to disk.
@@ -1949,12 +1952,19 @@ final class Store: ObservableObject {
     /// "/health, api/ping" → ["/health", "/api/ping"]; empty parts and repeats dropped, at most five.
     nonisolated static func cleanPaths(_ text: String) -> [String] {
         var seen: Set<String> = []
-        return Array(text.split(separator: ",").compactMap { cleanPath(String($0)) }.filter { seen.insert($0).inserted }.prefix(5))
+        // A comma separates two paths only before a space, a slash, another comma or the end (and a line break always):
+        // "/search?q=a,b" is one path.
+        let marked = text.replacingOccurrences(of: #"\s*,(?=[\s/,]|$)|\n"#, with: "\u{1}", options: .regularExpression)
+        return Array(marked.split(separator: "\u{1}").compactMap { cleanPath(String($0)) }.filter { seen.insert($0).inserted }.prefix(5))
     }
     /// The addresses to ask: the site itself when no path is set, else each path on it.
     nonisolated static func checkLinks(_ link: String, _ paths: [String]) -> [String] {
-        let base = link.hasSuffix("/") ? String(link.dropLast()) : link
-        return paths.isEmpty ? [link] : paths.map { base + $0 }
+        guard !paths.isEmpty else { return [link] }
+        // The paths go on the origin: a link with a path, query or fragment ("https://x.app/de?x=1") must not become "…/de?x=1/health".
+        var base = link
+        if var c = URLComponents(string: link), c.host != nil { c.path = ""; c.query = nil; c.fragment = nil; base = c.string ?? link }
+        if base.hasSuffix("/") { base.removeLast() }
+        return paths.map { base + $0 }
     }
 
     /// The site's certificate after going live (FEA-085): a word when it ends within two weeks,

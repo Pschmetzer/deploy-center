@@ -15,7 +15,9 @@ enum Spotlight {
 
     /// The entries Spotlight gets: key, name, platform; sorted, so the comparison is stable.
     nonisolated static func entries(_ items: [(key: String, name: String, platform: String)]) -> [String] {
-        items.map { "\($0.key)\t\($0.name)\t\($0.platform)" }.sorted()
+        // A tab inside a name would shift the fields when `update` splits the line again.
+        func flat(_ s: String) -> String { s.replacingOccurrences(of: "\t", with: " ") }
+        return items.map { "\(flat($0.key))\t\(flat($0.name))\t\(flat($0.platform))" }.sorted()
     }
 
     static func update(_ items: [Item]) {

@@ -116,6 +116,16 @@ enum Notify {
             center.removePendingNotificationRequests(withIdentifiers: reqs.map(\.identifier).filter { $0.hasPrefix(escalationPrefix) })
         }
     }
+    /// Back in the app: the success notes (a `post` without failure has a UUID as id) that stacked up in the
+    /// Notification Center are cleared. Failures, countdowns and reminders stay until the person dismisses them.
+    static func clearDeliveredSuccesses() {
+        guard available else { return }
+        let center = UNUserNotificationCenter.current()
+        center.getDeliveredNotifications { list in
+            let ids = list.map(\.request.identifier).filter { UUID(uuidString: $0) != nil }
+            if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
+        }
+    }
     /// Whether `hour` (0–23) is inside quiet hours from `from` to `to` (both 0: off). 22 to 7 runs over midnight.
     nonisolated static func quiet(hour: Int, from: Int, to: Int) -> Bool {
         guard from != to else { return false }
@@ -157,7 +167,11 @@ enum Notify {
             }
             let trigger = after.map { UNTimeIntervalNotificationTrigger(timeInterval: $0, repeats: false) }
             do { try await center.add(UNNotificationRequest(identifier: id, content: c, trigger: trigger)); then?(true) }
-            catch { then?(false) }
+            catch {
+                // Nothing may go missing without a trace: the system refuses past 64 pending requests or when the permission was withdrawn.
+                Log.write("notification not delivered (\(id)): \(error.localizedDescription)")
+                then?(false)
+            }
         }
     }
 }
