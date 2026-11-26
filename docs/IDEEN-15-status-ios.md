@@ -18,3 +18,6 @@ Nummern wie in `docs/IDEEN-15.md`, Abschnitt "E. iPhone/iPad-App". ✅ = gebaut 
 | 19 | ✅ | `HistoryCache` hält den Cache im Speicher (ein Decode), Test zählt |
 | 20 | ✅ | `HistoryCache.save` schreibt UserDefaults auf einer Hintergrund-Queue (Datei im Application Support bewusst nicht: UserDefaults bleibt Quelle der Wahrheit) |
 | 88 | ✅ | Test `decodeCount` |
+| 66 | ✅ | `OpenProjectIntent` und `PrepareDeployIntent` mit Siri-Phrasen (en/de) |
+| 67 | ✅ | "Nichts gelesen" wirft einen Fehler statt -1 |
+| 89 | ✅ | `scripts/check-shortcuts.py`, läuft in `tests/ios-rule-tests.sh` |
