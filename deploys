@@ -636,8 +636,11 @@ key_of() {
   for v in $("${p}_meta" | grep -Eo '"keyEnv"[[:space:]]*:[[:space:]]*\[[^]]*\]' | sed -E 's/"keyEnv"[[:space:]]*://' | grep -o '[A-Za-z_][A-Za-z0-9_]*'); do
     c="${v}_CMD"
     [ -n "${!c:-}" ] || continue
-    k="$(with_timeout 20 bash -c "${!c}" </dev/null 2>/dev/null | head -n 1 | tr -d '\r')" || k=""
-    [ -n "$k" ] || { echo "Error: $c printed no key." >&2; return 1; }
+    local ke why=""; ke="$(umask 077; mktemp)"
+    k="$(with_timeout 20 bash -c "${!c}" </dev/null 2>"$ke" | head -n 1 | tr -d '\r')" || k=""
+    # The command's own complaint ("1Password is locked", "no agent"), masked, so "printed no key" has a reason.
+    why="$(tail -n 1 "$ke" 2>/dev/null | cut -c1-200 | af_mask 2>/dev/null)" || why=""; rm -f "$ke"
+    [ -n "$k" ] || { echo "Error: $c printed no key.${why:+ It said: $why}" >&2; return 1; }
     case "$k" in *[\"\\]*) echo "Error: $c printed a key with a character that cannot be in one (quote or backslash)." >&2; return 1;; esac
     printf '%s' "$k"; return 0
   done
