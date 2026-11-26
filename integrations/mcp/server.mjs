@@ -752,6 +752,23 @@ const tools = [
     run: () => textOf(["local-sessions", "--json"], { mask: true }),
   },
   {
+    name: "deploys_repos",
+    description:
+      "The local checkouts of the projects on this Mac and how they stand against origin (deploys repos last --json): per repo branch, default branch, " +
+      "state (current, updated, switched, behind = a sync would fast-forward, merged = a sync would switch back to main, unmerged = a branch with work of its own, " +
+      "diverged, detached, needs-hand = uncommitted changes, a conflict or a running merge/rebase, error = the fetch failed), behind/ahead, a note, and " +
+      "`needsHand`; plus ranAt and a summary. Read-only: it reads the result of the last run (the schedule syncs every 30 minutes). `refresh: true` runs " +
+      "`deploys repos status` first (git fetch per repo, slower; still changes nothing). A checkout marked needsHand needs a person; never reset or force it.",
+    inputSchema: {
+      type: "object",
+      properties: { refresh: { type: "boolean", default: false, description: "Fetch and look again (deploys repos status --json) instead of the last result." } },
+      additionalProperties: false,
+    },
+    annotations: { title: "Local repo checkouts", ...READ },
+    json: true,
+    run: (a) => textOf(a.refresh === true ? ["repos", "status", "--json"] : ["repos", "last", "--json"], a.refresh === true ? { timeoutMs: SLOW_TIMEOUT_MS } : {}),
+  },
+  {
     name: "deploys_health",
     description:
       "A 0–100 health score per project, worst first, from the local journal and the CI verdicts (deploys health --json). Read-only. `ci: false` skips reading CI, which is faster. Use it to answer \"which project needs attention?\".",

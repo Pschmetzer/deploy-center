@@ -71,6 +71,7 @@
 #   deploys streak [--days 90] [--project <p>]   deploys in a row without a failure, per project
 #   deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
 #   deploys clean [--root <dir>] [--worktrees] [--yes] | clean schedule on|off   free disk space in old worktrees (a report without --yes)
+#   deploys repos status|sync [--yes]|last|schedule on|off   keep local checkouts on top of origin/main (docs/REPOS.md)
 #   deploys when [--days 90] [--by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
 #   deploys health [--days 30] [--project <p>] [--no-ci]   0-100 per project from failures, recovery, age of the last deploy, CI
 #   deploys local-sessions [--json] | stop <pid> --yes | set <key> <n>   Claude Code sessions on this Mac; tasks started together, twins (docs/LOCAL-SESSIONS.md)
@@ -136,6 +137,7 @@
 #   deploys price [set <vercel|render> <usd> | unset <p>]   your price of one build minute (prices.json)
 #   deploys budget [set <usd a month> [--strict] | off]     deploy-changed --yes stops before going over it
 #
+#   deploys more [--json]                     the extra commands (lib/x-*.sh): what each does and its usage
 #   deploys where                             config folder, version, key source, logins
 #   deploys self-update --check [--json]      is a newer release out? only checks and prints (exit 10: yes)
 #   deploys completion zsh|bash|fish          tab completion (eval "$(deploys completion zsh)";
@@ -454,10 +456,14 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions locks; do
+for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions locks repos; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done
+unset _l
+# Extra commands: each lib/x-<name>.sh adds `deploys <name>` (function x_<name>_main) without touching this file; `deploys more` lists them.
+# shellcheck source=/dev/null
+for _l in "$LIB_DIR"/x-*.sh; do if [ -f "$_l" ]; then . "$_l"; fi; done
 unset _l
 # rules.json ("when … then …" for the daily deploy): lib/rules.sh. Without it no rule counts.
 # shellcheck source=lib/rules.sh
@@ -1763,7 +1769,7 @@ job_on() {
   <key>StandardOutPath</key><string>$(xml_text "$log")</string>
   <key>StandardErrorPath</key><string>$(xml_text "$log")</string>
   $start
-  <key>ProcessType</key><string>Background</string>
+  <key>ProcessType</key><string>Background</string>${JOB_RUN_AT_LOAD:+<key>RunAtLoad</key><true/>}
   <key>LowPriorityIO</key><true/>
 </dict></plist>
 PLIST
@@ -3885,7 +3891,7 @@ case "${1:-} ${2:-}" in
   "lock "*|"unlock "*)
     declare -F locks_main >/dev/null || die "$1 needs lib/locks.sh next to deploys."
     locks_main "$@" ;;
-  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*|"local-sessions "*|"clean "*)
+  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*|"local-sessions "*|"clean "*|"repos "*)
     case "$1" in env-diff) _f=envdiff_main ;; group) _f=groups_main ;; local-sessions) _f=localsessions_main ;; *) _f="${1}_main" ;; esac
     declare -F "$_f" >/dev/null || die "$1 needs its file in lib/ next to deploys."
     "$_f" "${@:2}" ;;
@@ -4626,6 +4632,7 @@ case "${1:-} ${2:-}" in
 
   *)
     if is_provider "${1:-}"; then provider_cmd "$@"; exit $?; fi
+    case "${1:-}" in ""|*[!a-z0-9-]*) ;; *) _x="x_${1//-/_}_main"; if declare -F "$_x" >/dev/null; then "$_x" "${@:2}"; exit $?; fi ;; esac
     # A typo gets one line with the nearest commands, not the whole help. The commands are read
     # from the case labels of this script, so the list cannot fall behind.
     if [ -n "${1:-}" ]; then

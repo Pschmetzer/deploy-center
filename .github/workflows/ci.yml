@@ -131,6 +131,10 @@ jobs:
         run: bash tests/localsessions-tests.sh
       - name: Clean tests (deploys clean)
         run: bash tests/clean-tests.sh
+      - name: Extra commands (lib/x-*.sh, tests/x/)
+        run: bash tests/x-tests.sh
+      - name: Repo upkeep tests (deploys repos)
+        run: bash tests/repos-tests.sh
       - name: Preview tests (deploys preview)
         run: bash tests/preview-tests.sh
       - name: Performance guard tests (perf status, gate, clean, the hook)
@@ -207,6 +211,20 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  flaky:
+    # The weekly run only: the Linux-safe suites twice, and a test line that comes out differently in the two runs
+    # is reported (scripts/flaky-check.sh). Never runs on a pull request, never fails the weekly run's other jobs.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run the quick suites twice and compare
+        run: bash scripts/flaky-check.sh --quick | tee -a "$GITHUB_STEP_SUMMARY"
+
   linux-cli:
     # The CLI on Linux (GNU date/stat/sed, bash 5), as README, Docker image and Action promise.
     runs-on: ubuntu-latest
@@ -262,6 +280,10 @@ jobs:
         run: bash tests/localsessions-tests.sh
       - name: Clean tests (deploys clean)
         run: bash tests/clean-tests.sh
+      - name: Extra commands (lib/x-*.sh)
+        run: bash tests/x-tests.sh
+      - name: Repo upkeep tests (deploys repos)
+        run: bash tests/repos-tests.sh
       - name: Preview tests
         run: bash tests/preview-tests.sh
       - name: Performance guard tests
