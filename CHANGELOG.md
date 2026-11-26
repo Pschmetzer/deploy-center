@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The delivery figures ("Deploys a week") divide by the days the journal really covers (it keeps the last 500 entries), so a busy Mac no longer shows too few. Esc no longer closes a message with an Undo or Cancel button (the rollback countdown stays stoppable by a click). The watch after a deploy cleans up after itself when a newer deploy starts.
 - MCP: `deploys_ci` and `deploys_sessions` answer only for the repos of your own projects (`DEPLOYS_MCP_ALLOW_REPOS` adds more, `*` allows any); the schema's `maxLength`, `enum` and pattern messages are enforced and named; a partial failure (exit 1 with a list) keeps the typed result and adds `warnings`.
 - GitHub Action: with `deploy: true` or a dry run, the count, risk, `fail-on-risk`, `max-cost` and the plan speak only about this repo's projects (as the real deploy already did); `deploy: True` (a typo) warns; `deploy: true` under `pull_request_target`, `workflow_run` or `issue_comment` is refused unless `allow-untrusted-event: true`; the PR comment is found by its author, so a look-alike comment cannot block it.
 - Docker scheduler: jobs run with `DEPLOYS_READONLY=1` and a changing flag or sub-command (`freeze clear`, `doctor --fix`, `digest --post`) is refused when the file is read; `docker stop` ends it at once with 143 (no more waiting for the job, no stray temp file); the heartbeat has its own ticker so a long job no longer makes the container "unhealthy"; `DEPLOYS_PING_URL` pings a dead man's switch after each job that worked.

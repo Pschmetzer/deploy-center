@@ -494,9 +494,13 @@ struct ContentView: View {
                     .padding(.bottom, 72)
                     // Esc closes it, like any passing message.
                     .background {
-                        Button("") { store.toast = nil; stickyError = nil }
-                            .keyboardShortcut(.cancelAction)
-                            .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+                        // Not when it holds an Undo or Cancel (the rollback countdown): a stray Esc, for example when
+                        // leaving the search field, must not remove the last way to stop it. Those close by click.
+                        if t.undo == nil {
+                            Button("") { store.toast = nil; stickyError = nil }
+                                .keyboardShortcut(.cancelAction)
+                                .opacity(0).frame(width: 0, height: 0).accessibilityHidden(true)
+                        }
                     }
                     // With "Reduce motion" it only fades.
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
