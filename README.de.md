@@ -86,7 +86,7 @@ Viele Pushes auf einmal (KI-Agenten)? [Sichere Deploys](docs/SAFE-DEPLOY.de.md) 
 ## Funktionen
 
 - Schaltet Auto-Deploy für alle Vercel-Projekte und Render-Services auf einmal ab, und mit `deploys vercel|render autodeploy-on` wieder ein. [Was sich ändert](docs/AUTO-DEPLOY.de.md)
-- Weitere Hosts zum Einschalten: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Deno Deploy und jeder Deploy-Hook (`deploys providers enable <name>`). [Provider](docs/PROVIDERS.md) (Englisch)
+- Weitere Hosts zum Einschalten: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Northflank, Deno Deploy und jeder Deploy-Hook (`deploys providers enable <name>`). [Provider](docs/PROVIDERS.md) (Englisch)
 - Liest, was wartet, von GitHub oder GitLab (gitlab.com oder eigene Instanz). [GitLab](docs/GITLAB.de.md) (Englisch)
 - Deployt den neuesten Commit, für ein Projekt oder viele, und verfolgt jedes Deploy, bis es live oder fehlgeschlagen ist
 - Zeigt, was wartet: Commits und gemergte PRs, die noch nicht live sind, pro Projekt und insgesamt. [Wie gezählt wird](docs/ZAHLEN.md)
@@ -149,7 +149,7 @@ Einstellungen: [docs/CLI.de.md](docs/CLI.de.md), die vollständige englische Ref
 - [x] Menüleiste, Mitteilungen, Englisch und Deutsch
 - [x] `deploys`-CLI, GitHub Action, Badges, tägliche Webhook-Zusammenfassung, Pre-Push-Hook, Docker-Image
 - [x] Autofix für fehlgeschlagene Builds
-- [x] Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Deno Deploy (zum Einschalten)
+- [x] Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Northflank, Deno Deploy (zum Einschalten)
 - [x] Allgemeiner Deploy-Hook (jede Plattform mit einer Deploy-URL)
 - [x] GitLab als Quelle neben GitHub
 - [x] MCP-Server für KI-Agenten, Claude-Code-Plugin, Agent-Digest, VS-Code-Erweiterung
@@ -210,7 +210,7 @@ Die vollständige Liste (Team-, Install- und Integrationstests, die Prüfung auf
 
 ## Lizenz
 
-MIT, siehe [LICENSE](LICENSE). Nicht verbunden mit Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub oder GitLab.
+MIT, siehe [LICENSE](LICENSE). Nicht verbunden mit Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Google, Koyeb, Northflank, Deno, GitHub oder GitLab.
 Claude ist eine Marke von Anthropic; keine Verbindung.
 
 [Impressum](https://deploycenter.app/impressum.html) · [Datenschutz](https://deploycenter.app/datenschutz.html)

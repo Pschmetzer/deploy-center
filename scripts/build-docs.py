@@ -35,8 +35,8 @@ BRANCH = "main"
 # site/img/og.png (1200 x 630), the same picture as on the home page
 OG_ALT = "Deploy Center: stop paying for a build on every push. Free Mac app for manual deploys."
 # The footer line on every docs page; the home page lists the same names.
-TRADEMARKS = ("Not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, GitHub, "
-              "GitLab or Anthropic. Claude is a trademark of Anthropic.")
+TRADEMARKS = ("Not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Google, Koyeb, Northflank, Deno, "
+              "GitHub, GitLab or Anthropic. Claude is a trademark of Anthropic.")
 
 # slug, nav label, group, source file, description. Order = sidebar order.
 PAGES = [
@@ -112,6 +112,8 @@ PAGES = [
      "GitHub Pages in Deploy Center: the newest run of your Pages workflow, and starting a deploy by dispatching it."),
     ("koyeb", "Koyeb", "Hosts", "docs/providers/koyeb.md",
      "Koyeb in Deploy Center: your services and their newest deployment, and redeploying a service by hand."),
+    ("northflank", "Northflank", "Hosts", "docs/providers/northflank.md",
+     "Northflank in Deploy Center: the services of your projects and their newest build, and starting a build of a branch or commit by hand."),
     ("deno-deploy", "Deno Deploy", "Hosts", "docs/providers/deno.md",
      "Deno Deploy in Deploy Center: the projects of one organization and redeploying a deployment as production by hand."),
     ("ci", "Deploy from CI", "Using it", "examples/README.md",

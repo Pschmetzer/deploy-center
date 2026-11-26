@@ -16,7 +16,7 @@
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
 <meta property="article:author" content="https://deploycenter.app/">
-<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:modified_time" content="2026-11-26">
 <meta property="article:published_time" content="2026-11-10">
 <meta property="og:title" content="How to turn off Render auto-deploy · Deploy Center">
 <meta property="og:description" content="Turn off auto-deploy on Render: in the dashboard, with autoDeployTrigger: off in render.yaml, or with one PATCH to the Render API. Then deploy by hand.">
@@ -47,7 +47,7 @@
   "url": "https://deploycenter.app/guides/render-auto-deploy-off/",
   "mainEntityOfPage": "https://deploycenter.app/guides/render-auto-deploy-off/",
   "datePublished": "2026-11-10",
-  "dateModified": "2026-11-20",
+  "dateModified": "2026-11-26",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -146,7 +146,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>How to turn off auto-deploy on Render</h1>
 <p class="answer">In the Render dashboard, open the service, go to <b>Settings → Build &amp; Deploy</b> and set <b>Auto-Deploy</b> to <b>Off</b>. For Blueprints add <code>autoDeployTrigger: off</code> to each service in <code>render.yaml</code>, and over the API send <code>PATCH /v1/services/{id}</code> with <code>{"autoDeployTrigger":"off"}</code>.</p>
-<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-26">26 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>The service stays connected to its repository either way. Pushes simply stop starting deploys, and you deploy with one click or one call.</p>
 

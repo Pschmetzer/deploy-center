@@ -7,26 +7,21 @@ body:
     attributes:
       value: |
         Today Deploy Center supports Vercel and Render, and as opt-in hosts Netlify, Cloudflare Pages,
-        AWS Amplify, DigitalOcean App Platform, Coolify and any deploy hook. Tell us which platform you want next.
+        AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting,
+        GitHub Pages, Koyeb, Northflank, Deno Deploy and any deploy hook. Tell us which platform you want next.
         If an issue for your platform exists already, add a 👍 to it instead.
   - type: dropdown
     id: platform
     attributes:
       label: Which platform should Deploy Center support next?
       options:
-        - Fly.io
-        - Railway
-        - Heroku
-        - Firebase Hosting
         - Azure Static Web Apps
         - Kamal
         - Cloudflare Workers
         - Cloud Run
         - AWS App Runner
-        - Deno Deploy
         - Dokploy
         - CapRover
-        - Northflank
         - Supabase
         - Other (say which below)
     validations:

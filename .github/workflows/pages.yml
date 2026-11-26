@@ -100,6 +100,7 @@ jobs:
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -X POST https://api.indexnow.org/indexnow \
             -H 'Content-Type: application/json; charset=utf-8' -d "$body" || true)
           echo "IndexNow answered HTTP $code (200/202 = accepted)"
+          case "$code" in 200|202) ;; *) echo "::warning::IndexNow answered HTTP $code: the changed URLs were not announced" ;; esac
 
   smoke:
     # The live site, after the deploy: the pages and the update feed answer, the feed is XML and the one in
@@ -118,7 +119,7 @@ jobs:
           # the IndexNow key file is the one in site/ whose name is its own content (it proves we own the domain)
           key="$(for f in site/*.txt; do b="${f##*/}"; b="${b%.txt}"; [ "$(tr -d '[:space:]' < "$f")" = "$b" ] && echo "$b"; done | head -n 1)"
           [ -n "$key" ] || { echo "::error::no IndexNow key file in site/"; exit 1; }
-          for path in / /appcast.xml /install.sh /docs/ /sitemap.xml /robots.txt /llms.txt "/$key.txt"; do
+          for path in / /appcast.xml /install.sh /docs/ /sitemap.xml /robots.txt /llms.txt /de/ /de/anleitungen/ /blog/feed.xml "/$key.txt"; do
             code="$(curl -s -o /dev/null -w '%{http_code}' --retry 6 --retry-delay 10 --retry-all-errors --max-time 30 "https://deploycenter.app$path" || true)"
             echo "$path -> HTTP $code"
             [ "$code" = 200 ] || { echo "::error::https://deploycenter.app$path answered HTTP $code"; exit 1; }

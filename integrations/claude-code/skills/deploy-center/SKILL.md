@@ -81,7 +81,7 @@ why the project counts (or does not). `deploys diff <project>` lists the commits
 ## Deploying, when the user said yes
 
 One command for every platform (Vercel, Render, Netlify, Cloudflare, Amplify, DigitalOcean,
-Coolify, a deploy hook): `deploys deploy <project> --wait`, or `deploys deploy <platform>:<name>
+Coolify, Fly.io, Railway, Heroku, Firebase, GitHub Pages, Koyeb, Northflank, Deno Deploy, a deploy hook): `deploys deploy <project> --wait`, or `deploys deploy <platform>:<name>
 --wait` when the name is on two platforms. It checks the deploy window and approvals; if it
 refuses, report why and stop (no `--force`).
 
