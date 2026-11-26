@@ -672,7 +672,7 @@ cert_days_left() {
   command -v perl >/dev/null 2>&1 && lim=(perl -e 'alarm 10; exec @ARGV')
   end="$(echo | ${lim[@]+"${lim[@]}"} openssl s_client -connect "$1:443" -servername "$1" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | sed -n 's/^notAfter=//p')"
   [ -n "$end" ] || return 0
-  t="$(date -j -u -f '%b %e %T %Y %Z' "$end" +%s 2>/dev/null || date -u -d "$end" +%s 2>/dev/null)" || return 0
+  t="$(LC_ALL=C date -j -u -f '%b %e %T %Y %Z' "$end" +%s 2>/dev/null || LC_ALL=C date -u -d "$end" +%s 2>/dev/null)" || return 0
   [ -n "$t" ] || return 0
   now="$(date +%s)"; echo $(( (t - now) / 86400 ))
 }
@@ -1229,10 +1229,14 @@ frozen=""; window_checked=""
 # list of them: any one open is enough). Outside it is closed. A window.json-style {"deny":…}
 # that reaches a project through overrides is the local window, checked by window_json.
 TEAM_WINDOW_RULE='def hm: split(":") | (.[0] | tonumber) * 60 + ((.[1] // "0") | tonumber);
-  def open1: ((.days == null) or (.days | map(ascii_downcase | .[0:3]) | index($day)))
-      and ((.dates == null) or (.dates | index($date)))
-      and (((.from // "00:00") | hm) as $f | ((.to // "24:00") | hm) as $u | ($time | hm) as $t
-           | if $f <= $u then $t >= $f and $t < $u else $t >= $f or $t < $u end);
+  def on($d; $dt): ((.days == null) or (.days | map(ascii_downcase | .[0:3]) | index($d)))
+      and ((.dates == null) or (.dates | index($dt)));
+  def prev($dt): (($dt + "T00:00:00Z") | fromdateiso8601 - 86400) as $y
+      | {date: ($y | strftime("%Y-%m-%d")), day: ($y | strftime("%a") | ascii_downcase)};
+  def open1: ($nows[.tz // ""] // $nows[""]) as $n | ($n.time | hm) as $t | prev($n.date) as $p
+      | ((.from // "00:00") | hm) as $f | ((.to // "24:00") | hm) as $u
+      | if $f <= $u then on($n.day; $n.date) and $t >= $f and $t < $u
+        else (on($n.day; $n.date) and $t >= $f) or (on($p.day; $p.date) and $t < $u) end;
   def says: "\((.days // ["every day"]) | join(", ")) \(.from // "00:00")–\(.to // "24:00")\(if .tz then " " + .tz else "" end)";
   (if type == "array" then . else [.] end) as $w
   | if any($w[]; open1) then {denied:false} else {denied:true, reason:"outside the shared deploy window (\($w | map(says) | join("; ")))"} end'
@@ -1241,22 +1245,25 @@ team_eff_once() { if [ -z "$TEAM_EFF_CACHE" ]; then TEAM_EFF_CACHE="$(team_effec
 # team_window_denied <name>: why the shared window of that project is closed now, or nothing.
 team_window_denied() {
   team_on || return 0
-  local n="${1#*:}" w tz now
+  local n="${1#*:}" w now
   is_provider "${1%%:*}" || n="$1"
   w="$(team_eff_once | jq -c --arg n "$n" '.projects[$n].window.value // null | if type == "object" and has("deny") then null else . end' 2>/dev/null)"
   [ -n "$w" ] && [ "$w" != null ] || return 0
-  tz="$(echo "$w" | jq -r 'if type == "array" then .[0].tz else .tz end // empty')"
   # DEPLOYS_NOW counts only with DEPLOYS_TESTING=1, as in now_parts.
   local testnow=""; [ -z "${DEPLOYS_NOW:-}" ] || [ "${DEPLOYS_TESTING:-}" != 1 ] || testnow=1
-  # An unknown zone would silently read as UTC: refused instead.
-  if [ -n "$tz" ] && [ -z "$testnow" ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then
-    echo "the shared deploy window of $n names an unknown time zone \"$tz\""; return 0
-  fi
-  # Now in the window's own zone (DEPLOYS_NOW stands in for tests, as in now_parts).
-  if [ -n "$testnow" ] || [ -z "$tz" ]; then now="$(now_parts)"
-  else now="$(TZ="$tz" LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]')"; fi
-  echo "$w" | jq -r --arg day "${now%% *}" --arg time "$(echo "$now" | cut -d' ' -f2)" --arg date "${now##* }" \
-    "$TEAM_WINDOW_RULE"' | if .denied then .reason else empty end' 2>/dev/null || echo "the shared deploy window of $n could not be read"
+  # Every window reads the clock in its own zone ("" = this machine's).
+  local nows='{}' z
+  while IFS= read -r z; do
+    # An unknown zone would silently read as UTC: refused instead.
+    if [ -n "$z" ] && [ -z "$testnow" ] && [ ! -f "/usr/share/zoneinfo/$z" ]; then
+      echo "the shared deploy window of $n names an unknown time zone \"$z\""; return 0
+    fi
+    if [ -n "$testnow" ] || [ -z "$z" ]; then now="$(now_parts)"
+    else now="$(TZ="$z" LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]')"; fi
+    nows="$(jq -c --arg z "$z" --arg d "${now%% *}" --arg t "$(echo "$now" | cut -d' ' -f2)" --arg dt "${now##* }" \
+      '. + {($z): {day:$d, time:$t, date:$dt}}' <<<"$nows")"
+  done < <(echo "$w" | jq -r '(if type == "array" then . else [.] end)[] | (.tz // "")' | sort -u)
+  echo "$w" | jq -r --argjson nows "$nows" "$TEAM_WINDOW_RULE"' | if .denied then .reason else empty end' 2>/dev/null || echo "the shared deploy window of $n could not be read"
 }
 # freeze_check [<name>...]: the local window, then the shared window of each project named.
 freeze_check() {
@@ -2872,7 +2879,7 @@ args_has() {  # args_has "<flag> <flag>…" <args…>
 if args_has "--help -h" "${@:2}"; then
   h="$(sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//' | grep -E "^  deploys $1( |$)" || true)"
   if [ -z "$h" ] && is_provider "$1"; then h="$(sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//' | grep -E '^  deploys <p> ' || true)"; fi
-  [ -n "$h" ] || die "No help for \"$1\". All commands: deploys --help"
+  [ -n "$h" ] || die_usage "No help for \"$1\". All commands: deploys --help"
   echo "$h"; exit 0
 fi
 
@@ -3323,6 +3330,7 @@ case "${1:-} ${2:-}" in
         *://*|git@*) die "Shared configs are read from GitHub repos only: give it as owner/name or https://github.com/owner/name" ;;
       esac
       case "$r" in */*/*|*[!A-Za-z0-9._/-]*|/*|*/) die "Give the repo as owner/name";; */*) ;; *) die "Give the repo as owner/name";; esac
+      case "$r" in .*/*|*/.|*/..|..*/*) case "${r%%/*}:${r#*/}" in .:*|..:*|*:.|*:..) die "Give the repo as owner/name (no . or .. parts)" ;; esac ;; esac
       printf '%s' "$r"
     }
     # The repos whose deploy-center.json counts here, beyond those vercel-repos.json names.
@@ -4534,12 +4542,13 @@ case "${1:-} ${2:-}" in
       acc=false; ( "${p}_ready" ) >/dev/null 2>&1 && acc=true
       [ "$src" != missing ] || [ "$acc" != true ] || src="keychain (older name)"
       old=false; [ -z "$age" ] || [ "$age" -lt "$cmax" ] || old=true
-      [ "$acc" = true ] || crc=1
+      # A provider without any key is not set up, not rejected: only a key that is refused sets exit 1.
+      [ "$acc" = true ] || [ "$src" = missing ] || crc=1
       cj="$(echo "$cj" | jq -c --arg p "$p" --arg l "$(meta_str "$p" label)" --arg s "$src" --arg a "$age" --argjson acc "$acc" --argjson old "$old" \
         '. + [{platform:$p, label:$l, source:$s, accepted:$acc, keyAgeDays:(if $a == "" then null else ($a | tonumber) end), rotate:$old}]')"
     done
     if [ "$json" = 1 ]; then echo "$cj"; exit "$crc"; fi
-    echo "$cj" | jq -r --argjson m "$cmax" '.[] | [.label, .source, (if .accepted then "ok" else "NOT accepted" end), (if .keyAgeDays == null then "-" else "\(.keyAgeDays) days" end), (if .rotate then "older than \($m) days: rotate it" else "" end)] | @tsv' \
+    echo "$cj" | jq -r --argjson m "$cmax" '.[] | [.label, .source, (if .accepted then "ok" elif .source == "missing" then "not set up" else "NOT accepted" end), (if .keyAgeDays == null then "-" else "\(.keyAgeDays) days" end), (if .rotate then "older than \($m) days: rotate it" else "" end)] | @tsv' \
       | (printf 'PLATFORM\tKEY FROM\tSTATE\tKEY AGE\tNOTE\n'; cat) | table
     exit "$crc" ;;
 

@@ -67,11 +67,11 @@ par_fn team_fetch_one
 # The repos whose shared file counts here: every remembered Vercel repo, the repos added with
 # `deploys team add`, and any given as arguments (a Render service's repo, for one deploy).
 team_repo_list() {
-  { jq -r '.[] | select(.org and .repo) | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null
-    cat "$TEAM_REPOS" 2>/dev/null
-    jq -r '.projects // {} | .[] | .repo // empty' "$TEAM_OVERRIDES" 2>/dev/null
+  { jq -r '.[] | select(.org and .repo) | "\(.org)/\(.repo)"' "$REPOS" 2>/dev/null || true
+    cat "$TEAM_REPOS" 2>/dev/null || true
+    jq -r '.projects // {} | .[] | .repo // empty' "$TEAM_OVERRIDES" 2>/dev/null || true
     printf '%s\n' "$@"
-  } | grep -E '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' | sort -u
+  } | { grep -E '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' || true; } | { grep -Ev '(^|/)\.{1,2}(/|$)' || true; } | sort -u
 }
 
 # The shared files of those repos, as a JSON array. DEPLOYS_NO_GITHUB (or no gh) reads the
