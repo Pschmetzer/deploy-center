@@ -20,7 +20,7 @@ extension Demo {
             if let d = i.domain { words.insert(d) }
         }
         // One pass, so a stand-in is never replaced again.
-        let list = words.filter { $0.count >= 3 }.sorted { $0.count > $1.count || ($0.count == $1.count && $0 < $1) }
+        let list = words.filter { $0.count >= 2 }.sorted { $0.count > $1.count || ($0.count == $1.count && $0 < $1) }
         guard !list.isEmpty, let re = regex(for: list) else { return text }
         let ns = text as NSString
         var out = "", last = 0
@@ -39,7 +39,11 @@ extension Demo {
     private static func regex(for list: [String]) -> NSRegularExpression? {
         cacheLock.lock(); defer { cacheLock.unlock() }
         if let c = cached, c.words == list { return c.re }
-        guard let re = try? NSRegularExpression(pattern: list.map(NSRegularExpression.escapedPattern(for:)).joined(separator: "|"),
+        guard let re = try? NSRegularExpression(pattern: list.map { (w: String) -> String in
+                                                    // A short name ("ui", "web") only as a whole word, or it would be cut out of every other word.
+                                                    let e = NSRegularExpression.escapedPattern(for: w)
+                                                    return w.count < 4 ? "(?<![\\p{L}\\p{N}])" + e + "(?![\\p{L}\\p{N}])" : e
+                                                }.joined(separator: "|"),
                                                 options: .caseInsensitive) else { return nil }
         cached = (list, re)
         return re

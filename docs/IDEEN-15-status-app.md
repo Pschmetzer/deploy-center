@@ -13,3 +13,4 @@ Nummern wie in [IDEEN-15.md](IDEEN-15.md). „erledigt“ heißt umgesetzt und p
 | Nr. | Stand | PR |
 | --- | --- | --- |
 | 7, 8, 9, 12, 13, 14, 15, 16, 48 | erledigt | Eigentümerprüfung |
+| 3, 11 (Sessions, Demo-Kurznamen), 18, 53, 56, 75 | erledigt | Mitteilungen und Sessions |
