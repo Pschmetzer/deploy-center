@@ -1,5 +1,4 @@
 /* The home page (index.html). Shared parts are in site.css; the color tokens in tokens.css. */
-@import url("/css/tokens.css");
 :root{--radius:12px; --max:1080px}
 *{box-sizing:border-box}
 html{scroll-behavior:smooth;scroll-padding-top:64px}

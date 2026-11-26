@@ -32,7 +32,8 @@ Deploy Center runs as you, on your Mac (or in your CI job), with your Vercel, Re
 logins. It has no server of its own. What it protects:
 
 1. **Your keys**: the Render API key, the Claude routine token, the Anthropic API key, the tokens
-   of the opt-in hosts (Netlify, Cloudflare, DigitalOcean, Coolify; an AWS profile name for
+   of the opt-in hosts (Netlify, Cloudflare, DigitalOcean, Coolify, Fly.io, Railway, Heroku,
+   Firebase Hosting, GitHub Pages, Koyeb, Northflank, Deno Deploy; an AWS profile name for
    Amplify), deploy hook URLs, the Vercel, GitHub and GitLab CLI logins, and the keys handed to
    the iPhone app.
 2. **Your build minutes and live sites**: nothing may start a build, a rollback or a cancel unless
@@ -74,7 +75,7 @@ the vendor).
 | The update feed (once a day, can be turned off; no system profile), then the zip | `deploycenter.app/appcast.xml`, `github.com` | HTTPS, see [Updates](#updates) |
 | Project icons, and the site check after a deploy (`deploys verify`, plain GETs) | each project's own domain (or the `--url` you pass) | HTTPS to `https://<domain>/` (and `--path`); icon links in that page are followed |
 | Is a host down? (a plain GET, nothing of yours) | `www.vercel-status.com`, `status.render.com`, `www.githubstatus.com` | HTTPS, from the app |
-| Opt-in hosts, once turned on (`deploys providers enable <name>`): site lists, deploys, build logs, starts, rollbacks | `api.netlify.com`, `api.cloudflare.com`, AWS Amplify (through the `aws` CLI and your AWS profile), `api.digitalocean.com`, your own Coolify instance (`COOLIFY_URL`) | HTTPS; each key from the keychain (`deploy-center-<name>`; for Amplify only a profile name) or the environment, on stdin |
+| Opt-in hosts, once turned on (`deploys providers enable <name>`): site lists, deploys, build logs, starts, rollbacks | `api.netlify.com`, `api.cloudflare.com`, AWS Amplify (through the `aws` CLI and your AWS profile), `api.digitalocean.com`, your own Coolify instance (`COOLIFY_URL`), `api.machines.dev` (Fly.io), `backboard.railway.com` (Railway), `api.heroku.com`, `firebasehosting.googleapis.com` (Firebase Hosting), `api.github.com` (GitHub Pages: workflow runs), `app.koyeb.com`, `api.northflank.com`, `api.deno.com` | HTTPS; each key from the keychain (`deploy-center-<name>`; for Amplify only a profile name) or the environment, on stdin |
 | A deploy hook: the POST that starts a build, with the method, headers and body you set | the hook URL you added (`deploys hook add`) | `curl` over HTTPS (or `http://` to `localhost`); the URL from the keychain, on stdin |
 | Claude in the app / `deploys ai` (opt-in, your own key): the masked log excerpt around the first error, or the titles of waiting commits and PRs, or diff stats and risky file names ([details](docs/CLAUDE-IN-APP.md#privacy)) | `api.anthropic.com` | `curl` over HTTPS; the key on stdin; only after you turn it on and save a key, only when you ask, with a monthly token cap |
 | Autofix: project, repo, branch, commit, deploy id and the last 60 KB of the build log, masked | `api.anthropic.com` (your routine) | `curl` over HTTPS; the token on stdin; only after you set up a routine and a token |

@@ -16,7 +16,7 @@
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
 <meta property="article:author" content="https://deploycenter.app/">
-<meta property="article:modified_time" content="2026-11-20">
+<meta property="article:modified_time" content="2026-11-26">
 <meta property="article:published_time" content="2026-11-16">
 <meta property="og:title" content="Vercel build minutes and the build queue · Deploy Center">
 <meta property="og:description" content="How build minutes add up from pushes, projects and branches, how to measure them with your own numbers, and what shortens the queue.">
@@ -36,6 +36,7 @@
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="manifest" href="/site.webmanifest">
 <script>try{var t=localStorage.getItem('theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="stylesheet" href="/css/tokens.css">
 <link rel="stylesheet" href="/css/site.css">
 <script type="application/ld+json">
 [
@@ -47,7 +48,7 @@
   "url": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/",
   "mainEntityOfPage": "https://deploycenter.app/guides/vercel-build-minutes-and-build-queue/",
   "datePublished": "2026-11-16",
-  "dateModified": "2026-11-20",
+  "dateModified": "2026-11-26",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -172,7 +173,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Vercel build minutes and the build queue: why many pushes cost and wait</h1>
 <p class="answer">Build minutes are the number of builds multiplied by how long each takes. Every push builds every connected project, so the count grows with pushes, projects and branches, not with releases. Measure it, then cut builds before you tune build time.</p>
-<p class="meta">Last updated <time datetime="2026-11-20">20 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-26">26 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>A push does not build one thing. Vercel builds every project connected to the repository, production on the production branch and a preview on every other branch. Builds that do not fit into what your plan runs at once wait in a queue, so many pushes also mean waiting. The limits depend on your plan: read them on Vercel's pricing page instead of trusting a number from a blog.</p>
 <h2 id="count">1. Count the builds</h2>

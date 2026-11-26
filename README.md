@@ -85,7 +85,7 @@ Batching many pushes (AI agents)? [Safe deploys](docs/SAFE-DEPLOY.md): green CI 
 ## Features
 
 - Turns off auto-deploy for all Vercel projects and Render services at once, and turns it back on with `deploys vercel|render autodeploy-on`. [What changes](docs/AUTO-DEPLOY.md)
-- More hosts, opt-in: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Deno Deploy and any deploy hook (`deploys providers enable <name>`). [Providers](docs/PROVIDERS.md)
+- More hosts, opt-in: Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Northflank, Deno Deploy and any deploy hook (`deploys providers enable <name>`). [Providers](docs/PROVIDERS.md)
 - Reads what is waiting from GitHub or GitLab (gitlab.com or your own). [GitLab](docs/GITLAB.md)
 - Deploys the newest commit, for one project or many, and follows each deploy until live or failed
 - Shows what is waiting: commits and merged PRs not live yet, per project and in total. [How it counts](docs/NUMBERS.md)
@@ -147,7 +147,7 @@ settings: [docs/CLI.md](docs/CLI.md).
 - [x] Menu bar, notifications, English and German
 - [x] `deploys` CLI, GitHub Action, badges, daily webhook summary, pre-push hook, Docker image
 - [x] Autofix for failed builds
-- [x] Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Deno Deploy (opt-in)
+- [x] Netlify, Cloudflare Pages, AWS Amplify, DigitalOcean App Platform, Coolify, Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Northflank, Deno Deploy (opt-in)
 - [x] Generic deploy hook (any platform with a deploy URL)
 - [x] GitLab as a source next to GitHub
 - [x] MCP server for AI agents, Claude Code plugin, agent digest, VS Code extension
@@ -208,7 +208,7 @@ The full list (team, install and integration tests, the public-repo check): [CON
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Google, GitHub or GitLab.
+MIT, see [LICENSE](LICENSE). Not affiliated with Vercel, Render, Netlify, Cloudflare, AWS, DigitalOcean, Coolify, Fly.io, Railway, Heroku, Google, Koyeb, Northflank, Deno, GitHub or GitLab.
 Claude is a trademark of Anthropic; not affiliated.
 
 [Legal notice (Impressum)](https://deploycenter.app/impressum.html) · [Privacy policy (Datenschutz)](https://deploycenter.app/datenschutz.html)

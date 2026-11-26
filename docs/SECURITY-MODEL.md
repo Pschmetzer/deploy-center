@@ -15,7 +15,7 @@ Everything that comes from outside (project names, commit messages, build logs, 
 
 | What | Where | Notes |
 |---|---|---|
-| The Render key, the Claude routine token, your Anthropic key, the keys of the opt-in hosts, deploy hook URLs | the macOS keychain, items named `deploy-center-…` | Read from stdin when you set them, handed to `curl` on stdin. Never a command-line argument, never printed. In CI they come from environment variables. |
+| The Render key, the Claude routine token, your Anthropic key, the keys of the opt-in hosts (Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Northflank, Deno Deploy among them), deploy hook URLs | the macOS keychain, items named `deploy-center-…` | Read from stdin when you set them, handed to `curl` on stdin. Never a command-line argument, never printed. In CI they come from environment variables. |
 | Which repo and branch a Vercel project deployed from, the ignore list, settings, locks | `~/.config/deploys` (mode `0700`) | No API keys in it. Keep `vercel-repos.json` until Git is connected again ([AUTO-DEPLOY.md](AUTO-DEPLOY.md)). |
 | What the app and CLI started, rolled back or canceled | the deploy journal, one line each, hash-chained | Never leaves the Mac; error texts are masked ([JOURNAL.md](JOURNAL.md)). |
 | App settings | the app's preferences | [SETTINGS.md](SETTINGS.md) |

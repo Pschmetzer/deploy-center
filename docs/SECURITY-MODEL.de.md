@@ -17,7 +17,7 @@ Alles, was von außen kommt (Projektnamen, Commit-Nachrichten, Build-Logs, eine 
 
 | Was | Wo | Hinweis |
 |---|---|---|
-| Der Render-Key, das Claude-Routine-Token, dein Anthropic-Key, die Keys der zuschaltbaren Hosts, Deploy-Hook-URLs | der macOS-Schlüsselbund, Einträge `deploy-center-…` | Beim Setzen von stdin gelesen, an `curl` über stdin weitergegeben. Nie ein Kommandozeilenargument, nie ausgegeben. In CI kommen sie aus Umgebungsvariablen. |
+| Der Render-Key, das Claude-Routine-Token, dein Anthropic-Key, die Keys der zuschaltbaren Hosts (u. a. Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Northflank, Deno Deploy), Deploy-Hook-URLs | der macOS-Schlüsselbund, Einträge `deploy-center-…` | Beim Setzen von stdin gelesen, an `curl` über stdin weitergegeben. Nie ein Kommandozeilenargument, nie ausgegeben. In CI kommen sie aus Umgebungsvariablen. |
 | Aus welchem Repo und Branch ein Vercel-Projekt deployt hat, die Ignorierliste, Einstellungen, Sperren | `~/.config/deploys` (Modus `0700`) | Keine API-Keys darin. Behalte `vercel-repos.json`, bis Git wieder verbunden ist ([AUTO-DEPLOY.de.md](AUTO-DEPLOY.de.md)). |
 | Was App und CLI gestartet, zurückgerollt oder abgebrochen haben | das Deploy-Journal, eine Zeile je Eintrag, per Hash verkettet | Verlässt den Mac nie; Fehlertexte sind maskiert ([JOURNAL.de.md](JOURNAL.de.md)). |
 | App-Einstellungen | die Einstellungen der App | [SETTINGS.de.md](SETTINGS.de.md) |

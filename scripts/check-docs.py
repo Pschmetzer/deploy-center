@@ -3,6 +3,7 @@
 - every docs/*.md (not IDEEN*, not maintainer notes) is linked from docs/README.md, and linked once
 - README.md and README.de.md have the same number of "##" sections and the same docs/ links
 - man/deploys.1 is what scripts/build-man.py writes from the help and docs/CLI.md
+- every providers/<x>.sh is named on the home page, in llms.txt, SECURITY.md, the plugin listing, the skills and (keychain item) UNINSTALL.md
 - no markdown file has two top-level "# " headings (a docs page becomes one <h1>)
     python3 -I scripts/check-docs.py [repo-dir]   exits 1 and lists the problems
 """
@@ -103,6 +104,32 @@ if os.path.exists(builder) and os.path.exists(os.path.join(root, "man", "deploys
     r = subprocess.run([sys.executable, "-I", builder, "--check"], capture_output=True, text=True)
     if r.returncode != 0:
         problems.append("man/deploys.1 is out of date: run python3 scripts/build-man.py")
+
+# 6. a provider in providers/ must not be missing from the places that list hosts by hand
+PROVIDER_NAMES = {  # id -> the name the text must contain; a new provider has to be added here
+    "vercel": "Vercel", "render": "Render", "netlify": "Netlify", "cloudflare": "Cloudflare",
+    "amplify": "Amplify", "digitalocean": "DigitalOcean", "coolify": "Coolify", "fly": "Fly.io",
+    "railway": "Railway", "heroku": "Heroku", "firebase": "Firebase", "ghpages": "GitHub Pages",
+    "koyeb": "Koyeb", "northflank": "Northflank", "deno": "Deno", "hook": "deploy hook",
+}
+HOST_LISTS = ["site/index.html", "site/llms.txt", "SECURITY.md", "README.md", "README-CLI.md",
+              ".claude-plugin/marketplace.json", "integrations/claude-code/skills/deploys-status/SKILL.md",
+              "integrations/claude-code/skills/deploys-waiting/SKILL.md"]
+KEYCHAIN_LISTS = ["docs/UNINSTALL.md", "docs/UNINSTALL.de.md"]
+for path in sorted(glob.glob(os.path.join(root, "providers", "*.sh"))):
+    pid = os.path.basename(path)[:-3]
+    name = PROVIDER_NAMES.get(pid)
+    if name is None:
+        problems.append(f"scripts/check-docs.py: providers/{pid}.sh is new; add it to PROVIDER_NAMES and name it in the host lists")
+        continue
+    for rel in HOST_LISTS:
+        if os.path.exists(os.path.join(root, rel)) and name.lower() not in read(rel).lower():
+            problems.append(f"{rel}: does not name {name} (providers/{pid}.sh)")
+    if pid in ("vercel", "hook"):
+        continue
+    for rel in KEYCHAIN_LISTS:
+        if os.path.exists(os.path.join(root, rel)) and "deploy-center-" + pid not in read(rel) and pid not in ("render",):
+            problems.append(f"{rel}: no keychain item deploy-center-{pid}")
 
 for line in problems:
     print(line)
