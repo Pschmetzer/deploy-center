@@ -66,8 +66,8 @@ struct DeployHistoryView: View {
     private func row(_ r: DeployRecord) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack {
-                Text(PhoneProject.stateWord(r.state)).foregroundStyle(r.failed ? .red : r.current ? .green : .secondary)
-                if r.current { Text(L("live now", "jetzt live")).font(.caption).foregroundStyle(.green) }
+                Text(PhoneProject.stateWord(r.state)).foregroundStyle(r.failed ? Color.errorText : r.current ? Color.successText : Color.secondary)
+                if r.current { Text(L("live now", "jetzt live")).font(.caption).foregroundStyle(Color.successText) }
                 Spacer()
                 if let a = r.at { Text(relative(a)).font(.caption).foregroundStyle(.secondary) }
             }

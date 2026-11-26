@@ -11,11 +11,12 @@ struct PhoneHealthCard: View {
         if !outages.isEmpty || avg != nil {
             VStack(alignment: .leading, spacing: 6) {
                 if let avg {
-                    Label(L("Health \(avg.score) of 100", "Zustand \(avg.score) von 100") + " · "
+                    Label(L("Health \(avg.score) of 100", "Zustand \(avg.score) von 100")
+                          + " (" + (avg.score >= 80 ? L("good", "gut") : (avg.score >= 50 ? L("watch", "beobachten") : L("poor", "schlecht"))) + ") · "
                           + (avg.projects == 1 ? L("1 project read", "1 Projekt gelesen") : L("\(avg.projects) projects read", "\(avg.projects) Projekte gelesen")),
                           systemImage: avg.score >= 80 ? "heart.fill" : (avg.score >= 50 ? "heart" : "heart.slash"))
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(avg.score >= 80 ? Color.green : (avg.score >= 50 ? Color.orange : Color.red))
+                        .foregroundStyle(avg.score >= 80 ? Color.successText : (avg.score >= 50 ? Color.warningText : Color.errorText))
                 }
                 ForEach(outages) { o in
                     HStack {

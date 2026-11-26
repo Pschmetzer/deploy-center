@@ -23,11 +23,11 @@ struct ConnectMacView: View {
             Form {
                 // The toast lies under this sheet: an error is shown here too (IDEEN-12 C11).
                 if let m = store.message, store.messageIsError {
-                    Section { Label(m, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red) }
+                    Section { Label(m, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.errorText) }
                 }
                 if store.linked != nil {
                     Section {
-                        Label(L("Connected to the Mac", "Mit dem Mac verbunden"), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Label(L("Connected to the Mac", "Mit dem Mac verbunden"), systemImage: "checkmark.circle.fill").foregroundStyle(Color.successText)
                         if let at = store.linked?.updated {
                             Text(L("Keys from ", "Schlüssel vom ") + at.formatted(Date.FormatStyle(date: .abbreviated, time: .shortened).locale(appLocale)))
                                 .foregroundStyle(.secondary)
@@ -88,7 +88,7 @@ struct ConnectMacView: View {
                     PasteButton(payloadType: String.self) { texts in
                         Task { @MainActor in handle(texts.first ?? "", pasted: true) }
                     }
-                    if let e = scanError { Text(e).foregroundStyle(.red) }
+                    if let e = scanError { Text(e).foregroundStyle(Color.errorText) }
                     if cameraDenied { Button(L("Open Settings …", "Einstellungen öffnen …")) { if let u = URL(string: UIApplication.openSettingsURLString) { openURL(u) } } }
                 } header: { Text(L("With a QR code", "Mit einem QR-Code")) } footer: {
                     Text(L("On the Mac: Settings → iPhone → Show a QR code for the iPhone. The code holds your keys and works for 90 seconds; the keys are then kept on this iPhone only.",
@@ -250,7 +250,10 @@ struct QRScanner: UIViewControllerRepresentable {
                     }
                     self.start()
                     self.view.addSubview(close)
-                    var c = [close.trailingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
+                    // At least 44 pt, like the flashlight (IDEEN-15 E50).
+                    var c = [close.heightAnchor.constraint(greaterThanOrEqualToConstant: 44),
+                             close.widthAnchor.constraint(greaterThanOrEqualToConstant: 44),
+                             close.trailingAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.trailingAnchor, constant: -20),
                              close.topAnchor.constraint(equalTo: self.view.safeAreaLayoutGuide.topAnchor, constant: 12)]
                     if self.camera?.hasTorch == true {
                         let torch = self.button(L("Light", "Licht"), toggle)

@@ -86,6 +86,8 @@ extension DeploySnapshot {
                   "\(w.n(waitingPRs, ("PR", "PR"), ("PRs", "PRs"))) \(waitingPRs == 1 ? "wartet" : "warten") in \(w.n(waitingProjects, ("project", "Projekt"), ("projects", "Projekten")))")
         if building > 0 { s += w(", \(building) building", ", \(building) im Bau") }
         if failed > 0 { s += w(", \(failed) failed", ", \(failed) fehlgeschlagen") }
+        // The saving line is drawn in the layout, so VoiceOver (which reads only this sentence) must say it too.
+        if let sv = saving, sv.after < sv.before { s += w(", about \(money(sv.month, w)) a month saved", ", etwa \(money(sv.month, w)) im Monat gespart") }
         // The "Demo" mark is hidden from VoiceOver with the rest of the header: say it here.
         if demo { s += w(", demo data", ", Demodaten") }
         return s + "."

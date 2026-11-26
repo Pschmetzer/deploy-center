@@ -13,5 +13,5 @@ echo "ok   FailureHint topics are ErrorHelp's"
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 swiftc -swift-version 5 -target "$(uname -m)-apple-macosx14.0" -o "$out/ios-tests" \
-  ios/App/Project.swift ios/App/Clients.swift ios/App/LogMask.swift ios/App/Spoken.swift ios/App/HistoryCache.swift ios/App/FollowedRuns.swift ios/App/FailureHint.swift ios/App/NotePlan.swift ios/App/DeployTimeline.swift ios/App/AdaptiveLayout.swift ios/App/Keychain.swift ios/App/PhoneHealth.swift shared/*.swift ios/Tests/main.swift
+  ios/App/Project.swift ios/App/Clients.swift ios/App/LogMask.swift ios/App/Spoken.swift ios/App/HistoryCache.swift ios/App/FollowedRuns.swift ios/App/FailureHint.swift ios/App/NotePlan.swift ios/App/DeployTimeline.swift ios/App/AdaptiveLayout.swift ios/App/Keychain.swift ios/App/PhoneHealth.swift ios/App/Contrast.swift shared/*.swift ios/Tests/main.swift
 "$out/ios-tests"

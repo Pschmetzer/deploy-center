@@ -43,14 +43,14 @@ struct SettingsView: View {
                 // The toast lies under this sheet: an error is shown here as text, not only said to VoiceOver (IDEEN-12 C11).
                 if let m = store.message, store.messageIsError {
                     Section {
-                        Label(m, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                        Label(m, systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.errorText)
                         Button(L("Dismiss", "Ausblenden")) { store.message = nil }
                     }
                 }
                 Section {
                     if store.linked != nil && !store.ignoreLink {
                         Label(L("Connected to the Mac (iCloud Keychain)", "Mit dem Mac verbunden (iCloud-Schlüsselbund)"), systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Color.successText)
                     }
                     Button(store.linked == nil || store.ignoreLink ? L("Connect to the Mac …", "Mit dem Mac verbinden …") : L("Connection details …", "Verbindung …")) { connect = true }
                 } header: { Text("Mac") } footer: {
@@ -283,5 +283,11 @@ struct SettingsView: View {
 
 extension Color {
     /// Orange for small text: the system orange is about 2.3:1 on white; this one reaches 4.5:1 in light mode and is the system orange in dark mode.
-    static let warningText = Color(UIColor { $0.userInterfaceStyle == .dark ? .systemOrange : UIColor(red: 0.62, green: 0.30, blue: 0, alpha: 1) })
+    static let warningText = Color(UIColor { $0.userInterfaceStyle == .dark ? .systemOrange : Contrast.warning.ui })
+    /// Red, green and blue for small text: the system colors are under 4.5:1 on white (see Contrast).
+    static let errorText = Color(UIColor { $0.userInterfaceStyle == .dark ? .systemRed : Contrast.error.ui })
+    static let successText = Color(UIColor { $0.userInterfaceStyle == .dark ? .systemGreen : Contrast.success.ui })
+    static let activeText = Color(UIColor { $0.userInterfaceStyle == .dark ? .systemBlue : Contrast.active.ui })
 }
+
+extension Contrast.RGB { var ui: UIColor { UIColor(red: r, green: g, blue: b, alpha: 1) } }
