@@ -155,6 +155,19 @@ enum ClaudeFiles {
         }
     }
 
+    /// The file changed after it was read (Claude Desktop wrote it meanwhile): nothing is written.
+    struct Changed: LocalizedError {
+        var errorDescription: String? {
+            L("Claude changed its config file meanwhile. Nothing was written; try again.", "Claude hat seine Konfigurationsdatei inzwischen geändert. Es wurde nichts geschrieben; nochmal versuchen.")
+        }
+    }
+    /// `write`, but only when the file still has the bytes the new content was built from (nil: it did not exist).
+    @discardableResult
+    static func writeIfUnchanged(_ data: Data, to path: String, from original: Data?) throws -> String? {
+        guard read(path) == original else { throw Changed() }
+        return try write(data, to: path)
+    }
+
     /// Writes through a temp file in the same folder and a rename, so the file is never half
     /// written. A symlink is followed (the link stays), the mode is kept (600 for a new file), and
     /// an existing file is first copied to `<file>.bak-<time>`. Returns the backup's path.
@@ -384,8 +397,9 @@ final class ClaudeLink: ObservableObject {
         let path = ClaudeEnv.desktopConfig
         do {
             let entry = ClaudeConfig.desktopEntry(node: node, server: server, deploys: Tool.path, allowDeploy: allowDeploy)
-            let out = try ClaudeConfig.merge(ClaudeFiles.read(path), entry: entry)
-            let bak = try ClaudeFiles.write(out, to: path)
+            let old = ClaudeFiles.read(path)
+            let out = try ClaudeConfig.merge(old, entry: entry)
+            let bak = try ClaudeFiles.writeIfUnchanged(out, to: path, from: old)
             restartHint = true
             say(L("Connected. Restart Claude Desktop to load it.", "Verbunden. Starte Claude Desktop neu, damit es geladen wird.")
                 + (bak.map { L(" Backup: ", " Sicherung: ") + ($0 as NSString).lastPathComponent } ?? ""))
@@ -397,8 +411,9 @@ final class ClaudeLink: ObservableObject {
         busy = true; defer { busy = false }
         let path = ClaudeEnv.desktopConfig
         do {
-            if let out = try ClaudeConfig.unmerge(ClaudeFiles.read(path)) {
-                try ClaudeFiles.write(out, to: path)
+            let old = ClaudeFiles.read(path)
+            if let out = try ClaudeConfig.unmerge(old) {
+                try ClaudeFiles.writeIfUnchanged(out, to: path, from: old)
                 restartHint = true
                 say(L("Disconnected. Restart Claude Desktop to apply it.", "Getrennt. Starte Claude Desktop neu, damit es wirkt."))
             }
@@ -460,6 +475,11 @@ final class ClaudeLink: ObservableObject {
         await refresh()
     }
 
+    /// Whether the "Let Claude deploy" switch must stay on after an attempt to turn it off.
+    static func stillAllows(failed: Bool, desktopConnected: Bool, desktopAllows: Bool, codeConnected: Bool, codeAllows: Bool) -> Bool {
+        failed || (desktopConnected && desktopAllows) || (codeConnected && codeAllows)
+    }
+
     /// The switch, written into whatever is connected.
     func applyAllowDeploy(_ on: Bool) async {
         if desktop == .connected && desktopAllows != on { await connectDesktop(allowDeploy: on) }
@@ -499,7 +519,16 @@ struct ClaudeSettings: View {
 
             Toggle(L("Let Claude deploy (asks you first)", "Claude deployen lassen (fragt vorher)"), isOn: Binding(
                 get: { allowDeploy },
-                set: { on in if on { askAllow = true } else { allowDeploy = false; Task { await link.applyAllowDeploy(false) } } }))
+                set: { on in
+                    if on { askAllow = true; return }
+                    // Off: the switch follows the configuration, not the click. If writing it failed (invalid JSON,
+                    // CLI missing) `DEPLOYS_MCP_ALLOW_DEPLOY=1` is still there and the switch must still say so.
+                    Task {
+                        await link.applyAllowDeploy(false)
+                        allowDeploy = ClaudeLink.stillAllows(failed: link.failed, desktopConnected: link.desktop == .connected, desktopAllows: link.desktopAllows,
+                                                             codeConnected: link.code == .connected, codeAllows: link.codeAllows)
+                    }
+                }))
                 .disabled(link.busy)
             if allowDeploy {
                 Label(L("Claude can start a production deploy or a rollback of one project. It asks you before each one; a deploy uses build minutes and changes what is live.",
