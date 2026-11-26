@@ -459,7 +459,10 @@ for _l in risk verify completion nightly selfupdate preview domains forecast env
 done
 unset _l
 # Extra commands: each lib/x-<name>.sh adds `deploys <name>` (function x_<name>_main) without touching this file; `deploys more` lists them.
-for _l in "$LIB_DIR"/x-*.sh; do if [ -f "$_l" ]; then . "$_l"; fi; done
+for _l in "$LIB_DIR"/x-*.sh; do
+  # shellcheck source=/dev/null
+  if [ -f "$_l" ]; then . "$_l"; fi
+done
 unset _l
 # rules.json ("when … then …" for the daily deploy): lib/rules.sh. Without it no rule counts.
 # shellcheck source=lib/rules.sh
