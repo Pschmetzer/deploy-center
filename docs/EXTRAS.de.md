@@ -24,6 +24,19 @@ deploys trend web --days 14 --json
 
 Gezählt wie bei [`deploys digest`](CLI.md), in UTC. Gelesen wird nur das Journal.
 
+## handover und flaky
+
+```bash
+deploys handover                     # für die nächste Schicht: was scheitert gerade, Notizen, Zahlen, ist das Deploy-Fenster zu
+deploys handover --hours 48 --json
+deploys flaky                        # Projekte mit 2 oder mehr Fehlschlägen, die binnen 30 Minuten wieder liefen (30 Tage)
+deploys flaky --within 2h --min 1
+```
+
+`handover` fragt keine Plattform und kein GitHub: gelesen werden das Journal (und `window.json`). „Scheitert gerade" heißt: der
+neueste Start oder Fehlschlag des Projekts ist ein Fehlschlag. Eine Notiz mit `deploys note <Projekt> "Text"` erscheint in der
+Übergabe. `flaky` ist ein Hinweis, dass ein erneuter Versuch half, kein Urteil.
+
 ## Einen neuen hinzufügen
 
 `lib/x-<name>.sh` neben `deploys` legen. Die Datei definiert `x_<name>_main` (Bindestriche im Namen werden zu Unterstrichen)
