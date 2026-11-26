@@ -62,6 +62,9 @@
 - [When do your deploys fail most often?](https://deploycenter.app/guides/which-day-do-deploys-fail/): Find out whether your deploys fail more often on a weekday or at an hour of the day, from your own history, and what to do with it, with deploys when.
 - [How long do failed deploys last? Recovery time](https://deploycenter.app/guides/how-long-do-failed-deploys-last/): Measure how long a failure lasted until the next deploy of that project, per project and as a typical value, and see open outages, with deploys recovery.
 - [A deploy timeline: what happened, day by day](https://deploycenter.app/guides/deploy-timeline/): Read what your deploys did in the last days: deploys, failures, rollbacks and forced starts per day, from the journal, with the deploys CLI.
+- [A build gate for Claude Code agents that hang your Mac](https://deploycenter.app/guides/mac-hangs-when-agents-build-together/): A build gate: heavy commands wait for memory, swap and load to leave room. Works as a Claude Code hook.
+- [Forecast this month's Vercel build bill](https://deploycenter.app/guides/forecast-your-monthly-vercel-build-bill/): deploys forecast projects the spend so far to the end of the month, per project, with a budget warning.
+- [Compare production and preview variables](https://deploycenter.app/guides/env-diff-missing-variables-production-preview/): deploys env-diff compares production and preview variable names on Vercel, never values.
 
 ## Comparisons
 
