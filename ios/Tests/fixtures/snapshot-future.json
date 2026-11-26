@@ -1,0 +1,1 @@
+{"at":"2026-01-05T10:00:00Z","building":0,"demo":true,"failed":1,"projects":[{"commits":1,"key":"Vercel/prj_1","name":"atlas","platform":"Vercel","prs":0,"status":"failed","colour":"red"}],"saving":null,"version":1,"waitingCommits":0,"waitingPRs":0,"waitingProjects":0,"language":"de","connected":true,"somethingNew":{"a":1}}

@@ -10,6 +10,8 @@ fails=0
 
 echo "--- the Siri phrases"
 python3 -I scripts/check-shortcuts.py || fails=$((fails+1))
+echo "--- the iPhone app's files without UIKit are all tested"
+python3 -I scripts/check-ios-pure.py || fails=$((fails+1))
 
 echo "--- the script's rule"
 rule="$(DEPLOYS_LIB=1 DEPLOYS_CONFIG="$(mktemp -d)" bash -c '. ./deploys >/dev/null 2>&1; printf "%s" "$CHANGED_RULE"')"
