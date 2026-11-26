@@ -164,18 +164,19 @@ netlify_call() {
 }
 
 netlify_sites() {
-  local page=1 all="[]" chunk
+  local page=1 pages="" chunk
   while :; do
     chunk="$(netlify_call GET "/sites?filter=all&per_page=100&page=$page")" || return 1
     # An answer that is not a list ends the read with a reason; a page that cannot be added must
     # not wipe the pages before it. At most 100 pages: a host that ignores `page` would loop for ever.
     echo "$chunk" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "Netlify: page $page of the sites is not a list" >&2; return 1; }
-    all="$(jq -s '.[0] + .[1]' <(echo "$all") <(echo "$chunk"))"
+    pages="$pages$(echo "$chunk" | jq -c .)"$'\n'
     [ "$(echo "$chunk" | jq 'length')" -lt 100 ] && break
     [ "$page" -lt 100 ] || { echo "Netlify: more than 100 pages of sites; the list stops here" >&2; break; }
     page=$((page + 1))
   done
-  echo "$all"
+  # Joined once at the end, not page by page (that grows with every page).
+  printf '%s' "$pages" | jq -sc 'add // []'
 }
 
 # A site by name, custom domain or id. Two sites never share a name on Netlify.

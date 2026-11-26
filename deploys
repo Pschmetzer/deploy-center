@@ -3490,9 +3490,9 @@ case "${1:-} ${2:-}" in
       round=0
       while :; do
         g="$nogh"; [ $((round % 10)) = 0 ] || g=1
-        clear 2>/dev/null || true
+        if [ -t 1 ]; then clear 2>/dev/null || true; fi   # a pipe or file gets no control characters
         if [ -n "$g" ]; then "$SELF" status --no-github || true; else "$SELF" status || true; fi
-        round=$((round + 1)); sleep 10
+        round=$((round + 1)); sleep "${DEPLOYS_WATCH_EVERY:-10}"
       done
     fi
     # What is building right now, on every platform, and what the newest attempt said.
@@ -4470,7 +4470,7 @@ case "${1:-} ${2:-}" in
     cdays=14; shift
     while [ $# -gt 0 ]; do
       case "$1" in
-        --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; cdays="$2"; shift ;;
+        --days) case "${2:-}" in ''|*[!0-9]*|0|???????*) die "--days takes a number of days, 1 or more" ;; esac; cdays="$2"; shift ;;
         *) die "Unknown option $1. Usage: deploys certs [--days 14] [--json]" ;;
       esac
       shift
@@ -4529,7 +4529,7 @@ case "${1:-} ${2:-}" in
     idays=90; shift
     while [ $# -gt 0 ]; do
       case "$1" in
-        --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; idays="$2"; shift ;;
+        --days) case "${2:-}" in ''|*[!0-9]*|0|???????*) die "--days takes a number of days, 1 or more" ;; esac; idays="$2"; shift ;;
         *) die "Unknown option $1. Usage: deploys idle [--days 90] [--json]" ;;
       esac
       shift
@@ -4616,14 +4616,14 @@ case "${1:-} ${2:-}" in
     # A typo gets one line with the nearest commands, not the whole help. The commands are read
     # from the case labels of this script, so the list cannot fall behind.
     if [ -n "${1:-}" ]; then
-      sug="$( { sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' "$SELF"; printf '%s\n' "${PROVIDERS[@]}" help version; } | sort -u \
+      sug="$( { sed -n 's/^  "\([a-z][a-z-]*\)[ "].*/\1/p' "$SELF"; printf '%s\n' $(enabled_providers) help version; } | sort -u \
         | awk -v w="$1" 'function lev(a, b,   i, j, la, lb, d, c) { la = length(a); lb = length(b)
               for (i = 0; i <= la; i++) d[i, 0] = i; for (j = 0; j <= lb; j++) d[0, j] = j
               for (i = 1; i <= la; i++) for (j = 1; j <= lb; j++) { c = (substr(a, i, 1) != substr(b, j, 1))
                 d[i, j] = d[i-1, j] + 1; if (d[i, j-1] + 1 < d[i, j]) d[i, j] = d[i, j-1] + 1
                 if (d[i-1, j-1] + c < d[i, j]) d[i, j] = d[i-1, j-1] + c }
               return d[la, lb] }
-            { n = lev(w, $0); if (n <= 2 || (length(w) >= 3 && index($0, w) == 1)) print n "\t" $0 }' \
+            { n = lev(w, $0); if (n <= 1 || (length(w) >= 5 && n <= 2) || (length(w) >= 3 && index($0, w) == 1)) print n "\t" $0 }' \
         | sort -n | head -n 3 | cut -f2 | paste -sd, - | sed 's/,/, /g')"
       die "Unknown command \"$1\".${sug:+ Did you mean: $sug?} All commands: deploys --help"
     fi

@@ -89,4 +89,17 @@ for pv in heroku:HEROKU_API netlify:NETLIFY_API cloudflare:CLOUDFLARE_API_BASE; 
   case "$got" in https://api.*) ok "$p: http:// base is not used" ;; *) fail "$p: http:// base refused" "got [$got]" ;; esac
 done
 
+# --- robustness: huge numbers, budget 0, typo hint, export folder, risk of .sql ---
+out="$(cli digest --days 99999999999999999999 2>&1)"; rc=$?
+expect "--days with a huge number: our error only (2/1), no raw bash message" "$(printf '%s' "$out" | grep -c 'integer expression')" "0"
+cli budget set 0 >/dev/null 2>&1; expect "budget set 0 is refused" "$?" "2"
+cli budget set 5 >/dev/null 2>&1; expect "budget set 5 works" "$?" "0"
+expect "typo hint: a three-letter word does not suggest fly/hook" "$(cli foo 2>&1 | grep -c 'Did you mean: fly')" "0"
+expect "typo hint: a close command is named" "$(cli statu 2>&1 | grep -c 'Did you mean: status')" "1"
+out="$(cli export --out /nonexistent/dir/x.csv 2>&1)"
+expect "export into a missing folder: no raw mktemp text" "$(printf '%s' "$out" | grep -c 'mkstemp')" "0"
+sqlrisk() { echo "{\"files\":[{\"filename\":\"$1\"}]}" | jq -c "${RISK_DEF%;}; "'[(.files // [])[] | .filename | {mig: test(re_mig), cfg: test(re_cfg)}] | .[0]'; }
+expect "risk: a numbered .sql is a migration" "$(sqlrisk 20260101_add_users.sql)" '{"mig":true,"cfg":true}'
+expect "risk: a seed .sql in a test folder is not red" "$(sqlrisk test/seed.sql | jq -r .mig)" "false"
+
 [ "$fails" = 0 ] && echo "all passed" || { echo "$fails failed"; exit 1; }

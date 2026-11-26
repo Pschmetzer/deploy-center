@@ -37,11 +37,11 @@ export_mask_details() {
 
 # export_costs_json <days>: {rows:[{day,total_usd,build_usd}], reason:null|text}; never fails.
 export_costs_json() {
-  local d="$1" c
-  [ "$d" -le 90 ] || d=90
+  local d="$1" c cut=""
+  [ "$d" -le 90 ] || { d=90; cut="costs cover the last 90 days at most"; }
   if ! { is_enabled vercel && ( vercel_ready ) >/dev/null 2>&1; } 2>/dev/null; then echo '{"rows":[],"reason":"Vercel is off or not set up here, so there are no costs to read"}'; return 0; fi
   c="$("$SELF" costs "$d" 2>/dev/null </dev/null)" || c=""
-  jq -c 'if (.days | type) == "array" then {rows:(.days | map({day, total_usd:.total, build_usd:.build})), reason:(if (.missingDays // 0) > 0 then "\(.missingDays) days could not be read" else null end)}
+  jq -c --arg cut "$cut" 'if (.days | type) == "array" then {rows:(.days | map({day, total_usd:.total, build_usd:.build})), reason:(if (.missingDays // 0) > 0 then "\(.missingDays) days could not be read" elif $cut != "" then $cut else null end)}
          else error("no days") end' <<<"$c" 2>/dev/null || echo '{"rows":[],"reason":"Vercel billing could not be read"}'
 }
 
@@ -54,7 +54,7 @@ export_csv() {
 # export_write <file> <content>: the file with mode 0600, written whole or not at all.
 export_write() {
   local f="$1" t
-  t="$(umask 077; mktemp "$(dirname "$f")/.export.XXXXXX")" || die "Could not write in $(dirname "$f")."
+  t="$(umask 077; mktemp "$(dirname "$f")/.export.XXXXXX" 2>/dev/null)" || die "Could not write in $(dirname "$f")."
   printf '%s\n' "$2" > "$t" && chmod 600 "$t" && mv -f "$t" "$f" || { rm -f "$t"; die "Could not write $f."; }
 }
 
@@ -64,7 +64,7 @@ export_main() {
     case "$1" in
       --format) case "${2:-}" in csv|json) fmt="$2" ;; *) die "--format takes csv or json" ;; esac; shift ;;
       --what) case "${2:-}" in journal|costs|all) what="$2" ;; *) die "--what takes journal, costs or all" ;; esac; shift ;;
-      --days) case "${2:-}" in ''|*[!0-9]*|0) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
+      --days) case "${2:-}" in ''|*[!0-9]*|0|???????*) die "--days takes a number of days, 1 or more" ;; esac; days="$2"; shift ;;
       --project) [ -n "${2:-}" ] || die "--project takes a project name"; project="$2"; shift ;;
       --out) [ -n "${2:-}" ] || die "--out takes a file (a folder for --what all with csv)"; out="$2"; shift ;;
       *) die "Unknown option $1. Usage: deploys export [--format csv|json] [--what journal|costs|all] [--days 30] [--project <name>] [--out <file>]" ;;
