@@ -1828,11 +1828,14 @@ struct ContentView: View {
             Button(L("Latest messages …", "Letzte Meldungen …")) { showMessages = true }
                 .disabled(store.messages.isEmpty)
         } label: {
-            Text(L("More", "Mehr"))
+            Text(L("More", "Mehr") + (store.unreadFailures > 0 ? " (\(store.unreadFailures))" : ""))
+                .foregroundStyle(store.unreadFailures > 0 ? Color.dangerText : Color.primary)
         }
         .fixedSize()
         .help(L("Select all changed, preview deploy, deploy history, messages", "Alle mit Änderungen anhaken, Vorschau-Deploy, Deploy-Verlauf, Meldungen"))
         .accessibilityLabel(L("More actions", "Weitere Aktionen"))
+        .accessibilityValue(store.unreadFailures > 0 ? L("\(plural(store.unreadFailures, "unread failure", "unread failures"))", "\(plural(store.unreadFailures, "ungelesener Fehler", "ungelesene Fehler"))") : "")
+        .onChange(of: showMessages) { _, on in if on { store.markMessagesSeen() } }
         .popover(isPresented: $showMessages) {
             VStack(alignment: .leading, spacing: 6) {
                 ScrollView {
