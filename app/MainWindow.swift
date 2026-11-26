@@ -775,7 +775,7 @@ struct ContentView: View {
                 Text("DEMO").font(.caption.weight(.bold)).foregroundStyle(.white)
                     .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(Color.purple))
                     .help(L("Demo mode: names are stand-ins. ⇧⌘D turns it off.", "Demo-Modus: Namen sind Platzhalter. ⇧⌘D schaltet ihn aus."))
-                    .accessibilityLabel(L("Demo mode is on", "Demo-Modus ist an"))
+                    .accessibilityLabel(L("Demo mode is on: names are replaced by stand-ins", "Demo-Modus ist an: Namen sind durch Platzhalter ersetzt"))
             }
 
             TextField(L("Search", "Suchen"), text: $search).textFieldStyle(.roundedBorder)
@@ -1839,9 +1839,12 @@ struct ContentView: View {
                 VStack(alignment: .leading, spacing: 6) {
                 ForEach(store.messages) { m in
                     HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? Color.good : .red)
-                        Text(uiTime(m.date)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        Image(systemName: m.ok ? "checkmark.circle.fill" : "xmark.octagon.fill").foregroundStyle(m.ok ? Color.good : Color.dangerText)
+                            .accessibilityHidden(true)
+                        Text(uiTimeOrDay(m.date)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                        // The status as a word: the symbol alone says nothing to VoiceOver.
                         Text(Demo.scrub(m.text, items: allItems)).font(.caption).textSelection(.enabled)
+                            .accessibilityLabel((m.ok ? L("Success: ", "Erfolg: ") : L("Error: ", "Fehler: ")) + Demo.scrub(m.text, items: allItems))
                         Spacer(minLength: 0)
                         // A line about one project opens its build log (failed ones first of all).
                         if let item = messageItem(m) {

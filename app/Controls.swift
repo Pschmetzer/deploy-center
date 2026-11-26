@@ -16,6 +16,10 @@ func uiTime(_ d: Date) -> String { d.formatted(Date.FormatStyle(date: .omitted, 
 func uiDate(_ d: Date, date: Date.FormatStyle.DateStyle = .abbreviated, time: Date.FormatStyle.TimeStyle = .omitted) -> String {
     d.formatted(Date.FormatStyle(date: date, time: time).locale(uiLocale))
 }
+/// The time today, date and time on another day: a list that keeps entries for days must say which day.
+func uiTimeOrDay(_ d: Date, now: Date = Date(), calendar: Calendar = .current) -> String {
+    calendar.isDate(d, inSameDayAs: now) ? uiTime(d) : uiDate(d, date: .abbreviated, time: .shortened)
+}
 /// "5:00 AM" / "05:00" for a whole hour.
 func uiHour(_ h: Int) -> String {
     let d = Calendar.current.date(bySettingHour: h, minute: 0, second: 0, of: Date()) ?? Date()
@@ -100,7 +104,7 @@ struct ErrorText: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Label(text, systemImage: "xmark.octagon.fill")
-            .font(.caption).foregroundStyle(.red).textSelection(.enabled)
+            .font(.caption).foregroundStyle(Color.dangerText).textSelection(.enabled)
             .accessibilityLabel(L("Error: \(text)", "Fehler: \(text)"))
             .onAppear { AccessibilityNotification.Announcement(L("Error: \(text)", "Fehler: \(text)")).post() }
     }
@@ -142,5 +146,13 @@ struct WindowAccessor: NSViewRepresentable {
             super.viewDidMoveToWindow()
             if let window { configure(window) }
         }
+    }
+}
+
+extension NSColor {
+    /// `Color.dangerText` for AppKit text (the build log): ≥ 4.5:1 in light mode, the system red in dark mode.
+    static let dangerText = NSColor(name: nil) { a in
+        a.bestMatch(from: [.darkAqua, .vibrantDark, .accessibilityHighContrastDarkAqua]) != nil
+            ? .systemRed : NSColor(red: 0.78, green: 0.10, blue: 0.10, alpha: 1)
     }
 }

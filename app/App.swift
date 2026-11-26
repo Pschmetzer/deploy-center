@@ -114,7 +114,7 @@ struct SettingsView: View {
             page(.team) { _ in TeamSettings(store: store) }
             page(.help) { _ in helpSection; shortcutsSection }
         }
-        .frame(width: 560, height: SettingsTab.resolve(tabRaw).height)
+        .frame(minWidth: 560, minHeight: SettingsTab.resolve(tabRaw).height)
         // The window keeps its place (it covered the main window's banners when it always opened on top of it).
         .background(WindowAccessor { $0.setFrameAutosaveName("DeployCenterSettings") })
         .task {
@@ -362,7 +362,7 @@ struct SettingsView: View {
             if let switchResult { Text(switchResult).font(.caption).foregroundStyle(.secondary) }
             if let providerError {
                 HStack(alignment: .top) {
-                    Text(providerError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    Text(providerError).font(.caption).foregroundStyle(Color.dangerText).textSelection(.enabled)
                     Spacer()
                     if let f = failedSwitch, let info = store.providers.first(where: { $0.id == f.id }) {
                         Button(L("Try again", "Nochmal")) { switchProvider(info, on: f.on) }.disabled(switching != nil)

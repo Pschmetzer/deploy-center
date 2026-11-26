@@ -72,7 +72,7 @@ struct FirstStartView: View {
             Label(L("Everything needed is connected.", "Alles Nötige ist verbunden."), systemImage: "checkmark.circle.fill").foregroundStyle(Color.good)
         } else {
             ForEach(bad) { c in
-                Label(c.text + (c.fix.map { " → " + $0 } ?? ""), systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                Label(c.text + (c.fix.map { " → " + $0 } ?? ""), systemImage: "exclamationmark.triangle.fill").foregroundStyle(Color.warningText)
             }
         }
         Text(L("Next: a dry run of what turning auto-deploy off would save.", "Als Nächstes: ein Trockenlauf, was das Abschalten von Auto-Deploy sparen würde."))
