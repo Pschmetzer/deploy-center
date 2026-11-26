@@ -647,6 +647,23 @@ final class PhoneStore: ObservableObject {
         } catch { say(describe(error, p.provider), error: true) }
     }
 
+    /// Render: auto-deploy off ("every push builds" is what costs build minutes) or back on, after Face ID.
+    /// Vercel is not offered here: switching it off there disconnects Git, which the Mac app does and remembers the repo for.
+    func setAutoDeploy(_ p: PhoneProject, on: Bool) async {
+        guard p.provider == .render, running[p.key] == nil else { return }
+        running[p.key] = "starting"; defer { running[p.key] = nil }
+        let word = on ? L("on", "an") : L("off", "aus")
+        if demo { say(L("\(p.name): auto-deploy \(word) (demo).", "\(p.name): Auto-Deploy \(word) (Demo).")); return }
+        guard requireOnline() else { return }
+        guard await authenticate(on ? L("Turn on auto-deploy: \(p.name)", "Auto-Deploy einschalten: \(p.name)")
+                                    : L("Turn off auto-deploy: \(p.name)", "Auto-Deploy abschalten: \(p.name)")) else { return }
+        do {
+            try await Render(key: token(.render) ?? "").setAutoDeploy(p, on: on)
+            say(L("\(p.name): auto-deploy \(word).", "\(p.name): Auto-Deploy \(word)."))
+            await reload()
+        } catch { say(describe(error, p.provider), error: true) }
+    }
+
     // MARK: History and build logs (read only)
 
     /// `quiet`: a failure is not shown as a toast (the caller only wants the numbers, e.g. the typical build time).

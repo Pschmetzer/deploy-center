@@ -691,6 +691,11 @@ struct Render {
         }
         return lines
     }
+    /// Render's "Auto-Deploy": "off", or "commit" (On Commit) again. The same two values `deploys render off|on` sets.
+    static func autoDeployBody(on: Bool) -> JSON { ["autoDeployTrigger": on ? "commit" : "off"] }
+    func setAutoDeploy(_ p: PhoneProject, on: Bool) async throws {
+        _ = try await http.request("PATCH", "/services/\(p.id)", body: Self.autoDeployBody(on: on))
+    }
     /// Pause, resume or restart a service (Render's suspend, resume, restart).
     func service(_ p: PhoneProject, _ action: RenderAction) async throws {
         _ = try await http.request("POST", "/services/\(p.id)/\(action.rawValue)", body: JSON())
