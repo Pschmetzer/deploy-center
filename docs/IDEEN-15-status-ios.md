@@ -11,3 +11,7 @@ Nummern wie in `docs/IDEEN-15.md`, Abschnitt "E. iPhone/iPad-App". ✅ = gebaut 
 | 6 | ✅ | `DeployRule.neverDeployed`, Gruppe "Wartet", "noch nie deployt" |
 | 17 | ✅ | `reload(inBackground:)`: Hintergrundlauf behält kurze Timeouts, auch wenn ein Vordergrund-Laden lief |
 | 36 | ✅ | Live Activity: `.privacySensitive()`, neutraler Titel mit "Beim Öffnen entsperren" |
+| 45 | ✅ | `Contrast` + `errorText`/`successText`/`activeText`, Test 4,5:1 |
+| 46 | ✅ | Ersparnis im `spoken(w)` des Widgets (kein Test: die Funktion liegt in der Widget-Datei) |
+| 48 | ✅ | Health-Karte nennt "gut / beobachten / schlecht" |
+| 50 | ✅ | Abbrechen im Scanner mindestens 44 pt |

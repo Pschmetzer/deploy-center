@@ -23,7 +23,7 @@ struct ProjectDetail: View {
                         HStack(spacing: 6) {
                             ProgressView().controlSize(.small).accessibilityHidden(true)
                             Text(r == "rollback" ? PhoneProject.stateWord(r) : L("deploying: ", "deployt: ") + PhoneProject.stateWord(r))
-                        }.foregroundStyle(.blue)
+                        }.foregroundStyle(Color.activeText)
                     } else {
                         HStack(spacing: 6) { Image(systemName: p.icon).accessibilityHidden(true); Text(p.stateText) }.foregroundStyle(p.tint)
                     }
@@ -42,7 +42,7 @@ struct ProjectDetail: View {
                         LabeledContent(L("Waiting since", "Wartet seit"), value: relative(d))
                     }
                 }
-                if let e = p.fetchError { Text(e).font(.footnote).foregroundStyle(.red) }
+                if let e = p.fetchError { Text(e).font(.footnote).foregroundStyle(Color.errorText) }
             } footer: {
                 VStack(alignment: .leading, spacing: 4) {
                     if p.autoDeploy {

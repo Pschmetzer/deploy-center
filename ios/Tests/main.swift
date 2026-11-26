@@ -586,6 +586,12 @@ check(!neverCase { $0.liveState = "BUILDING" }.neverDeployed, "never deployed: n
 // Background timeouts are short, foreground ones are not (ideas E17)
 check(HTTP.timeout == 30 && HTTP.longestWait == 8, "timeouts: the foreground waits longer")
 check(HTTP.$inBackground.withValue(true) { (HTTP.timeout, HTTP.longestWait) } == (10, 2), "timeouts: the background run waits less")
+// Text colors keep 4.5:1 on white (ideas E45, E94)
+for (name, c) in [("warning", Contrast.warning), ("error", Contrast.error), ("success", Contrast.success), ("active", Contrast.active)] {
+    check(Contrast.ratio(c, Contrast.white) >= 4.5, "contrast: \(name) text reaches 4.5:1 on white")
+}
+check(abs(Contrast.ratio(Contrast.RGB(r: 0, g: 0, b: 0), Contrast.white) - 21) < 0.01, "contrast: black on white is 21:1")
+check(Contrast.ratio(Contrast.RGB(r: 0.204, g: 0.78, b: 0.349), Contrast.white) < 4.5, "contrast: the system green is not enough (why the colors exist)")
 
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
