@@ -23,7 +23,7 @@ const callLog = () => { try { return readFileSync(calls, "utf8"); } catch { retu
 // questions (elicitation/create) with a result; without it the client has no elicitation.
 function start(env = {}, { elicit = null } = {}) {
   // The hourly cap is kept in a file; tests turn it off unless they test it.
-  const child = spawn(process.execPath, [server], { env: { ...process.env, DEPLOYS_MCP_MAX_PER_HOUR: "0", DEPLOYS_MCP_TEST: "1", ...env }, stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [server], { env: { ...process.env, DEPLOYS_MCP_MAX_PER_HOUR: "0", DEPLOYS_MCP_TEST: "1", DEPLOYS_MCP_ALLOW_REPOS: "*", ...env }, stdio: ["pipe", "pipe", "pipe"] });
   let buf = "", next = 1;
   const asked = [];
   const waiting = new Map();
@@ -293,6 +293,36 @@ writeFileSync(calls, "");
 r = await s.call("deploys_sessions", { repo: "acme/web; rm -rf" });
 check("sessions refuses a repo that is no owner/name", r.error === true && callLog().trim() === "", r.text + callLog());
 writeFileSync(calls, "");
+// Round 15: CI and cloud sessions only for the repos of the human's own projects (or DEPLOYS_MCP_ALLOW_REPOS).
+{
+  const s2 = start({ DEPLOYS_MCP_ALLOW_REPOS: "" });
+  await s2.init();
+  writeFileSync(calls, "");
+  let q = await s2.call("deploys_ci", { repo: "stranger/private-repo" });
+  check("ci: a repo outside the projects is refused", q.error === true && /not one of the human's projects/.test(q.text) && !/^ci /m.test(callLog()), q.text + callLog());
+  q = await s2.call("deploys_sessions", { repo: "stranger/private-repo" });
+  check("sessions: a repo outside the projects is refused with a tool error", q.error === true && /not one of the human's projects/.test(q.text), q.text);
+  q = await s2.call("deploys_ci", { repo: "me/app" });
+  check("ci: the repo of a project is allowed", !q.error, q.text);
+  q = await s2.call("deploys_sessions", { repo: "bad repo" });
+  check("sessions: a bad repo is a tool error, not an unexpected one", q.error === true && !/Unexpected error/.test(q.text), q.text);
+  q = await s2.call("deploys_journal_search", { query: "x".repeat(200) });
+  check("journal search: maxLength of the schema is enforced", q.error === true && /too long/.test(q.text), q.text);
+  q = await s2.call("deploys_when", { by: "minute" });
+  check("when: enum of the schema is enforced", q.error === true && /one of: weekday, hour/.test(q.text), q.text);
+  s2.stop();
+  const s3 = start({ DEPLOYS_MCP_ALLOW_REPOS: "stranger/private-repo" });
+  await s3.init();
+  q = await s3.call("deploys_ci", { repo: "Stranger/Private-Repo" });
+  check("ci: DEPLOYS_MCP_ALLOW_REPOS adds a repo (case-insensitive)", !q.error, q.text);
+  s3.stop();
+  const s4 = start({ FAKE_RC: "1" });
+  await s4.init();
+  q = await s4.call("deploys_changed");
+  check("changed: a partial failure keeps the typed data and adds warnings", !q.error && Array.isArray(q.structured?.result) && Array.isArray(q.structured?.warnings) && /\[exit 1/.test(q.structured.warnings[0]), q.text);
+  s4.stop();
+  writeFileSync(calls, "");
+}
 r = await s.call("deploys_idle");
 check("idle defaults to 90 days and lists the project", !r.error && callLog().trim() === "idle --days 90 --json" && /old-api/.test(r.text) && /"days":90/.test(r.text), r.text + callLog());
 writeFileSync(calls, "");
