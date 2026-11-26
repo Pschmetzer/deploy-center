@@ -74,7 +74,10 @@ struct AutofixSettings: View {
             // 3. Every 10 minutes through launchd, also while the app is closed.
             Toggle(L("3. Check every 10 minutes", "3. Alle 10 Minuten prüfen"), isOn: Binding(
                 get: { status?.scheduled ?? false },
-                set: { on in Task { await run(["autofix", "schedule", on ? "on" : "off"]) } }))
+                set: { on in Task {
+                    // Every 10 minutes build logs may go to the cloud routine: the same check as "Run now".
+                    if on, !(await OwnerCheck.confirm(L("send build logs to your Claude routine every 10 minutes", "Build-Logs alle 10 Minuten an deine Claude-Routine senden"))) { return }
+                    await run(["autofix", "schedule", on ? "on" : "off"]) } }))
                 .disabled(!ready || busy)
             if let s = status, s.scheduled, !s.pathMissing.isEmpty {
                 PathMissingLine(missing: s.pathMissing, busy: busy) { Task { await run(["autofix", "schedule", "on"]) } }

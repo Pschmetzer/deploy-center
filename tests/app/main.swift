@@ -23,6 +23,7 @@ MainActor.assumeIsolated {
     suite_round15_code()
     suite_round15_bugs2()
     suite_round15_tests()
+    suite_round15_security()
     insightsAppTests(expect); insightsAppTests2(expect)
 }
 
