@@ -3,7 +3,7 @@
 ## Unreleased
 
 - Log masking: a password or secret without spaces keeps what follows a `;` or `,` again (`password=x;next`); only a value with spaces takes the rest of the line.
-
+- Docker scheduler: stopping it also ends the job's own child processes where there is no `timeout`.
 - Link `deploycenter://log?project=name` (or `platform:name`) opens that project's build log, read only like `select`; scripts and notes can point straight at a failure. The outage banner also watches GitLab's status page, but only while one of your projects lives on gitlab.com.
 - Website and docs: the home page, FAQ, `llms.txt`, guides index, READMEs, plugin and Raycast listings now name all 16 providers; SECURITY.md, the security model and UNINSTALL.md list the endpoints, keychain items and token revocation of Fly.io, Railway, Heroku, Firebase Hosting, GitHub Pages, Koyeb, Northflank and Deno Deploy.
 - Website: the browser bar follows a manually chosen theme, a theme change reaches other open tabs, the copy buttons on guides work without the clipboard API and announce "Copied" to screen readers, the style sheets load in parallel, and `/favicon.ico` exists.
