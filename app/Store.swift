@@ -2185,7 +2185,7 @@ final class Store: ObservableObject {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 guard !Task.isCancelled, let self else { return }
                 // A new deploy of the row is checked on its own.
-                if self.itemNow(item)?.state.isActive == true { return }
+                if self.itemNow(item)?.state.isActive == true { self.watches[key] = nil; return }
                 let code = await Self.probe(url, timeout: 20)
                 let up = code != nil ? true : await Self.networkUp()
                 let v = Self.siteVerdict(code: code, networkUp: up)
