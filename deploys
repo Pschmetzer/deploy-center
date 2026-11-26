@@ -672,7 +672,7 @@ cert_days_left() {
   command -v perl >/dev/null 2>&1 && lim=(perl -e 'alarm 10; exec @ARGV')
   end="$(echo | ${lim[@]+"${lim[@]}"} openssl s_client -connect "$1:443" -servername "$1" 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | sed -n 's/^notAfter=//p')"
   [ -n "$end" ] || return 0
-  t="$(date -j -u -f '%b %e %T %Y %Z' "$end" +%s 2>/dev/null || date -u -d "$end" +%s 2>/dev/null)" || return 0
+  t="$(LC_ALL=C date -j -u -f '%b %e %T %Y %Z' "$end" +%s 2>/dev/null || LC_ALL=C date -u -d "$end" +%s 2>/dev/null)" || return 0
   [ -n "$t" ] || return 0
   now="$(date +%s)"; echo $(( (t - now) / 86400 ))
 }
@@ -1224,40 +1224,9 @@ window_json() {
 # Sets `frozen` to the window's text when the run goes ahead inside one.
 # A shell variable, not the environment: nothing set from outside can skip the check.
 frozen=""; window_checked=""
-# The shared window of deploy-center.json (docs/TEAM.md) is the other way round: when deploys
-# are allowed, {"days":["mon",…], "from":"09:00", "to":"16:00", "tz":"Europe/Berlin"} (or a
-# list of them: any one open is enough). Outside it is closed. A window.json-style {"deny":…}
-# that reaches a project through overrides is the local window, checked by window_json.
-TEAM_WINDOW_RULE='def hm: split(":") | (.[0] | tonumber) * 60 + ((.[1] // "0") | tonumber);
-  def open1: ((.days == null) or (.days | map(ascii_downcase | .[0:3]) | index($day)))
-      and ((.dates == null) or (.dates | index($date)))
-      and (((.from // "00:00") | hm) as $f | ((.to // "24:00") | hm) as $u | ($time | hm) as $t
-           | if $f <= $u then $t >= $f and $t < $u else $t >= $f or $t < $u end);
-  def says: "\((.days // ["every day"]) | join(", ")) \(.from // "00:00")–\(.to // "24:00")\(if .tz then " " + .tz else "" end)";
-  (if type == "array" then . else [.] end) as $w
-  | if any($w[]; open1) then {denied:false} else {denied:true, reason:"outside the shared deploy window (\($w | map(says) | join("; ")))"} end'
-TEAM_EFF_CACHE=""
-team_eff_once() { if [ -z "$TEAM_EFF_CACHE" ]; then TEAM_EFF_CACHE="$(team_effective 2>/dev/null)" || TEAM_EFF_CACHE='{}'; fi; echo "$TEAM_EFF_CACHE"; }
-# team_window_denied <name>: why the shared window of that project is closed now, or nothing.
-team_window_denied() {
-  team_on || return 0
-  local n="${1#*:}" w tz now
-  is_provider "${1%%:*}" || n="$1"
-  w="$(team_eff_once | jq -c --arg n "$n" '.projects[$n].window.value // null | if type == "object" and has("deny") then null else . end' 2>/dev/null)"
-  [ -n "$w" ] && [ "$w" != null ] || return 0
-  tz="$(echo "$w" | jq -r 'if type == "array" then .[0].tz else .tz end // empty')"
-  # DEPLOYS_NOW counts only with DEPLOYS_TESTING=1, as in now_parts.
-  local testnow=""; [ -z "${DEPLOYS_NOW:-}" ] || [ "${DEPLOYS_TESTING:-}" != 1 ] || testnow=1
-  # An unknown zone would silently read as UTC: refused instead.
-  if [ -n "$tz" ] && [ -z "$testnow" ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then
-    echo "the shared deploy window of $n names an unknown time zone \"$tz\""; return 0
-  fi
-  # Now in the window's own zone (DEPLOYS_NOW stands in for tests, as in now_parts).
-  if [ -n "$testnow" ] || [ -z "$tz" ]; then now="$(now_parts)"
-  else now="$(TZ="$tz" LC_ALL=C date '+%a %H:%M %Y-%m-%d' | tr '[:upper:]' '[:lower:]')"; fi
-  echo "$w" | jq -r --arg day "${now%% *}" --arg time "$(echo "$now" | cut -d' ' -f2)" --arg date "${now##* }" \
-    "$TEAM_WINDOW_RULE"' | if .denied then .reason else empty end' 2>/dev/null || echo "the shared deploy window of $n could not be read"
-}
+# The shared window of deploy-center.json (docs/TEAM.md): TEAM_WINDOW_RULE and team_window_denied are in lib/team.sh.
+# Without that file there is no shared window and nothing to read.
+declare -F team_window_denied >/dev/null || { team_window_denied() { :; }; team_eff_once() { echo '{}'; }; }
 # freeze_check [<name>...]: the local window, then the shared window of each project named.
 freeze_check() {
   [ -z "$window_checked" ] || return 0
@@ -1320,7 +1289,12 @@ journal_add() {  # journal_add <platform> <name> <result> <detail>
   fi
   # A last line cut off by a crash or a full disk has no newline: end it first, or this entry would be glued to it.
   if [ -s "$f" ] && [ -n "$(tail -c 1 "$f" 2>/dev/null | tr -d '\n')" ]; then printf '\n' >> "$f" 2>/dev/null || true; fi
-  jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$4" --arg h "$prev" \
+  # A hand-typed reason ("--force ...") may hold a secret: masked when written, not only when read.
+  local det="$4"
+  if [ -n "$det" ] && declare -F af_mask >/dev/null; then
+    det="$(printf '%s' "$det" | af_mask 2>/dev/null)" || det="[detail not stored: it could not be masked]"
+  fi
+  jq -nc --arg p "$p" --arg n "$2" --arg r "$3" --arg d "$det" --arg h "$prev" \
     '{at:(now | floor | todate), platform:$p, name:$n, result:$r, seconds:null, detail:$d, prevHash:(if $h == "" then null else $h end)}' >> "$f" 2>/dev/null \
     || echo "Warning: could not write the history ($f): the disk may be full or the file read-only; this action is not in it" >&2
   [ -z "$locked" ] || file_unlock "$f"
@@ -1575,7 +1549,7 @@ af_mask() {
     if ($pem) { $pem = 0 if /-----END [A-Z0-9 ]*PRIVATE KEY/; $_ = ""; next }
     if (/-----BEGIN [A-Z0-9 ]*PRIVATE KEY/) { $pem = 1; $_ = "[masked private key]\n"; next }
     # Known prefixes: Anthropic/OpenAI, Stripe, GitHub, GitLab, Slack, AWS, Google, npm, Render, Netlify, DigitalOcean (dop_v1_, dp.st.), Vercel (vcp_, vck_), Cloudflare (cfut_, cfat_), Heroku (HRKU-), Fly (fo1_), Supabase, SendGrid, Resend, Sentry, Linear, JWT.
-    s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|(?:vcp|vck|cfut|cfat|fo1)_[A-Za-z0-9_-]{8,}|HRKU-[A-Za-z0-9_-]{8,}|dp\.st\.[A-Za-z0-9._-]{8,}|nfp_[A-Za-z0-9]{8,}|dop_v1_[A-Fa-f0-9]{16,}|sbp_[A-Za-z0-9]{16,}|sb_secret_[A-Za-z0-9_-]{8,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|re_[A-Za-z0-9]{16,}|sntrys_[A-Za-z0-9+\/=_-]{16,}|lin_api_[A-Za-z0-9]{16,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
+    s/\b(sk-[A-Za-z0-9_-]{8,}|(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}|whsec_[A-Za-z0-9]{8,}|gh[pousr]_[A-Za-z0-9]{8,}|github_pat_[A-Za-z0-9_]{8,}|glpat-[A-Za-z0-9_-]{8,}|xox[abprs]-[A-Za-z0-9-]{8,}|(?:AKIA|ASIA)[A-Z0-9]{12,}|AIza[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{20,}|rnd_[A-Za-z0-9]{8,}|(?:vcp|vck|cfut|cfat|fo1)_[A-Za-z0-9_-]{8,}|HRKU-[A-Za-z0-9_-]{8,}|dp\.st\.[A-Za-z0-9._-]{8,}|nfp_[A-Za-z0-9]{8,}|dop_v1_[A-Fa-f0-9]{16,}|sbp_[A-Za-z0-9]{16,}|sb_secret_[A-Za-z0-9_-]{8,}|SG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}|re_[A-Za-z0-9]{16,}|sntrys_[A-Za-z0-9+\/=_-]{16,}|lin_api_[A-Za-z0-9]{16,}|ya29\.[A-Za-z0-9_-]{20,}|GOCSPX-[A-Za-z0-9_-]{16,}|shp(?:at|ca|pa|ss)_[A-Za-z0-9]{16,}|pypi-[A-Za-z0-9_-]{16,}|dckr_pat_[A-Za-z0-9_-]{8,}|SK[0-9a-f]{32}|key-[0-9a-f]{32}|ops_eyJ[A-Za-z0-9+\/=_-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_.-]+)/[masked]/g;
     # Webhook URLs carry their secret in the path (Slack, Discord, Teams), a Telegram bot token has its own shape,
     # and a few more prefixes: Hugging Face, Coolify (<id>|<40 characters>), Telegram.
     s#(https?://hooks\.slack\.com/(?:services|workflows|triggers)/)[A-Za-z0-9/_-]+#${1}\[masked]#g;
@@ -1584,10 +1558,14 @@ af_mask() {
     s#(api\.telegram\.org/bot)[0-9]{6,12}:[A-Za-z0-9_-]{30,}#${1}\[masked]#g;
     s/\b[0-9]{8,10}:[A-Za-z0-9_-]{35}\b/[masked]/g;
     s/\b(hf_[A-Za-z0-9]{20,}|[0-9]{1,6}\|[A-Za-z0-9]{40})\b/[masked]/g;
+    # A password or secret with spaces in it ("password: my secret phrase"): the rest of the line, unless it is quoted.
+    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:passphrase|password|secret))["\x27]?\s*[:=]\s*)(?![\s"\x27]|\[masked\])(?!(?i:bearer|basic|token|bot)\s)[^\r\n]+/${1}\[masked]/g;
     # NAME=value, NAME: value, "name": "value", Authorization: Bearer x, for names that say secret
     # (VERCEL_TOKEN, SECRET_KEY, aws_secret_access_key, DB_PASSWORD, x-api-key, Ocp-Apim-Subscription-Key,
     # AccountKey=, ...).
-    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("[^"]*"|\x27[^\x27]*\x27|[^\s"\x27,;]+)/${1}${2}\[masked]/g;
+    s/\b((?i:[A-Za-z0-9_.-]{0,40}?(?:token|secret|password|passwd|pwd|api[_-]?key|access[_-]?key|private[_-]?key|[_-]key|accountkey|authorization|auth|credentials?|dsn))["\x27]?\s*[:=]\s*)((?i:bearer|basic|token|bot)\s+)?("(?:[^"\\]|\\.)*"|\x27(?:[^\x27\\]|\\.)*\x27|[^\s"\x27,;]+)/${1}${2}\[masked]/g;
+    # curl -u user:password, --user user:password.
+    if (/\b(?:curl|wget|http)/i) { s/(\s(?:-u|--user)(?:=|\s+))[^\s:"\x27]+:[^\s"\x27]+/${1}\[masked]/g }
     # Bearer/Basic with no name before it, and whole cookies.
     s/\b((?i:bearer|basic)\s+)[A-Za-z0-9._~+\/=-]{12,}/${1}\[masked]/g;
     s/\b((?i:set-cookie|cookie)\s*:\s*).+/${1}\[masked]/g;
@@ -1596,7 +1574,7 @@ af_mask() {
     # --token x, --token=x (vercel, npm and most CLIs).
     s/(--(?i:token|password|api-key|secret)(?:=|\s+))[^\s"\x27]+/${1}\[masked]/g;
     # user:password@ in a URL (database URLs).
-    s#(://[^/\s:@]+):[^\s/]+@#${1}:\[masked]@#g;
+    s#(://[^/\s:@]+):\S+@(?=[^\s@]*(?:\s|$))#${1}:\[masked]@#g;
     # A long unbroken base64 or hex run on a line that talks about keys: whatever the other rules did not know.
     if (/(?i:token|secret|passw|api[_-]?key|credential|authoriz|bearer)/) {
       s/(?<![A-Za-z0-9+\/=_-])(?![0-9a-f]{40}(?![A-Za-z0-9]))(?=[A-Za-z0-9+\/=_-]*[0-9])(?=[A-Za-z0-9+\/=_-]*[A-Za-z])[A-Za-z0-9+\/=_-]{40,}(?![A-Za-z0-9+\/=_-])/[masked]/g;
@@ -2872,7 +2850,7 @@ args_has() {  # args_has "<flag> <flag>…" <args…>
 if args_has "--help -h" "${@:2}"; then
   h="$(sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//' | grep -E "^  deploys $1( |$)" || true)"
   if [ -z "$h" ] && is_provider "$1"; then h="$(sed -n '2,/^$/p' "$SELF" | sed 's/^# \{0,1\}//' | grep -E '^  deploys <p> ' || true)"; fi
-  [ -n "$h" ] || die "No help for \"$1\". All commands: deploys --help"
+  [ -n "$h" ] || die_usage "No help for \"$1\". All commands: deploys --help"
   echo "$h"; exit 0
 fi
 
@@ -3323,6 +3301,7 @@ case "${1:-} ${2:-}" in
         *://*|git@*) die "Shared configs are read from GitHub repos only: give it as owner/name or https://github.com/owner/name" ;;
       esac
       case "$r" in */*/*|*[!A-Za-z0-9._/-]*|/*|*/) die "Give the repo as owner/name";; */*) ;; *) die "Give the repo as owner/name";; esac
+      case "$r" in .*/*|*/.|*/..|..*/*) case "${r%%/*}:${r#*/}" in .:*|..:*|*:.|*:..) die "Give the repo as owner/name (no . or .. parts)" ;; esac ;; esac
       printf '%s' "$r"
     }
     # The repos whose deploy-center.json counts here, beyond those vercel-repos.json names.
@@ -4534,12 +4513,13 @@ case "${1:-} ${2:-}" in
       acc=false; ( "${p}_ready" ) >/dev/null 2>&1 && acc=true
       [ "$src" != missing ] || [ "$acc" != true ] || src="keychain (older name)"
       old=false; [ -z "$age" ] || [ "$age" -lt "$cmax" ] || old=true
-      [ "$acc" = true ] || crc=1
+      # A provider without any key is not set up, not rejected: only a key that is refused sets exit 1.
+      [ "$acc" = true ] || [ "$src" = missing ] || crc=1
       cj="$(echo "$cj" | jq -c --arg p "$p" --arg l "$(meta_str "$p" label)" --arg s "$src" --arg a "$age" --argjson acc "$acc" --argjson old "$old" \
         '. + [{platform:$p, label:$l, source:$s, accepted:$acc, keyAgeDays:(if $a == "" then null else ($a | tonumber) end), rotate:$old}]')"
     done
     if [ "$json" = 1 ]; then echo "$cj"; exit "$crc"; fi
-    echo "$cj" | jq -r --argjson m "$cmax" '.[] | [.label, .source, (if .accepted then "ok" else "NOT accepted" end), (if .keyAgeDays == null then "-" else "\(.keyAgeDays) days" end), (if .rotate then "older than \($m) days: rotate it" else "" end)] | @tsv' \
+    echo "$cj" | jq -r --argjson m "$cmax" '.[] | [.label, .source, (if .accepted then "ok" elif .source == "missing" then "not set up" else "NOT accepted" end), (if .keyAgeDays == null then "-" else "\(.keyAgeDays) days" end), (if .rotate then "older than \($m) days: rotate it" else "" end)] | @tsv' \
       | (printf 'PLATFORM\tKEY FROM\tSTATE\tKEY AGE\tNOTE\n'; cat) | table
     exit "$crc" ;;
 

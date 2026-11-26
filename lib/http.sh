@@ -72,7 +72,7 @@ http_retry_after() {  # http_retry_after <header file>
   case "$v" in *[!0-9]*) ;; *) v="${v#"${v%%[!0]*}"}"; [ -n "$v" ] || v=0; [ "${#v}" -le 9 ] || v=999999999 ;; esac
   case "$v" in
     *[!0-9]*) local t now   # the date form: GNU date -d, BSD date -j -f
-      t="$(date -u -d "$v" +%s 2>/dev/null || date -j -u -f '%a, %d %b %Y %H:%M:%S GMT' "$v" +%s 2>/dev/null)" || return 0
+      t="$(LC_ALL=C date -u -d "$v" +%s 2>/dev/null || LC_ALL=C date -j -u -f '%a, %d %b %Y %H:%M:%S GMT' "$v" +%s 2>/dev/null)" || return 0
       [ -n "$t" ] || return 0
       now="$(date +%s)"; v=$((t - now)); [ "$v" -ge 0 ] || v=0 ;;
   esac
