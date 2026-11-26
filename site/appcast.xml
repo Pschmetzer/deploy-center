@@ -6,6 +6,64 @@
     <description>Updates for Deploy Center</description>
     <language>en</language>
     <item>
+      <title>Version 0.14.0</title>
+      <pubDate>Thu, 26 Nov 2026 03:53:55 GMT</pubDate>
+      <sparkle:version>0.14.0</sparkle:version>
+      <sparkle:shortVersionString>0.14.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://github.com/Pschmetzer/deploy-center/releases/tag/v0.14.0</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown">### Highlights
+
+- Performance guard: how full the Mac is as a green, yellow or red dot in the menu bar, heavy checks that wait for room (`deploys perf gate` and a Claude Code hook), hung and orphaned process trees stopped, Docker stacks stopped and woken with a click
+- Vercel token in the keychain (`deploys vercel set-key`); costs and the budget brake read Vercel charges again
+- New commands: `deploys preview`, `domains`, `forecast`, `env-diff`, `group`, `prepare` and `self-update --check`; eight more read-only MCP tools
+- Mac app: owner check asks for Touch ID for more actions; the menu bar says what waits and what failed
+- Faster and steadier with hundreds of projects (`deploys changed` no longer hangs on macOS bash 3.2)
+
+### All changes
+
+- Mac app: the performance guard's green, yellow or red dot now shows in the menu bar (it is drawn into the icon; a second image next to it was dropped by macOS).
+- Mac app: the main window shows how full the Mac is next to the build costs ("Mac: room to spare", busy, overloaded); a click opens a panel with the reason, the biggest consumers, the processes and the Docker stacks, each with Stop or Wake.
+
+- Hook sites: a name that cannot be looked up is refused instead of passed on to curl unchecked (use `--allow-private` to keep the old way); the private-address list now also covers 198.18.0.0/15, multicast and reserved IPv4, NAT64, 6to4, Teredo, documentation and site-local IPv6.
+- Fix: since the Vercel token change, `deploys costs` read no Vercel charges and the budget brake of `deploy-changed` did not hold (the token helper was missing in the parallel cost reads). The keychain is also read once per run and never from the caller's input.
+- Vercel: `deploys vercel set-key` keeps a Vercel token in the keychain (`deploy-center-vercel`), and every `vercel` call of deploys gets it in its environment (never as an argument). The CLI login renews itself on each run; several runs at once could lose that race and open a browser "Authorize Device" page nobody asked for. Without a token the CLI login is used as before.
+- Performance guard: `deploys perf status` shows how full the Mac is (memory pressure, swap-out rate, load, the biggest consumers), `deploys perf gate` and a Claude Code hook hold heavy checks until there is room, `deploys perf clean` finds orphaned dev processes and test browsers, `deploys perf reap` sorts every process class (checks, test browsers, MCP servers, npm exec, dev servers) into in use, hung, orphaned or unused and stops hung and orphaned trees, `deploys perf consumers|stop|wake` shows Docker stacks, simulators and caches and stops or wakes a Docker stack (never its data; idle stop is opt-in), and the menu bar shows a green, yellow or red dot. MCP: `deploys_perf`. Docs: docs/PERF.md.
+
+- MCP: four more read-only tools over the journal commands: `deploys_health`, `deploys_weeks`, `deploys_streak` and `deploys_when`.
+- Mac app: with the owner check on, showing the iPhone QR code, switching an account, running Autofix by hand and turning the nightly check off ask for Touch ID too; a log line "exited with 0" is no longer taken for the error; a failed deploy keeps one notification per project instead of a pile.
+- Fix: `deploys changed`, `plan` and `ai` hung for minutes with a few hundred projects on the macOS bash 3.2: a whitespace check on the whole list was quadratic. It is a glob match now (`nonblank`).
+- Tooling: `scripts/bench.sh` closes stdin and stops a run after `BENCH_TIMEOUT` seconds (default 120), and the CI step has a 10 minute limit; a hanging benchmark no longer cancels the whole test job.
+- Two-person rule: an approval (review or `deploy-approved-by:` label) only counts from an account that may push to the repo (admin, maintain, write); triage and read-only accounts, and accounts whose permission cannot be read, no longer count. An issue counts for a commit only when it names at least 12 characters of its sha (7 matched by accident).
+- Tests: the VS Code test that registers the commands no longer fails now and then on Linux (the temp folder was removed while the CLI still wrote into it); removing it is retried.
+- Fix: `deploys fly set-key` saved a `FlyV1 …` token with its space unquoted, so the keychain kept only `FlyV1`; it is quoted now.
+- Widgets: the saving ("≈ $12/mo saved") and the times follow the language of the app, not the system language, as the texts do.
+- MCP: four new read-only tools over existing commands: `deploys_domains`, `deploys_forecast`, `deploys_env_diff` (names only) and `deploys_preview` (framed as untrusted data).
+- Mac app: "Copy for Claude" masks secrets before it cuts the log, so a private key that begins above the excerpt no longer slips through; a token limit like "1,5m" is 1.5 million, not 15 million.
+- Tooling: `scripts/check-build.py` (and a CI step) fails when `Package.swift` and the release build name a different minimum macOS or Sparkle version.
+- Mac app: times and dates in the window, rows, toasts and the quiet-hours picker follow the app language, not the Mac's region; "1 project copied" and "1 message cleared" use the singular; the Autofix PR link goes through the safe-link check; "Show the first-start guide again" is greyed out (with a hint) while no project builds on every push.
+- New: `deploys clean` frees disk space held by old git worktrees: build output (`node_modules`, `.next`, `dist` …, only what git ignores) in worktrees unchanged for 2 days, and with `--worktrees` whole worktrees that have no changes and are merged into `origin/main` (`git worktree remove`, the branch stays). Without `--yes` it only reports. `deploys clean schedule on` runs it daily when the disk runs low. Folders in `~/.config/deploys/clean.json` (`{"roots":["~/Code"]}`).
+- Autofix: the hand-over caps (default 6 a day, 2 per project) can be set for good in `~/.config/deploys/autofix-limits.json` (`{"perDay": 20, "perProject": 5}`); `0` means no cap. The environment variables still win.
+- Guard: the notification says why auto-deploy was turned off ("its allowance ended", or "auto-deploy was on and no allowance covers it") and what went wrong when a switch failed (the first error, short, tokens masked); `guard status --json` has a `reason` per action.
+- Fix: `deploy-changed --yes` that could not read anything names a closed deploy window first again (it said "Could not tell" before the window was checked).
+- Mac app: "Link repo …" on a project without a Git source names its repo (stays on this Mac) so its commits show; hovering a waiting project shows who pushed, when and how many files changed. The two figures of the savings banner open popovers that show where they come from.
+- Fix: `deploy-changed --yes` in a closed deploy window stops with the window's reason before it reads any platform (since the "no platform is on" stop it said that instead).
+- Website: `scripts/check-a11y.py` (run by CI) checks WCAG 2.2 AA basics on every page and on the color tokens: contrast of text, links and buttons in dark and light, a skip link, one `&lt;main&gt;`, labelled navs, heading order, form labels, names of links and buttons, and reduced motion. Docs tables without a header row now mark the first cell of each row as a row header for screen readers.
+- `deploy-changed --yes`: a closed deploy window now stops it before any platform is asked (it said "could not tell" first when nothing could be read).
+- `deploys self-update --check [--json]`: says whether a newer CLI release is out and prints the command that updates this copy (install script, Homebrew or Docker). It only checks: nothing is downloaded or installed. Exit 10 means an update exists, 1 means the release list could not be read (offline, proxy).
+- Fix: `deploy-changed --yes` in a closed deploy window says "No deploys now" again before it reads any platform; a run with no platform on ended with "Could not tell what has changes" instead.
+- Examples: four presets (`examples/presets/`: solo, agency with 20 client sites, monorepo with previews only, student budget), and two `hooks.d` examples: `pre-deploy-backup` (saves your settings before a start) and `post-deploy-smoke` (asks a URL after a start). `tests/examples-tests.sh` checks them all with no account.
+- Mac app: the menu bar says "5 waiting, 2 failed" and lists the failed projects; the "Claude found" hint says what connecting gives and never comes back after you close it.
+- `deploys prepare on 08:30 --when-green --no-freeze`: a conditional morning job that gets a deploy ready and starts nothing, unless `--yes` is stored in the entry (and never through a closed deploy window).
+- `deploys group`: your own ordered groups ("first api, then web"); a run waits for each member and stops at the first failure, and never starts without `--yes` or a "y" on a terminal.
+- `deploys env-diff &lt;project&gt;`: environment variable names in production but not in preview (Vercel), names only, never values.
+- `deploys forecast`: this month's build cost so far, projected to month end and shared by project (an estimate), with a warning near the `budget` limit.
+- `deploys domains [--warn 30]`: custom domains apart from the platform's own addresses, with the days their certificate has left; exit 1 inside the threshold.
+- `deploys preview &lt;project&gt;`: what a production deploy would do (waiting commits, files, risk check, matching rule, deploy window, budget, verdict) in one view; it starts nothing.
+- Speed: reading a list of 200 projects with their GitHub state starts about half as many `jq` and `tr` processes (the repo name, the cache name and the pull request count are worked out without them), 4.1 s to 3.0 s in `scripts/bench.sh` on a Linux container; the output is unchanged (`tests/perf-tests.sh`). `scripts/bench.sh` times the CLI against a made-up platform with 200 projects.</description>
+      <enclosure url="https://github.com/Pschmetzer/deploy-center/releases/download/v0.14.0/DeployCenter-0.14.0-universal.zip" length="18122267" type="application/octet-stream" sparkle:edSignature="m3j3ObPkPmASeqwa9nX3G0AB5hSNosxTeikq36RAiM9BONGxWHHXXSUyZIlWIcueVZMBRF2QkZKBwOEHnMIzBg==" />
+    </item>
+    <item>
       <title>Version 0.12.0</title>
       <pubDate>Sat, 21 Nov 2026 10:50:55 GMT</pubDate>
       <sparkle:version>0.12.0</sparkle:version>
