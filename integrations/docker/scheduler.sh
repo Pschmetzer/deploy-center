@@ -30,6 +30,7 @@
 #
 # Env: DEPLOYS_INTEGRATIONS   where the integrations are (default /opt/deploy-center/integrations)
 #      DEPLOYS_HEARTBEAT_FILE the heartbeat file (default /tmp/scheduler.heartbeat)
+#      DEPLOYS_PING_URL       an https URL asked (GET) after each job that worked: a dead man's switch
 #      SCHEDULER_NOW, SCHEDULER_STEP   a fixed clock and how far it moves per look (tests)
 set -eo pipefail   # no -u: bash 3.2 counts an empty array as unset
 integ="${DEPLOYS_INTEGRATIONS:-/opt/deploy-center/integrations}"
@@ -91,7 +92,13 @@ while IFS= read -r line || [ -n "$line" ]; do
   for w in "$@"; do case "$w" in --yes|-y|--yes=*) bad "--yes is refused: this scheduler only reads"; continue 2 ;; esac; done
   case "$1" in
     deploys)
-      case "$allowed_cli" in *" ${2:-} "*) ;; *) bad "deploys ${2:-}: not allowed here, the scheduler runs reading commands only"; continue ;; esac ;;
+      case "$allowed_cli" in *" ${2:-} "*) ;; *) bad "deploys ${2:-}: not allowed here, the scheduler runs reading commands only"; continue ;; esac
+      # A reading command can still change something with a flag or a sub-command: freeze clear, doctor --fix, digest --post.
+      for w in "$@"; do case "$w" in --fix|--post|--notify|--apply|--write|--install|--force|--set|--clear|--remove|--delete) bad "deploys ${2:-} $w: not allowed here, the scheduler only reads"; continue 2 ;; esac; done
+      case "${2:-}:${3:-}" in
+        freeze:|freeze:status|freeze:list|freeze:check|freeze:--json) ;;
+        freeze:*) bad "deploys freeze ${3:-}: only freeze, freeze status or freeze --json are allowed here"; continue ;;
+      esac ;;
     statuspage|badges|badge-stats|report) ;;
     *) bad "unknown job \"$1\" (deploys, statuspage, badges, badge-stats or report)"; continue ;;
   esac
@@ -123,12 +130,23 @@ run_job() {  # run_job <index>
   case "$lim" in ''|*[!0-9]*) lim=600 ;; esac
   if command -v timeout >/dev/null 2>&1; then words=(timeout "$lim" "${words[@]}"); fi
   echo "[$(stamp "$now")] job $((i + 1)) start: ${cmds[$i]}"
+  # The job runs in the background and the scheduler waits for it: a TERM (docker stop) is then handled at once,
+  # not after the job, and the job and its temp file go with it. The jobs only read: DEPLOYS_READONLY=1 says so to the CLI.
   if [ -n "${outs[$i]}" ]; then
-    mkdir -p "$(dirname "${outs[$i]}")"; tmp="$(mktemp "${outs[$i]}.XXXXXX")"
-    "${words[@]}" > "$tmp" </dev/null || rc=$?
+    mkdir -p "$(dirname "${outs[$i]}")"; tmp="$(mktemp "${outs[$i]}.XXXXXX")"; cur_tmp="$tmp"
+    DEPLOYS_READONLY=1 "${words[@]}" > "$tmp" </dev/null & cur_job=$!
+    wait "$cur_job" || rc=$?
+    cur_job=""
     if [ "$rc" = 0 ]; then mv "$tmp" "${outs[$i]}"; else rm -f "$tmp"; fi
+    cur_tmp=""
   else
-    "${words[@]}" </dev/null || rc=$?
+    DEPLOYS_READONLY=1 "${words[@]}" </dev/null & cur_job=$!
+    wait "$cur_job" || rc=$?
+    cur_job=""
+  fi
+  # A dead man's switch: one ping after a job that worked (healthchecks.io, Uptime Kuma push). https only.
+  if [ "$rc" = 0 ] && [ -n "${DEPLOYS_PING_URL:-}" ]; then
+    case "$DEPLOYS_PING_URL" in https://*) curl -fsS -m 10 -o /dev/null "$DEPLOYS_PING_URL" 2>/dev/null || echo "ping failed" >&2 ;; *) echo "DEPLOYS_PING_URL must start with https://" >&2 ;; esac
   fi
   if [ "$rc" = 0 ]; then echo "[$(stamp "$now")] job $((i + 1)) done"; else echo "[$(stamp "$now")] job $((i + 1)) failed (exit $rc); it runs again at its next time" >&2; fi
   return "$rc"
@@ -145,7 +163,16 @@ due() {  # due <index> <epoch> <hhmm> <weekday> <day>
   esac
 }
 
-trap 'exit 0' TERM INT
+# TERM or INT: the running job, the heartbeat ticker and a half-written output go; the exit status is the signal's (143, 130).
+cur_job="" cur_tmp="" hb_pid=""
+cleanup() {
+  [ -z "$cur_job" ] || { kill -TERM "$cur_job" 2>/dev/null || true; wait "$cur_job" 2>/dev/null || true; }
+  [ -z "$cur_tmp" ] || rm -f "$cur_tmp"
+  [ -z "$hb_pid" ] || kill "$hb_pid" 2>/dev/null || true
+}
+trap 'cleanup; exit 143' TERM
+trap 'cleanup; exit 130' INT
+trap 'cleanup' EXIT
 now="$(clock)"
 if [ "$once" = 1 ]; then
   failed=0; i=0
@@ -153,6 +180,10 @@ if [ "$once" = 1 ]; then
   [ "$failed" = 0 ]; exit $?
 fi
 echo "[$(stamp "$now")] scheduler: $n job(s) from $jobs (UTC)"
+# The heartbeat comes from a ticker of its own: a job that runs for minutes must not make the container look dead.
+if [ -z "$virtual" ]; then
+  ( while :; do date +%s > "$hb" 2>/dev/null || true; sleep "$((tick > 30 ? 30 : (tick < 1 ? 1 : tick)))"; done ) & hb_pid=$!
+fi
 count=0
 while :; do
   now="$(clock)"

@@ -680,6 +680,18 @@ if command -v ruby >/dev/null; then
   REPO='me/app;x' run_step deploy.sh; expect "action: repo: a strange value is refused" "$?" 1
   rm -f "$DEPLOYS_CONFIG/ignored.json"
   expect "action: deploy step only with deploy: true" "$(step deploy if)" "inputs.deploy == 'true' && inputs.dry-run != 'true' && steps.changed.outputs.count != '0'"
+  # Round 15: the repo scope reaches the changed step (count, risk, plan) as well; a typo in deploy: warns; risky events are refused.
+  rm -f "$DEPLOYS_CONFIG/ignored.json"
+  SCOPE=me/site run_step changed.sh; expect "action: scope: another repo's changes do not count" "$(grep '^count=' "$tmp/out")" "count=0"
+  expect "action: scope: the others go to ignored.json" "$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" '["api","app-web"]'
+  rm -f "$DEPLOYS_CONFIG/ignored.json"
+  SCOPE=me/app run_step changed.sh; expect "action: scope: this repo's changes count" "$(grep '^count=' "$tmp/out")" "count=2"
+  rm -f "$DEPLOYS_CONFIG/ignored.json"
+  expect "action: a deploy: typo warns" "$(: > "$tmp/out"; DEPLOY_IN=True GITHUB_OUTPUT="$tmp/out" GITHUB_STEP_SUMMARY="$tmp/sum" bash "$tmp/changed.sh" 2>&1 | grep -c '::warning::deploy: "True"')" "1"
+  DEPLOY_IN=true EVENT_NAME=pull_request_target run_step changed.sh; expect "action: deploy: true under pull_request_target is refused" "$?" 1
+  DEPLOY_IN=true EVENT_NAME=pull_request_target ALLOW_UNTRUSTED=true run_step changed.sh; expect "action: allow-untrusted-event allows it" "$?" 0
+  DEPLOY_IN=true EVENT_NAME=push run_step changed.sh; expect "action: deploy: true under push passes" "$?" 0
+  rm -f "$DEPLOYS_CONFIG/ignored.json"
   ONLY=api run_step changed.sh; expect "action: only keeps the named projects" "$(grep '^names=' "$tmp/out")" "names=api"
   expect "action: only writes the others to this run's ignored.json" "$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" '["app-web"]'
   EXCLUDE='api, x' run_step changed.sh; expect "action: exclude leaves projects out" "$(grep '^count=' "$tmp/out"):$(jq -c . "$DEPLOYS_CONFIG/ignored.json")" 'count=1:["api"]'
@@ -1122,6 +1134,10 @@ fi
 if ops_out="$(tests/ops.sh --quiet 2>&1)"; then ok "ops: $(grep -c '^ok' <<<"$ops_out") checks (status page, report, badges, Docker, deploy hooks)"
 else fail "ops: status page, report, badges, Docker, deploy hooks" "$(grep '^FAIL' <<<"$ops_out" | head -8)"; fi
 skips=$((skips + $(grep -c '^skip' <<<"$ops_out")))
+
+# --- round 15: the deploy gate and perf gate against the ways around them (tests/r15.sh) ---
+if r15_out="$(tests/r15.sh 2>&1)"; then ok "r15: $(grep -c '^ok' <<<"$r15_out") checks (deploy gate, config edits, perf gate)"
+else fail "r15: deploy gate, perf gate" "$(grep '^FAIL' <<<"$r15_out" | head -8)"; fi
 
 echo
 if [ "$skips" -gt 0 ] && [ "${REQUIRE_ALL:-0}" = 1 ]; then

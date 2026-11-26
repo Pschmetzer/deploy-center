@@ -44,6 +44,9 @@ DEPLOYS="${DEPLOYS:-deploys}"
 . "$(dirname "$0")/../lib/post.sh"
 tz="${DEPLOYS_NOTIFY_TZ:-${DEPLOYS_TZ:-UTC}}"
 [[ "$tz" =~ ^[A-Za-z0-9/_+-]+$ ]] || { echo "DEPLOYS_NOTIFY_TZ / DEPLOYS_TZ must be a zone name like Europe/Berlin" >&2; exit 1; }
+# An unknown zone would silently be read as UTC while the heading names it: refused when the zone folder is there to ask.
+case "$tz" in *..*|/*) echo "DEPLOYS_NOTIFY_TZ / DEPLOYS_TZ must be a zone name like Europe/Berlin" >&2; exit 1 ;; esac
+if [ -d /usr/share/zoneinfo ] && [ "$tz" != UTC ] && [ ! -f "/usr/share/zoneinfo/$tz" ]; then echo "DEPLOYS_NOTIFY_TZ / DEPLOYS_TZ: \"$tz\" is not a time zone known here (like Europe/Berlin)" >&2; exit 1; fi
 dry=0 quiet=0 from="" event="" link="${DEPLOYS_NOTIFY_LINK:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -57,6 +60,12 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
+# The link becomes a button and an "Open:" line: https only (http only to this machine), no javascript: and no quotes or spaces.
+case "$link" in
+  ""|https://*|http://localhost|http://localhost[:/]*|http://127.0.0.1|http://127.0.0.1[:/]*) ;;
+  *) echo "--link / DEPLOYS_NOTIFY_LINK must be an https:// address" >&2; exit 1 ;;
+esac
+case "$link" in *[[:space:]\"\\\<\>]*) echo "--link / DEPLOYS_NOTIFY_LINK has characters a link cannot have" >&2; exit 1 ;; esac
 lang="${DEPLOYS_LANG:-en}"; case "$lang" in en|de) ;; *) echo "DEPLOYS_LANG must be en or de" >&2; exit 1 ;; esac
 urls="$(webhook_urls)" || exit 1
 [ "$dry" = 1 ] || [ -n "$urls" ] || { echo "Set DEPLOYS_NOTIFY_URL, DEPLOYS_NOTIFY_URLS or DEPLOYS_NOTIFY_URL_FILE (or use --dry-run)." >&2; exit 1; }

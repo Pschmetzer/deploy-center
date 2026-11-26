@@ -103,7 +103,7 @@ perf_clean_main() {
     while IFS="$(printf '\t')" read -r pid id; do
       [ -n "$pid" ] || continue
       # Only the same process (start time and args unchanged) gets the KILL.
-      if [ "$(perf_ident "$pid")" = "$id" ]; then kill -KILL "$pid" 2>/dev/null && perf_log "clean: KILL $pid (did not stop on TERM)"; fi
+      if [ "$(perf_ident "$pid")" = "$id" ]; then { kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null; } && perf_log "clean: KILL $pid (did not stop on TERM)"; fi
     done <<<"$ids"
   fi
   [ "$doit" = 1 ] || [ "$quiet" = 1 ] || [ "${json:-0}" = 1 ] || echo "($n found; dry run, nothing was stopped. deploys perf clean --yes stops them.)"

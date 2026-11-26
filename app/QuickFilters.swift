@@ -31,7 +31,7 @@ struct FreezeReply: Decodable, Equatable {
 
     /// One rule as text: "fri,sat 15:00-24:00" (every day when no days are named).
     static func ruleText(_ r: Rule) -> String {
-        let days = (r.days?.isEmpty ?? true) ? L("every day", "täglich") : (r.days ?? []).joined(separator: ",")
+        let days = (r.days?.isEmpty ?? true) ? L("every day", "täglich") : (r.days ?? []).map { DeployWindowSettings.dayName($0.lowercased()) }.joined(separator: ",")
         return "\(days) \(r.from ?? "00:00")-\(r.to ?? "24:00")"
     }
 

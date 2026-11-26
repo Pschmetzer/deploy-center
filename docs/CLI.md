@@ -74,6 +74,8 @@ deploys window                          # is the deploy window (window.json) ope
 deploys freeze                          # the closed times of window.json, numbered, and whether deploys are closed now (--json too)
 deploys freeze add fri 15:00            # close Fridays from 15:00 (<days>: fri, fri,sat, mon-fri, weekend, weekdays, daily; <to> is 24:00 unless given)
 deploys freeze add sat,sun 0 --reason "weekend"   # a reason is shown in the refusal
+deploys lock api "migration running"    # close one project for starts until it is unlocked (a start then needs --force "why"; the journal says so)
+deploys unlock api                      # open it again; `deploys lock` (or `lock list --json`) shows what is locked
 deploys freeze import holidays.ics [--dry-run]   # closed dates from a calendar file (all-day events close their days; repeating events are skipped)
 deploys freeze remove 2 | clear         # take away rule 2 (the numbers `freeze` shows), or every rule
 deploys deploy my-project --force "hotfix"   # inside a closed window; the reason is journaled
@@ -298,6 +300,37 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_JOURNAL` | the deploy journal file (default: the app's, on Linux in the config folder) |
 | `DEPLOYS_NOTIFY` | `0`: no macOS notifications from autofix and guard |
 | `DEPLOYS_TEAM_TTL` | seconds a shared `deploy-center.json` is cached (default 600) |
+| `DEPLOYS_LOCKS` | the file of `deploys lock` (default `project-locks.json` in the config folder) |
+| `DEPLOYS_WATCH_EVERY` | seconds between the redraws of `status --watch` (default 10) |
+| `DEPLOYS_CHECK_TIMEOUT` | seconds a `check` may run (default 900) |
+| `DEPLOYS_SEMGREP_CONFIG` | the semgrep rule set `check` uses (default `p/default`) |
+| `DEPLOYS_SCAN_TIMEOUT` | seconds a `scan` session may run (default 5400) |
+| `DEPLOYS_SCAN_PER_DAY` | scans per account per 24 hours (default 4) |
+| `DEPLOYS_SCAN_MAX_FIXES` | fixes one scan may hand over (default 5) |
+| `DEPLOYS_SCAN_MODEL` | the model of a scan (default `sonnet`) |
+| `DEPLOYS_SCAN_DIR` | where scan results are kept (default `scan/` in the config folder) |
+| `DEPLOYS_NIGHTLY_MAX_SCANS` | scans one nightly check may start (default 2) |
+| `DEPLOYS_AMPLIFY_LOG_BYTES` | bytes read from the end of each Amplify step log (default 262144) |
+| `DEPLOYS_AMPLIFY_PARALLEL` | Amplify apps read at once (default `DEPLOYS_PARALLEL`, else 4) |
+| `DEPLOYS_GHPAGES_SITES` | GitHub Pages sites, space separated: `owner/repo[:workflow.yml[@branch]]` |
+| `DEPLOYS_GHPAGES_POLLS` | how often `ghpages deploy` looks for its run (default 6, 3 s apart) |
+| `DEPLOYS_RAILWAY_POLLS` | how often `railway deploy` looks for the new deployment (default 5) |
+| `DEPLOYS_RENDER_NAME_TTL` | seconds the Render name list is kept (default 60) |
+| `DEPLOYS_NETLIFY_RULE_TTL` | seconds between two reads of a Netlify site's build rule (default 600) |
+| `DEPLOYS_HOOK_STORE` | `keychain` or `file`: where deploy hook URLs are kept (default: keychain on a Mac) |
+| `DEPLOYS_GITLAB_TIMEOUT` | seconds a `glab` call may take before it is asked again (default 60) |
+| `DEPLOYS_GITLAB_CURL` | `1` uses curl for GitLab even when `glab` is installed |
+| `DEPLOYS_VERCEL_NO_KEYCHAIN` | any value: the Vercel token of the keychain is not put in the CLI's environment |
+| `DEPLOYS_VERCEL_ANY_SHA` | `1` lets `vercel deploy --sha` take a commit that is not on the project's branch |
+| `DEPLOYS_UPDATE_BASE` | where `self-update --check` looks for releases (another folder or mirror) |
+| `DEPLOYS_PERF_GATE` | `0` turns the Claude Code performance hook off |
+| `DEPLOYS_PERF_KILL_AFTER` | seconds between TERM and KILL when `perf clean` or `perf reap` stop a process (default 10) |
+| `DEPLOYS_PERF_DB_WAIT` | seconds to wait after starting a Docker stack's databases (default 3) |
+| `DEPLOYS_PERF_NORECORD` | `1`: `perf status` does not record its sample |
+| `DEPLOYS_PERF_LABEL` | the launchd label of the performance agent (default `app.deploycenter.perf`) |
+| `DEPLOYS_PERF_NOTIFY_CMD` | a program called with a title and a text instead of a Mac notification (no shell) |
+| `DEPLOYS_ROUTINE_TOKEN` | the token of a Claude routine, instead of the keychain (for CI; never put it on a command line) |
+| `DEPLOYS_CLAUDE_PROJECTS` | where Claude Code keeps its project folders (default `~/.claude/projects`) |
 | `DEPLOYS_AUTOFIX_PER_DAY`, `DEPLOYS_AUTOFIX_PER_PROJECT` | autofix caps per 24 h (default 6 and 2; `0` = no cap); also `~/.config/deploys/autofix-limits.json` with `perDay` and `perProject`, the variables win |
 | `DEPLOYS_GITLAB_HOSTS` | self-managed GitLab hosts (docs/GITLAB.md) |
 | `DEPLOYS_HTTP_TRACE` | `1`: one line per call to a platform on stderr (method, path without query, status, time; no header, no body); `--debug` sets it |
