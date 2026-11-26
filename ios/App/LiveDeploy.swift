@@ -20,7 +20,9 @@ final class LiveDeploy {
             l.activity = old
             return l
         }
-        let attrs = DeployActivity(project: p.name, platform: p.provider.rawValue, started: Date(), rollback: rollback, german: appIsGerman, key: p.key, domain: p.domain)
+        // With "Unlock on open" the lock screen must not show the project name: the title is neutral (the link still opens the project).
+        let shown = PhoneStore.lockOnOpen ? L("A deploy", "Ein Deploy") : p.name
+        let attrs = DeployActivity(project: shown, platform: p.provider.rawValue, started: Date(), rollback: rollback, german: appIsGerman, key: p.key, domain: p.domain)
         l.activity = try? Activity.request(attributes: attrs, content: content(.running, PhoneProject.stateWord("queued")), pushType: nil)
         return l
     }

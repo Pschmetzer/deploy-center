@@ -544,5 +544,9 @@ do {
           "refresh: no out-of-date entry when it is already past or there is no snapshot")
 }
 
+// Background timeouts are short, foreground ones are not (ideas E17)
+check(HTTP.timeout == 30 && HTTP.longestWait == 8, "timeouts: the foreground waits longer")
+check(HTTP.$inBackground.withValue(true) { (HTTP.timeout, HTTP.longestWait) } == (10, 2), "timeouts: the background run waits less")
+
 print(failures == 0 ? "All checks passed." : "\(failures) check(s) failed.")
 exit(failures == 0 ? 0 : 1)
