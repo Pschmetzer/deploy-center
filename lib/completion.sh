@@ -43,6 +43,7 @@ readonly:on off
 config:--refresh export import
 doctor:--text --fix --json
 freeze:status add import remove clear --json
+lock:list --json
 digest:--days --json --no-savings --format
 preview:--json
 timeline:--days --project --limit --json
