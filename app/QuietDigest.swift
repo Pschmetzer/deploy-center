@@ -36,3 +36,16 @@ enum QuietDigest {
         return (title, lines.joined(separator: "\n"))
     }
 }
+
+/// The quiet hours setting in one place (`quietFrom`, `quietTo`: hours 0–23, both equal is off), so the notifications,
+/// the voice, the digest and the settings text cannot disagree.
+struct QuietHours: Equatable {
+    static let fromKey = "quietFrom", toKey = "quietTo"
+    var from: Int, to: Int
+    static func current(_ d: UserDefaults = .standard) -> QuietHours { QuietHours(from: d.integer(forKey: fromKey), to: d.integer(forKey: toKey)) }
+    func isQuiet(_ now: Date = Date(), calendar: Calendar = .current) -> Bool {
+        Notify.quiet(hour: calendar.component(.hour, from: now), from: from, to: to)
+    }
+    /// Seconds until they end (at least a minute); only meaningful while `isQuiet`.
+    func endsIn(_ now: Date = Date(), calendar: Calendar = .current) -> TimeInterval { QuietDigest.seconds(until: to, now: now, calendar: calendar) }
+}
