@@ -24,6 +24,7 @@ tests/preview-tests.sh
 tests/perf-guard-tests.sh
 tests/perf-shed-tests.sh
 tests/perf-finished-tests.sh
+tests/perf-mcp-tests.sh
 tests/perf-tests.sh
 tests/app-tests.sh mac full
 ios/Tests/run.sh mac full

@@ -222,3 +222,5 @@ tests/perf-shed-tests.sh tests/fixtures/perf-shed/*
 tests/perf-finished-tests.sh lib/perf*.sh
 tests/perf-finished-tests.sh lib/desktopsessions.sh
 tests/perf-finished-tests.sh tests/fixtures/perf-shed/*
+tests/perf-mcp-tests.sh lib/perf*.sh
+tests/perf-mcp-tests.sh tests/fixtures/perf-mcp/*
