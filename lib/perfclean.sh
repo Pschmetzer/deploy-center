@@ -291,6 +291,7 @@ perf_tick_main() {
     echo "$now" > "$PERF_DIR/last-docker"; perfdocker_idle_tick "$lvl" "$(jq -r '.memoryTight // false' <<<"$snap")" || true
   fi
   ! declare -F perf_shed_tick >/dev/null || perf_shed_tick "$snap" || true
+  ! declare -F perf_finished_tick >/dev/null || perf_finished_tick || true
   declare -F perf_caches >/dev/null && perf_caches measure >/dev/null 2>&1 &
   lastc="$(cat "$PERF_DIR/last-clean" 2>/dev/null || echo 0)"
   if [ $(( now - lastc )) -ge 600 ]; then
@@ -315,15 +316,15 @@ perfclean_main() {
       echo "and add this entry to \"hooks\".\"PreToolUse\" in ~/.claude/settings.json (nothing is changed here):"
       perf_hook_json ;;
     install)
-      local yes=0 clean=0 dock=0 reap=0 shed=0 a
-      for a in "$@"; do case "$a" in --yes) yes=1 ;; --clean) clean=1 ;; --docker) dock=1 ;; --reap) reap=1 ;; --shed) shed=1 ;; *) echo "Usage: deploys perf install [--reap] [--clean] [--docker] [--shed] --yes" >&2; return 2 ;; esac; done
-      [ "$yes" = 1 ] || { echo "perf install writes a launchd agent ($PERF_LABEL, every minute: status, notification, cleanup report). Add --yes to do it; --reap lets it stop hung check runs, --clean orphaned dev processes, --docker idle Docker stacks, --shed unused dev servers and idle Docker stacks under memory pressure." >&2; return 2; }
+      local yes=0 clean=0 dock=0 reap=0 shed=0 fin=0 a
+      for a in "$@"; do case "$a" in --yes) yes=1 ;; --clean) clean=1 ;; --docker) dock=1 ;; --reap) reap=1 ;; --shed) shed=1 ;; --stop-finished) fin=1 ;; *) echo "Usage: deploys perf install [--reap] [--clean] [--docker] [--shed] [--stop-finished] --yes" >&2; return 2 ;; esac; done
+      [ "$yes" = 1 ] || { echo "perf install writes a launchd agent ($PERF_LABEL, every minute: status, notification, cleanup report). Add --yes to do it; --reap lets it stop hung check runs, --clean orphaned dev processes, --docker idle Docker stacks, --shed unused dev servers and idle Docker stacks under memory pressure, --stop-finished dev servers of finished work." >&2; return 2; }
       declare -F job_on >/dev/null || { echo "perf install runs through deploys (deploys perf install --yes)." >&2; return 1; }
       mkdir -p "$(dirname "$PERF_CONF")"
       [ -f "$PERF_CONF" ] || echo '{}' > "$PERF_CONF"
-      jq -c --argjson c "$clean" --argjson d "$dock" --argjson r "$reap" --argjson s "$shed" '.clean = ($c == 1) | .docker = ((.docker // {}) + {autoStop:($d == 1)}) | .reap = ((.reap // {}) + {enabled:($r == 1)}) | .shed = ((.shed // {}) + {enabled:($s == 1)})' "$PERF_CONF" > "$PERF_CONF.new" && mv -f "$PERF_CONF.new" "$PERF_CONF"
+      jq -c --argjson c "$clean" --argjson d "$dock" --argjson r "$reap" --argjson s "$shed" --argjson f "$fin" '.clean = ($c == 1) | .docker = ((.docker // {}) + {autoStop:($d == 1)}) | .reap = ((.reap // {}) + {enabled:($r == 1)}) | .shed = ((.shed // {}) + {enabled:($s == 1)}) | .stopFinished = ((.stopFinished // {}) + {enabled:($f == 1)})' "$PERF_CONF" > "$PERF_CONF.new" && mv -f "$PERF_CONF.new" "$PERF_CONF"
       job_on "$PERF_LABEL" 60 deploys-perf perf tick
-      echo "Installed $PERF_LABEL: every minute status and samples, a notification when red for a while, cleanup every 10 min ($( [ "$clean" = 1 ] && echo "stops orphans" || echo "report only" )), Docker idle stop $( [ "$dock" = 1 ] && echo on || echo off ), hung check runs stopped every 5 min $( [ "$reap" = 1 ] && echo on || echo off ), shedding under memory pressure $( [ "$shed" = 1 ] && echo on || echo off ). Log: $PERF_DIR/clean.log" ;;
+      echo "Installed $PERF_LABEL: every minute status and samples, a notification when red for a while, cleanup every 10 min ($( [ "$clean" = 1 ] && echo "stops orphans" || echo "report only" )), Docker idle stop $( [ "$dock" = 1 ] && echo on || echo off ), hung check runs stopped every 5 min $( [ "$reap" = 1 ] && echo on || echo off ), shedding under memory pressure $( [ "$shed" = 1 ] && echo on || echo off ), dev servers of finished work stopped $( [ "$fin" = 1 ] && echo on || echo off ). Log: $PERF_DIR/clean.log" ;;
     uninstall)
       declare -F job_off >/dev/null || { echo "perf uninstall runs through deploys." >&2; return 1; }
       job_off "$PERF_LABEL"; echo "Removed $PERF_LABEL." ;;

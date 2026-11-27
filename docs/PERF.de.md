@@ -60,6 +60,12 @@ ungenutzte Docker-Stacks ohne Datenbank. Jeder Stopp kommt als Mitteilung und in
 Chrome, Datenbanken, launchd-Jobs. Das hilft über Spitzen; ist der Mac den ganzen Tag voll, gehören Sitzungen in die
 Cloud.
 
+## Dev-Server fertiger Arbeit
+
+`deploys perf install --clean --shed --stop-finished --yes` stoppt unabhängig von der Last Dev-Server, deren
+Claude-Sitzung archiviert oder fertig ist oder deren Branch-PR gemergt oder geschlossen ist, nach 10 Minuten Karenz,
+mit Mitteilung und Protokolleintrag. `deploys perf finished` zeigt sie vorher.
+
 ## Apps beenden
 
 Einstellungen → Allgemein → „Ausgewählte Apps beenden, wenn der Mac überlastet ist“ (Standard: aus) zeigt die

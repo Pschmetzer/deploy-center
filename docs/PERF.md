@@ -163,6 +163,18 @@ Supabase, Redis, MySQL, Mongo ...). Every stop sends a notification, goes to the
 jobs, anything under an editor or a debugger. `deploys perf clean` lists the same servers as rule S, but never stops
 them.
 
+### Dev servers of finished work
+
+```bash
+deploys perf finished          # what it would stop (dry run)
+deploys perf install --clean --shed --stop-finished --yes   # the agent does it every 5 minutes
+```
+
+At any load, not only under pressure: a dev server (the same ones as rule S) whose folder belongs to a desktop session
+that is archived or done (and to no open one), or, without a session, whose branch's pull request is merged or closed
+(`gh`, at most 5 look-ups a pass, cached for an hour), is stopped once it stayed so for `stopFinished.graceMin` (10)
+minutes. TERM, KILL after 10 s, a notification and a journal entry; one that comes back is left alone for 24 hours.
+
 ### Quitting apps
 
 Settings → General → "Quit apps I picked when the Mac is overloaded" (off by default) lists the running apps with
@@ -201,6 +213,7 @@ work in cloud sessions, are.
   "reap": { "enabled": false, "limitMin": 45, "hardLimitMin": 90, "stallMin": 15, "stallMB": 500,
             "devserverIdleMin": 120, "perCommand": { "playwright": 120 } },
   "shed": { "enabled": false, "idleMin": 30, "maxPerRun": 3 },
+  "stopFinished": { "enabled": false, "graceMin": 10 },
   "quitApps": { "enabled": false, "apps": [], "idleMin": 30, "helpers": false },
   "docker": { "autoStop": false, "always": [], "idleMin": 120, "idleMinYellow": 60, "idleMinRed": 30 }
 }
