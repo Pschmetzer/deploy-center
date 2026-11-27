@@ -4,6 +4,8 @@
 
 - Weekly cleanup: `deploys repos clean` removes worktrees whose branch is merged or gone (also under `.claude/worktrees`) and merged local branches, after rescuing left-behind work; dry run by default, `repos clean schedule on` runs it Sundays at 04:00
 - Left-behind work is rescued on its own: `deploys repos rescue schedule on` saves, every hour, the work of archived sessions and of folders idle for a day to draft pull requests (never a running session's folder, never a public repo, at most 3 per run and 10 per day; `rescue --auto` shows first)
+- New: `deploy-changed --skip-failed` (also on `plan` and `schedule daily`) leaves out a project whose newest build failed at the commit that would go out; a newer commit, such as a fix, still goes. `--between 03:00-05:00` makes a scheduled run that launchd starts late (the Mac slept) start nothing
+- New: `deploys morning` sums up the night: deployed, failed, merged pull requests, handed to autofix and still waiting, as a text file and one notification; `deploys morning schedule on 08:00` runs it every morning
 
 ## 0.15.0 - 2026-11-27
 

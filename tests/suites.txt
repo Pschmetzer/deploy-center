@@ -38,3 +38,5 @@ tests/clean-tests.sh
 tests/x-tests.sh
 tests/repos-tests.sh
 tests/repos-cleanup-tests.sh
+tests/nightbatch-tests.sh
+tests/morning-tests.sh

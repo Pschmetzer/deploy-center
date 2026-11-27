@@ -24,6 +24,8 @@ deploys prepare on [HH:MM] [--weekdays] [--when-green] [--no-freeze] [--yes] [--
 deploys creds [--max-age 90] [--json]   # per platform: where its key comes from (environment, keychain, login), if it works, how old a keychain key is. Reads only; never shows a key.
 deploys doctor --text                   # one line each (ok or the problem), with the fix
 deploys doctor --fix [--json]           # what to do about each problem, as commands for you to type; shows only, runs and changes nothing
+deploys morning [--hours 24] [--json] [--no-notify] [--no-file] [--offline]   # overnight: what was deployed, failed, merged (deploys prs), handed to autofix and still waits; writes ~/.config/deploys/morning/<date>.txt (the newest 30 stay) and sends one notification (also to DEPLOYS_NOTIFY_CMD). Starts nothing
+deploys morning schedule on [08:00] | off | status [--json]   # the same every morning (launchd; off until you turn it on)
 deploys digest [--days 7] [--json] [--no-savings]   # the last week from the journal: deploys, failures, rollbacks, busiest day, projects, and the saving of `ledger` (an estimate; --no-savings skips it, it needs the network)
 deploys preview <project> [--json]       # what a production deploy would do: commits, files, risk, rule, deploy window, budget, verdict. Starts nothing
 deploys timeline [--days 3] [--project <name>] [--limit 50] [--json]   # what happened, newest day first: deploys, failures, rollbacks, forced starts (from the journal, UTC; reads only)
@@ -51,7 +53,9 @@ deploys deploy-changed --when-green --yes  # only commits whose CI passed, or th
 deploys deploy my-project               # one project to production, on whichever platform it is
 deploys render deploy my-service --no-cache  # build without the host's cache (Render, Netlify, DigitalOcean, Coolify; other hosts refuse it)
 deploys deploy my-group                 # a group from deploy-center.json, in its order (TEAM.md)
-deploys plan [--when-green] [--since 1d]  # the same list with an estimate per build and the sum (starts nothing); --since: only what changed in that time
+deploys deploy-changed --skip-failed      # leave out a project whose newest build failed at the commit that would go out; a newer commit (a fix) still goes
+deploys deploy-changed --between 03:00-05:00 --yes  # outside these local times --yes starts nothing and ends with exit 0
+deploys plan [--when-green] [--skip-failed] [--since 1d]  # the same list with an estimate per build and the sum (starts nothing); --since: only what changed in that time
 deploys status                          # what is building now, and what failed last
 deploys watch my-project [--timeout 30m] [--interval 6s] [--quiet] [--json]  # follow the newest deploy until live or failed
 deploys watch a --and b --and c            # several at once (six at a time); Ctrl-C stops them all
@@ -174,6 +178,7 @@ deploys ai slow my-project              # why its builds take long (ai risk = ai
 deploys autofix --preview --only vercel my-project --json   # what a hand-over would send; sends nothing
 deploys team init me/my-repo > deploy-center.json   # a shared config from this Mac's settings (writes nothing itself)
 deploys schedule daily 09:00 [--when-green] [--by-rules]   # deploy-changed --yes once a day (launchd, or the cron line)
+deploys schedule daily 03:00 --when-green --skip-failed --between 03:00-05:00   # a nightly batch: what failed at the same commit waits, and a run launchd starts late (the Mac slept) starts nothing
 deploys schedule daily 09:00 --weekdays   # Monday to Friday only
 deploys schedule off | status [--json]
 deploys hooks install [<repo>] [--hook pre-commit] [--yes]   # before each push: which builds it would start (integrations/hooks); --hook pre-commit stops a commit that adds a key
