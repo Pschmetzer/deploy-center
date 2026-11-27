@@ -6,8 +6,8 @@ import SwiftUI
 /// Only while the Mac is red with memory pressure for 5 minutes (dev-server and Docker shedding, lib/perfshed.sh, had
 /// their turn), one app at a time, biggest first, at most one every 2 minutes; only apps in the background that were
 /// not active for idleMin minutes. Only `terminate()`, the same as ⌘Q: an app with unsaved documents asks and stays
-/// open, and is left alone until the pressure is over. Never force. With "helpers", windowless helper processes inside
-/// a quit app's bundle get a TERM. The app does this, not the launchd agent: it knows which app is in front and when
+/// open, and is left alone until the pressure is over. Never force. With "helpers", windowless helper processes that
+/// the app started from its own bundle (taken before the quit, pid and start time) get a TERM. The app does this, not the launchd agent: it knows which app is in front and when
 /// each was active, and needs no Apple Events permission. Without the app running nothing is quit.
 struct QuitAppsConfig: Equatable {
     var enabled = false
@@ -78,34 +78,54 @@ enum QuitApps {
         return out
     }
 
-    /// Windowless helpers inside a quit app's bundle (not login items, not XPC services, not launchd jobs), this user's.
-    static func helpers(of bundle: URL) -> [pid_t] {
-        let path = bundle.standardizedFileURL.path
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        guard path.hasPrefix("/Applications/") || path.hasPrefix(home + "/Applications/") else { return [] }
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/ps"); p.arguments = ["-U", String(getuid()), "-o", "pid=,comm="]
+    /// This user's processes: pid → (parent, start time as ps prints it, executable path).
+    static func processes() -> [pid_t: (ppid: pid_t, start: String, exe: String)] {
+        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/ps"); p.arguments = ["-U", String(getuid()), "-o", "pid=,ppid=,lstart=,comm="]
         let pipe = Pipe(); p.standardOutput = pipe; p.standardError = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return [] }
+        guard (try? p.run()) != nil else { return [:] }
         let data = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
-        // Without a readable launchd list nothing is stopped (fail closed).
-        guard let jobs = launchdPids() else { return [] }
-        // The processes that own any window (all layers, also hidden ones). Without the list nothing is stopped.
-        guard let info = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else { return [] }
-        let windowOwners = Set(info.compactMap { ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value })
-        var out: [pid_t] = []
+        var out: [pid_t: (ppid: pid_t, start: String, exe: String)] = [:]
         for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
-            let s = line.trimmingCharacters(in: .whitespaces)
-            guard let sp = s.firstIndex(of: " "), let pid = pid_t(s[..<sp]) else { continue }
-            let exe = String(s[sp...]).trimmingCharacters(in: .whitespaces)
-            guard exe.hasPrefix(path + "/"), !exe.contains("/Contents/Library/LoginItems/"), !exe.contains("/Contents/XPCServices/"),
-                  !jobs.contains(pid), pid != getpid() else { continue }
-            // Windowless only: a process that owns a window, on screen or not, or that macOS counts as a regular app,
-            // is quit with ⌘Q or not at all.
-            if windowOwners.contains(pid) { continue }
-            if let ra = NSRunningApplication(processIdentifier: pid), ra.activationPolicy == .regular { continue }
-            out.append(pid)
+            // pid ppid Www Mmm dd hh:mm:ss yyyy /path/with spaces
+            let f = line.split(separator: " ", maxSplits: 7, omittingEmptySubsequences: true)
+            guard f.count == 8, let pid = pid_t(f[0]), let pp = pid_t(f[1]) else { continue }
+            out[pid] = (pp, f[2...6].joined(separator: " "), String(f[7]))
         }
         return out
+    }
+
+    /// The helpers that belong to a running app: its descendants whose executable lies in its bundle, with their
+    /// start times. Taken right before the quit, so later only these very processes can be stopped.
+    static func family(of app: pid_t, bundle: URL) -> [pid_t: String] {
+        let path = bundle.standardizedFileURL.path
+        let all = processes()
+        var out: [pid_t: String] = [:]
+        for (pid, x) in all where pid != app && x.exe.hasPrefix(path + "/") {
+            var q = x.ppid, hops = 0
+            while q > 1 && q != app && hops < 40 { q = all[q]?.ppid ?? 0; hops += 1 }
+            if q == app { out[pid] = x.start }
+        }
+        return out
+    }
+
+    /// Of an app's family (taken before the quit), the windowless helpers still running after it: the same process
+    /// (pid and start time), not a login item, XPC service or launchd job, owning no window and not a regular app.
+    /// Only for apps in /Applications or ~/Applications; any list that cannot be read stops nothing.
+    static func helpers(of bundle: URL, family: [pid_t: String]) -> [pid_t] {
+        let path = bundle.standardizedFileURL.path
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        guard !family.isEmpty, path.hasPrefix("/Applications/") || path.hasPrefix(home + "/Applications/") else { return [] }
+        guard let jobs = launchdPids() else { return [] }
+        guard let info = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else { return [] }
+        let windowOwners = Set(info.compactMap { ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value })
+        let now = processes()
+        return family.compactMap { pid, start in
+            guard let x = now[pid], x.start == start, x.exe.hasPrefix(path + "/"),
+                  !x.exe.contains("/Contents/Library/LoginItems/"), !x.exe.contains("/Contents/XPCServices/"),
+                  !jobs.contains(pid), !windowOwners.contains(pid), pid != getpid() else { return nil }
+            if let ra = NSRunningApplication(processIdentifier: pid), ra.activationPolicy == .regular { return nil }
+            return pid
+        }
     }
 
     private static func launchdPids() -> Set<pid_t>? {
@@ -137,7 +157,7 @@ final class AppQuitter: ObservableObject {
     private var lastActive: [String: Date] = [:]
     private var tightSince: Date?
     private var keptOpen: Set<String> = []
-    private var pending: (app: NSRunningApplication, id: String, name: String, mb: Int, at: Date)?
+    private var pending: (app: NSRunningApplication, id: String, name: String, mb: Int, at: Date, family: [pid_t: String])?
     private var lastQuit = Date.distantPast
     private var observing = false
 
@@ -205,7 +225,8 @@ final class AppQuitter: ObservableObject {
               let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == c.id && !$0.isActive }) else { return }
         lastQuit = now
         Self.log("quit: asking \(c.name) to quit (red with memory pressure for \(Int(now.timeIntervalSince(since) / 60)) min, idle \(c.idleMin) min, about \(c.mb) MB)")
-        if app.terminate() { pending = (app, c.id, c.name, c.mb, now) } else { keptOpen.insert(c.id) }
+        let fam = (config.helpers ? app.bundleURL.map { QuitApps.family(of: app.processIdentifier, bundle: $0) } : nil) ?? [:]
+        if app.terminate() { pending = (app, c.id, c.name, c.mb, now, fam) } else { keptOpen.insert(c.id) }
     }
 
     /// A shedding pass that just ran gets 90 s to show its effect (perf/shed-done, lib/perfshed.sh).
@@ -215,11 +236,11 @@ final class AppQuitter: ObservableObject {
         return now.timeIntervalSince(m) >= 90
     }
 
-    private func finish(_ p: (app: NSRunningApplication, id: String, name: String, mb: Int, at: Date)) {
+    private func finish(_ p: (app: NSRunningApplication, id: String, name: String, mb: Int, at: Date, family: [pid_t: String])) {
         pending = nil
         var extra = ""
         if config.helpers, let url = p.app.bundleURL {
-            let pids = QuitApps.helpers(of: url)
+            let pids = QuitApps.helpers(of: url, family: p.family)
             for pid in pids { kill(pid, SIGTERM) }
             if !pids.isEmpty { extra = L(", \(pids.count) helper(s) stopped", ", \(pids.count) Helfer beendet") }
         }
