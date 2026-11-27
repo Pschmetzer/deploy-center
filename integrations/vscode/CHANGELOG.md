@@ -2,7 +2,7 @@
 
 ## 0.6.1
 
-- An address from the CLI's output (the deploy, the preview, the dashboard) is opened in the browser only when it is `https://`.
+- An address from the CLI's output (the deploy, the preview, the dashboard) is opened in the browser only when it is `https://` or a local `http://` address (`localhost`, `127.0.0.1`, `[::1]`).
 
 ## 0.6.0
 
