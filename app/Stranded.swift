@@ -127,6 +127,13 @@ final class StrandedMonitor: ObservableObject {
         do {
             let r = try await Tool.json(["repos", "rescue", i.path, "--yes", "--json"], as: StrandedPlan.self, timeout: 300)
             message = r.note
+            // A file that must not go out may have appeared while the question was open: the list is shown here too.
+            if r.state == "refused" {
+                let b = NSAlert()
+                b.messageText = L("Not rescued", "Nicht gerettet")
+                b.informativeText = ([r.note] + r.problems).joined(separator: "\n")
+                b.runModal()
+            }
             if let pr = r.pr, let u = URL(string: pr), u.scheme == "https" { NSWorkspace.shared.open(u) }
         } catch { message = LogTools.maskSecrets((error as? ToolError)?.message ?? error.localizedDescription) }
         await scan()

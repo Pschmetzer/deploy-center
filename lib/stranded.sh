@@ -172,7 +172,7 @@ stranded_paths() {  # stranded_paths <tree>
   local rec skip=0
   stranded_git -C "$1" status --porcelain -z -uall 2>/dev/null | while IFS= read -r -d '' rec; do
     if [ "$skip" = 1 ]; then skip=0; continue; fi
-    case "$rec" in R*|C*) skip=1 ;; esac
+    case "${rec:0:2}" in R?|?R|C?|?C) skip=1 ;; esac   # a rename or copy, staged or not: its old name follows
     rec="${rec:3}"
     case "$rec" in *$'\n'*) echo "(a file name with a line break)"; continue ;; esac
     printf '%s\n' "$rec"
