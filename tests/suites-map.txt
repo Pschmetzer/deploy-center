@@ -211,3 +211,6 @@ tests/x-tests.sh tests/x/*
 tests/nightbatch-tests.sh deploys
 tests/nightbatch-tests.sh lib/*
 tests/nightbatch-tests.sh docs/*
+tests/morning-tests.sh deploys
+tests/morning-tests.sh lib/*
+tests/morning-tests.sh docs/*

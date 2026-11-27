@@ -67,6 +67,7 @@
 #   deploys freeze add <days> <from> [<to>] [--reason "why"] | remove <n> | clear   e.g. freeze add fri 15:00
 #   deploys lock <p> "why" | lock [list] [--json]   close one project for starts until it is unlocked (no time window)
 #   deploys unlock <p>                        open a locked project again
+#   deploys morning [--hours 24] [--json] [--no-notify] [--offline] | schedule on [HH:MM]|off|status   overnight: deployed, failed, merged, waiting (a file and a notification)
 #   deploys digest [--days 7] [--json] [--no-savings]   the last week from the journal: deploys, failures, savings
 #   deploys timeline [--days 3] [--project <p>] [--limit 50]   what happened, newest day first (from the journal)
 #   deploys recovery [--days 30] [--project <p>]   how long a failure lasted until the next deploy
@@ -460,7 +461,7 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions desktopsessions locks repos stranded prs prsfix schedule; do
+for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions desktopsessions locks repos stranded prs prsfix schedule morning; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done; unset _l
@@ -3925,6 +3926,7 @@ case "${1:-} ${2:-}" in
     declare -F note_main >/dev/null || die "lib/notes.sh is not next to deploys."
     note_main "${@:2}" ;;
 
+  "morning "*) declare -F morning_main >/dev/null || die "lib/morning.sh is not next to deploys."; morning_main "${@:2}" ;;
   "digest "*)
     declare -F digest_main >/dev/null || die "lib/digest.sh is not next to deploys."
     digest_main "${@:2}" ;;

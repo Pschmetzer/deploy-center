@@ -16,6 +16,7 @@ completion_main() {
     subs_table="autodeploy:allow allowed revoke
 guard:status schedule
 schedule:daily off status
+morning:schedule
 hooks:install uninstall status
 team:add remove list refresh journal init
 scan:start status list log
@@ -45,6 +46,7 @@ doctor:--text --fix --json
 freeze:status add import remove clear --json
 lock:list --json
 digest:--days --json --no-savings --format
+morning:--hours --json --no-notify --no-file --offline
 preview:--json
 timeline:--days --project --limit --json
 recovery:--days --project --json
