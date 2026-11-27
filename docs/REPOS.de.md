@@ -59,3 +59,11 @@ Wurzel mit einem `.git`-Ordner; ein verknüpfter Worktree gehört zu seinem Haup
 Deploy-Menü → **Repo-Pflege …**: jeder Checkout mit Branch und Rückstand, die, die dich brauchen, oben, ein Knopf
 **Jetzt pflegen** und der Schalter für den Zeitplan. Das MCP-Werkzeug `deploys_repos` liefert das letzte Ergebnis (nur
 lesend); `refresh: true` lässt vorher `deploys repos status` laufen.
+
+## Liegengebliebene Arbeit retten
+
+`deploys repos stranded` listet Ordner (auch `.claude/worktrees`) mit nicht committeten Änderungen oder Commits, die
+auf keinem Remote sind, zuerst die aus archivierten Sitzungen. `deploys repos rescue <ordner> --yes` schiebt sie auf
+einen neuen Branch `rescue/<ordner>-<zeit>` und öffnet eine Entwurfs-PR; der Ordner selbst bleibt unverändert.
+Abgelehnt wird bei Geheimnissen (`.env`, Schlüssel, Tokens), Dateien über 5 MB, mehr als 300 Dateien oder einem
+verschachtelten Repo. In der Menüleiste: „Liegengebliebene Arbeit“, ein Klick fragt vorher.
