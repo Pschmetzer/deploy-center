@@ -80,7 +80,7 @@ plan_from() {  # plan_from <preview rows JSON> <facts JSON>  (rows as deploy-cha
 
 plan_print() {  # stdin: plan JSON
   jq -r 'def usd: if . == null then "?" else "$\(. * 100 | round / 100)" end;
-    (.projects[] | "  \(.platform)  \(.name)  \(.action)\(if .commits then "  (\(.commits) commits)" else "" end)  ≈ \(.usd | usd)\(if .minutes then ", \(.minutes) min" else "" end)\(if .rule then "  rule: \(.rule.name // "#\(.rule.index + 1)") -> \(.rule.then)" else "" end)\(if .ci then "  checks: \(.ci.state)" else "" end)"),
+    (.projects[] | "  \(.platform)  \(.name)  \(.action)\(if .commits then "  (\(.commits) commits)" else "" end)  ≈ \(.usd | usd)\(if .minutes then ", \(.minutes) min" else "" end)\(if .rule then "  rule: \(.rule.name // "#\(.rule.index + 1)") -> \(.rule.then)" else "" end)\(if .ci then "  checks: \(.ci.state)" else "" end)\(if .reason then "  (\(.reason))" else "" end)"),
     "Would start \(.total.builds) builds, ≈ \(.total.usd | usd)\(if .total.unpriced > 0 then " (\(.total.unpriced) without a price)" else "" end).",
     (if .window.denied then "The deploy window is closed now (\(.window.reason)): --yes needs --force \"why\"." else empty end),
     (if .budget then

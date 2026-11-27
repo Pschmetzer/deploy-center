@@ -36,7 +36,7 @@ prepare:on off status show run --weekdays --when-green --no-freeze --yes --only 
 group:list add remove run --yes --preview --json
 env-diff:--json
 secrets:--stdin --json
-plan:--when-green --since --json
+plan:--when-green --skip-failed --since --json
 list:--platform --auto --manual --format --json
 ignore:--list --undo --json
 readonly:on off
@@ -64,7 +64,7 @@ self-update:--check --json
 exit-codes:"
     # The flags of a command or provider verb (third place on): "<verb>:<flags>". Offered after a word that starts with -.
     flags_table="deploy:--preview --sha --wait --timeout --dry-run --force --yes --no-cache --json
-deploy-changed:--yes --dry-run --when-green --wait --strict --by-rules --only --exclude --platform --max --wait-for-window --force --json
+deploy-changed:--yes --dry-run --when-green --wait --strict --by-rules --skip-failed --between --only --exclude --platform --max --wait-for-window --force --json
 watch:--preview --timeout --interval --quiet --json --and
 verify:--path --expect --follow --tries --every --need --max-time --match --header --cert-days --warmup --retry-connrefused --watch-timeout --rollback-after --no-rollback --url --json
 logs:--id --runtime --follow --json

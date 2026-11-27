@@ -26,7 +26,9 @@ deploys deploy-changed                  # das tägliche Deploy: zeigt die Liste;
 deploys deploy-changed --when-green --yes  # nur Commits, deren CI bestanden hat (wartet auf laufende Checks)
 deploys deploy-json my-project --no-cache --yes   # Build ohne den Cache des Anbieters (Render, Netlify, DigitalOcean, Coolify; andere Anbieter lehnen es ab)
 deploys deploy mein-projekt             # ein Projekt nach Produktion, auf welcher Plattform auch immer
-deploys plan [--when-green] [--since 1d]  # dieselbe Liste mit Schätzung je Build und Summe (startet nichts); --since: nur was sich in dieser Zeit geändert hat
+deploys deploy-changed --skip-failed      # lässt ein Projekt aus, dessen neuester Build am Commit scheiterte, der jetzt rausginge; ein neuerer Commit (ein Fix) geht trotzdem
+deploys deploy-changed --between 03:00-05:00 --yes  # außerhalb dieser Ortszeiten startet --yes nichts und endet mit Exit 0
+deploys plan [--when-green] [--skip-failed] [--since 1d]  # dieselbe Liste mit Schätzung je Build und Summe (startet nichts); --since: nur was sich in dieser Zeit geändert hat
 deploys status                          # was gerade baut und was zuletzt fehlschlug
 deploys watch mein-projekt [--timeout 30m]  # dem neuesten Deploy folgen, bis es live oder fehlgeschlagen ist
 deploys logs mein-projekt               # das Ende des neuesten Build-Logs, Schlüssel und Tokens immer maskiert
@@ -93,6 +95,7 @@ deploys where                           # Konfigurationsordner, Version, Schlüs
 deploys autofix [--dry-run]             # siehe AUTOFIX.md
 deploys guard [--dry-run] | status | schedule on|off   # Auto-Deploy wieder aus, wo es zurückkam
 deploys schedule daily 09:00 [--when-green] [--by-rules]   # deploy-changed --yes einmal am Tag (launchd oder Cron-Zeile)
+deploys schedule daily 03:00 --when-green --skip-failed --between 03:00-05:00   # nachts gesammelt: was am selben Commit gescheitert ist, wartet; ein Lauf, den launchd zu spät startet (Mac schlief), startet nichts
 deploys hooks install [<repo>]          # vor jedem Push: welche Builds er starten würde (ein Git-Hook, nicht hooks.d)
 deploys logs mein-projekt --follow      # Build-Log laufend lesen (DEPLOYS_FOLLOW_EVERY Sekunden)
 deploys rollback mein-projekt | cancel mein-projekt   # zurück auf den Deploy davor, oder einen laufenden Build stoppen

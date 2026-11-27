@@ -17,8 +17,10 @@
 #     [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>]   narrow what it looks at
 #     [--by-rules]                            only what a "deploy" rule matches; "hold" rules always count
 #     [--when-green [--wait 30m] [--strict]]  only commits whose CI passed; waits for running checks
-#   deploys plan [--when-green] [--since 1d] [--json]      what deploy-changed --yes would start, and an estimate of its cost
-#   deploys schedule daily [HH:MM] [--weekdays] [--when-green] [--by-rules] [--strict] [--only <p>] [--exclude <p>] [--platform <p>] [--max <n>] | off | status [--json]
+#     [--skip-failed]                         leave out what failed at the commit that would go out (a newer commit still goes)
+#     [--between 03:00-05:00]                 --yes starts nothing outside these local times (a late launchd run after sleep)
+#   deploys plan [--when-green] [--skip-failed] [--since 1d] [--json]      what deploy-changed --yes would start, and an estimate of its cost
+#   deploys schedule daily [HH:MM] [--weekdays] [--when-green] [--skip-failed] [--between 03:00-05:00] [--by-rules] [--strict] [--only <p>] [--exclude <p>] [--platform <p>] [--max <n>] | off | status [--json]
 #                                             deploy-changed --yes once a day (launchd; else the cron line)
 #   deploys rules check [--json]              which rule of rules.json matches which waiting project, and why not
 #   deploys preview <p> [--json]              what a production deploy of <p> would do (commits, files, risk, rule, window, budget); starts nothing
@@ -1414,6 +1416,32 @@ apply_rules() {  # apply_rules <by-rules: 1 or empty>
   fi
   [ -z "${1:-}" ] || l="$(echo "$l" | jq -c '[.[] | select(.rule.then == "deploy")]')"
   list="$l"
+}
+
+# --skip-failed on the list of deploy-changed and plan: a project whose newest build failed at the
+# very commit that would go out now (nothing new since) is left out, so a broken commit is not
+# built again every night. A newer commit (a fix) still goes. A failed build whose commit is not
+# known is left out too. The left-out rows go to $failskip (PREVIEW_ROWS, action "would-skip").
+failskip="[]"
+skip_failed() {
+  local f="(($AUTOFIX_FAILED or $AUTOFIX_REPORT_ONLY) and ((.latestSha // null) == null or .latestSha == .headSha))"
+  failskip="$(echo "$list" | jq -c "[.[] | select($f)] | map(.latestSha // null) as \$ls | ($PREVIEW_ROWS)"' | [to_entries[] | .key as $k
+      | .value + {action:"would-skip", reason:(if $ls[$k] then "its last build failed at \($ls[$k][0:7]) and nothing is new since"
+                                               else "its last build failed and its commit is not known" end)}]')"
+  list="$(echo "$list" | jq -c "[.[] | select($f | not)]")"
+}
+
+# --between HH:MM-HH:MM: is the local time now inside it? (17:00-02:00 goes over midnight; the end is not inside.)
+# For the scheduled job: launchd starts a missed run when the Mac wakes, and that must not deploy at 09:00.
+between_ok() {  # between_ok <HH:MM-HH:MM> [<HHMM now>]
+  local a="${1%-*}" b="${1#*-}" now="${2:-$(date +%H%M)}"
+  a="${a/:/}"; b="${b/:/}"; a=$((10#$a)); b=$((10#$b)); now=$((10#$now))
+  if [ "$a" -le "$b" ]; then [ "$now" -ge "$a" ] && [ "$now" -lt "$b" ]
+  else [ "$now" -ge "$a" ] || [ "$now" -lt "$b" ]; fi
+}
+between_valid() {  # between_valid <text>: HH:MM-HH:MM with real times and two different ends
+  [[ "${1:-}" =~ ^([0-2][0-9]):([0-5][0-9])-([0-2][0-9]):([0-5][0-9])$ ]] || return 1
+  [ "$((10#${BASH_REMATCH[1]}))" -le 23 ] && [ "$((10#${BASH_REMATCH[3]}))" -le 23 ] && [ "${1%-*}" != "${1#*-}" ]
 }
 
 # What looks like a secret in the added lines of a GitHub comparison (.files[].patch), as
@@ -4012,12 +4040,13 @@ case "${1:-} ${2:-}" in
   "plan "*)
     # What deploy-changed would do, and what it would cost: its preview with a price per build.
     # --when-green asks CI as deploy-changed --when-green does. Starts nothing.
-    green=""; since=""; shift
+    green=""; since=""; skipf=""; shift
     while [ $# -gt 0 ]; do
       case "$1" in
         --when-green) green=1 ;;
+        --skip-failed) skipf=1 ;;
         --since) since="$(duration_s "${2:-}")" || die "--since takes a time like 1d, 12h or 30m"; [ "$since" -gt 0 ] || die "--since takes a time like 1d, 12h or 30m"; shift ;;
-        *) die "Unknown option $1. Usage: deploys plan [--when-green] [--since 1d] [--json]" ;;
+        *) die "Unknown option $1. Usage: deploys plan [--when-green] [--skip-failed] [--since 1d] [--json]" ;;
       esac
       shift
     done
@@ -4026,12 +4055,13 @@ case "${1:-} ${2:-}" in
     nonblank "$list" || list="[]"   # a read that printed nothing: jq on empty input prints nothing too, and every check below would misfire
     [ "$rc" = 0 ] || [ "$(echo "$list" | jq length)" != 0 ] || die "Could not tell what has changes (see above)."
     apply_rules ""
+    failskip="[]"; [ -z "$skipf" ] || skip_failed
     # --since: only what changed in that time (the newest commit on the branch is not older)
     [ -z "$since" ] || list="$(echo "$list" | jq -c --argjson cut "$(( $(date +%s) - since ))" 'map(select((.headAt // 0) >= $cut))')"
     [ -z "$green" ] || [ "$(echo "$list" | jq length)" = 0 ] || list="$(with_ci_preview "$list")"
     rows="$(echo "$list" | jq -c "$PREVIEW_ROWS"' as $r | [., $r] | transpose | map(.[1] + {id:(.[0].id // null)})' 2>/dev/null \
       || echo "$list" | jq -c "$PREVIEW_ROWS")"
-    rows="$(echo "$rows" | jq -c --argjson h "$held" '. + $h')"
+    rows="$(echo "$rows" | jq -c --argjson h "$held" --argjson fs "$failskip" '. + $h + $fs')"
     out="$(plan_from "$rows" "$(plan_facts "$rows")")"
     out="$(echo "$out" | jq -c --argjson w "$(window_json)" --argjson b "$(budget_json "$(echo "$out" | jq .total.usd)")" \
       '. + {window:{denied:($w.denied // false), reason:($w.reason // null)}, budget:$b}')"
@@ -4045,7 +4075,7 @@ case "${1:-} ${2:-}" in
     # Only what is known to have changes is started; what could not be read is named and left out.
     # --when-green: only commits whose CI passed; pending checks are waited for (--wait, default 30m).
     log_rotate DeployCenter-daily   # the daily job's log: only a run launchd (or the cron line) started rotates it
-    yes=""; green=""; maxw=1800; strict=""; byrules=""; dryc=""; only=(); excl=(); platf=""; maxn=0; wfw=""
+    yes=""; green=""; maxw=1800; strict=""; byrules=""; dryc=""; only=(); excl=(); platf=""; maxn=0; wfw=""; skipf=""; betw=""
     shift
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -4054,18 +4084,26 @@ case "${1:-} ${2:-}" in
         --strict) strict=1 ;;   # exit 2 when anything was skipped (cron and CI see it)
         --by-rules) byrules=1 ;;  # only what a "deploy" rule in rules.json matches
         --dry-run|-n) dryc=1 ;;   # what --yes would start; the same as leaving --yes out
+        --skip-failed) skipf=1 ;;  # leave out what failed at the commit that would go out (nothing new since)
+        --between) between_valid "${2:-}" || die "--between takes two local times like 03:00-05:00"; betw="$2"; shift ;;
         --only) [ -n "${2:-}" ] || die "--only takes a project name"; safe_name "$2"; only+=("$2"); shift ;;
         --exclude) [ -n "${2:-}" ] || die "--exclude takes a project name"; safe_name "$2"; excl+=("$2"); shift ;;
         --platform) [ -n "${2:-}" ] || die "--platform takes a platform"; is_provider "$2" || die "--platform: \"$2\" is not a platform here"; platf="$2"; shift ;;
         --max) case "${2:-}" in ''|*[!0-9]*|0) die "--max takes a number of projects, 1 or more" ;; esac; maxn="$2"; shift ;;
         --wait-for-window) wfw="$(duration_s "${2:-}")" || die "--wait-for-window takes a time like 3h, 90m or 30m"; shift ;;
         --wait) maxw="$(duration_s "${2:-}")" || die "--wait takes a time like 30m, 90s or 1h"; shift ;;
-        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes | --dry-run] [--when-green [--wait 30m] [--strict]] [--by-rules] [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>] [--wait-for-window 3h] [--force \"why\"] [--json]" ;;
+        *) die "Unknown option $1. Usage: deploys deploy-changed [--yes | --dry-run] [--when-green [--wait 30m] [--strict]] [--by-rules] [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>] [--skip-failed] [--between 03:00-05:00] [--wait-for-window 3h] [--force \"why\"] [--json]" ;;
       esac
       shift
     done
     [ -z "$dryc" ] || [ -z "$yes" ] || die "--dry-run and --yes are opposites: --dry-run only shows what --yes would start."
     [ -z "$byrules" ] || rules_on || die "--by-rules needs rules.json with a rule that is on (see docs/CLI.md, Rules)."
+    # --between: outside those times a run starts nothing and ends without an error (a run launchd
+    # starts late, when the Mac wakes after the time, must not deploy in the middle of the day).
+    if [ -n "$yes" ] && [ -n "$betw" ] && ! between_ok "$betw"; then
+      [ "$json" = 1 ] && echo '[]' || echo "It is $(date +%H:%M), outside $betw: nothing was started."
+      exit 0
+    fi
     # A closed deploy window refuses a start before any platform is asked (--wait-for-window waits for it below instead).
     [ -z "$yes" ] || [ -n "$wfw" ] || freeze_check
     rc=0; list="$(changed_json)" || rc=$?
@@ -4084,23 +4122,28 @@ case "${1:-} ${2:-}" in
          # --max keeps the projects that have waited longest (oldest first), not the first ones by name.
          | if $max > 0 then (sort_by(.oldestPendingAt // 9999999999999) | .[0:$max]) else . end')"
     fi
+    failskip="[]"; [ -z "$skipf" ] || skip_failed
     n="$(echo "$list" | jq length)"
     if [ "$held" != "[]" ] && [ "$json" != 1 ]; then
       echo "$held" | jq -r '.[] | "  \(.platform)  \(.name)  held by the rule \"\(.rule.name)\""'
     fi
+    if [ "$failskip" != "[]" ] && [ "$json" != 1 ]; then
+      echo "$failskip" | jq -r '.[] | "  \(.platform)  \(.name)  skipped: \(.reason)"'
+    fi
     if [ "$n" = "0" ]; then
       [ "$rc" = 0 ] || { [ -z "$yes" ] || freeze_check; die "Could not tell what has changes (see above). Nothing was started."; }   # a closed window is named first
-      if [ "$json" = 1 ]; then echo "$held" | jq '.'; else echo "Nothing to deploy."; fi; exit 0
+      if [ "$json" = 1 ]; then echo "$held" | jq --argjson fs "$failskip" '. + $fs'; else echo "Nothing to deploy."; fi; exit 0
     fi
     if [ -z "$yes" ]; then
       [ -z "$green" ] || list="$(with_ci_preview "$list")"
       if [ "$json" = 1 ]; then
-        echo "$list" | jq --argjson h "$held" "$PREVIEW_ROWS"' + $h'
+        echo "$list" | jq --argjson h "$held" --argjson fs "$failskip" "$PREVIEW_ROWS"' + $h + $fs'
         exit "$rc"
       fi
       echo "$list" | jq -r --argjson w "$maxw" '.[] | "  \(.platform)  \(.name)  (\(.pendingCommits // "?") commits)\(if .ci then
           "  checks: \(.ci.state)\(if .wouldDo == "would-wait" then ", would wait up to \($w / 60 | floor)m" elif .wouldDo == "would-skip" then ", would be skipped" else "" end)\(if .ci.reason then " (\(.ci.reason))" else "" end)" else "" end)\(if .risk.level == "red" then "  risk: \(.risk.reasons | map(select(.level == "red") | .text) | join("; "))" else "" end)"'
       w="$(window_json)"; [ "$(echo "$w" | jq -r .denied)" = true ] && echo "The deploy window is closed now ($(echo "$w" | jq -r .reason)): --yes needs --force \"why\"."
+      [ -z "$betw" ] || between_ok "$betw" || echo "It is $(date +%H:%M), outside $betw: --yes would start nothing now."
       if [ -n "$green" ]; then
         echo "$list" | jq -r 'def c($a): map(select(.wouldDo == $a)) | length;
           "Would start \(c("would-deploy")) now, wait for \(c("would-wait")), skip \(c("would-skip")). Run again with --yes to start them."'
@@ -4158,6 +4201,10 @@ case "${1:-} ${2:-}" in
     while IFS=$'\t' read -r plat name why; do
       [ -n "$plat" ] || continue; skip=$((skip+1)); say "$plat" "$name" skipped "held by the rule \"$why\""
     done <<< "$(echo "$held" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.rule.name)"')"
+    # --skip-failed: failed at this commit, nothing new since. Named and counted as skipped.
+    while IFS=$'\t' read -r plat name why; do
+      [ -n "$plat" ] || continue; skip=$((skip+1)); say "$plat" "$name" skipped "$why"
+    done <<< "$(echo "$failskip" | jq -r '.[] | "\(.platform)\t\(.name)\t\(.reason)"')"
     # A frontend after the backend of its repo, as the app's queue does: a Vercel project whose
     # repo also has a project on another platform in this batch starts last (sort_by is stable).
     todo="$(echo "$list" | jq -r '. as $all | sort_by(. as $x | if $x.platform == "vercel" and $x.repo
@@ -4572,14 +4619,15 @@ case "${1:-} ${2:-}" in
     sf="$CONFIG_DIR/schedule.json"; DAILY_LABEL="app.deploycenter.daily"
     case "${2:-}" in
       daily)
-        at="09:00"; extra=(); wkd=""; sd_usage="Usage: deploys schedule daily [HH:MM] [--weekdays] [--when-green [--wait 30m]] [--by-rules] [--strict] [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>] [--wait-for-window 3h]"
+        at="09:00"; extra=(); wkd=""; sd_usage="Usage: deploys schedule daily [HH:MM] [--weekdays] [--when-green [--wait 30m]] [--by-rules] [--strict] [--only <p>]... [--exclude <p>]... [--platform <p>] [--max <n>] [--skip-failed] [--between 03:00-05:00] [--wait-for-window 3h]"
         set -- "${@:3}"
         while [ $# -gt 0 ]; do
           a="$1"
           case "$a" in
             [0-2][0-9]:[0-5][0-9]) [ "$((10#${a%%:*}))" -le 23 ] || die "The time is HH:MM, 00:00 to 23:59."; at="$a" ;;
             --weekdays) wkd=1 ;;
-            --when-green|--by-rules|--strict) extra+=("$a") ;;
+            --when-green|--by-rules|--strict|--skip-failed) extra+=("$a") ;;
+            --between) between_valid "${2:-}" || die "--between takes two local times like 03:00-05:00"; extra+=("$a" "$2"); shift ;;
             # The options of deploy-changed that take a value, checked the way it checks them.
             --only|--exclude) [ -n "${2:-}" ] || die "$a takes a project name"; safe_name "$2"; extra+=("$a" "$2"); shift ;;
             --platform) [ -n "${2:-}" ] || die "--platform takes a platform"; is_provider "$2" || die "--platform: \"$2\" is not a platform here"; extra+=("$a" "$2"); shift ;;

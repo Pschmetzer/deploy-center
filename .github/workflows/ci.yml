@@ -141,6 +141,8 @@ jobs:
         run: bash tests/x-tests.sh
       - name: Repo upkeep tests (deploys repos)
         run: bash tests/repos-tests.sh
+      - name: Nightly batch tests (deploy-changed --skip-failed, --between)
+        run: bash tests/nightbatch-tests.sh
       - name: Preview tests (deploys preview)
         run: bash tests/preview-tests.sh
       - name: Performance guard tests (perf status, gate, clean, the hook)
@@ -296,6 +298,8 @@ jobs:
         run: bash tests/x-tests.sh
       - name: Repo upkeep tests (deploys repos)
         run: bash tests/repos-tests.sh
+      - name: Nightly batch tests (deploy-changed --skip-failed, --between)
+        run: bash tests/nightbatch-tests.sh
       - name: Preview tests
         run: bash tests/preview-tests.sh
       - name: Performance guard tests

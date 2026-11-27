@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- New: `deploy-changed --skip-failed` (also on `plan` and `schedule daily`) leaves out a project whose newest build failed at the commit that would go out; a newer commit, such as a fix, still goes. `--between 03:00-05:00` makes a scheduled run that launchd starts late (the Mac slept) start nothing
+
 ## 0.15.0 - 2026-11-27
 
 ### Highlights
