@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `deploys prs`: your open pull requests in every repo, kept free of merge conflicts and merged. It merges the base into a conflicting branch (Claude Code resolves what git cannot, and pushes only when the checks pass), lets GitHub update branches that are behind, and merges green ones; never a rebase, force push or `--admin`, one attempt per commit, caps per pass and day, busy local sessions skipped. Off until you turn it on; `deploys prs schedule on` runs it every 5 minutes, the menu shows "PRs: 2 conflicts, 3 merged today", Settings > Deploy has the toggles (docs/PRS.md).
 - Log masking: a password or secret without spaces keeps what follows a `;` or `,` again (`password=x;next`); only a value with spaces (also after a `,` or `;`) takes the rest of the line.
 - Docker scheduler: stopping it also ends the job's own child processes where there is no `timeout`.
 - Link `deploycenter://log?project=name` (or `platform:name`) opens that project's build log, read only like `select`; scripts and notes can point straight at a failure. The outage banner also watches GitLab's status page, but only while one of your projects lives on gitlab.com.
