@@ -23,6 +23,8 @@ struct StrandedReport: Decodable, Equatable {
     struct Summary: Decodable, Equatable { let folders: Int; let archived: Int; let noSession: Int; let files: Int; let unpushed: Int }
     let items: [Item]
     let summary: Summary
+    /// Set when the scan did not run (the Mac was overloaded): not a fresh look, so it changes no notification state.
+    let skipped: String?
 }
 
 struct StrandedPlan: Decodable {
@@ -82,7 +84,7 @@ final class StrandedMonitor: ObservableObject {
         scanning = true; defer { scanning = false }
         guard let r = try? await Tool.json(["repos", "stranded", "--json"], as: StrandedReport.self, timeout: 900) else { return }
         if r != report { report = r }
-        tell(r)
+        if r.skipped == nil { tell(r) }
     }
 
     /// A notification for a folder from an archived session that is new in the list; the first scan is silent.

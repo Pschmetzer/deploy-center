@@ -77,6 +77,11 @@ or private key, a file over 5 MB, more than 300 files (usually build output that
 It says when the repo is public, because pushing there publishes the work. The same changes twice are rescued once.
 Each rescue is in the journal.
 
+Limits: `DEPLOYS_STRANDED_MAX_FILES` (300), `DEPLOYS_STRANDED_MAX_KB` (5120) and `DEPLOYS_STRANDED_RECENT_MIN` (60,
+the minutes a folder must be untouched). With `--json` a refusal is an answer (exit 0, `"state": "refused"`, the files
+in `problems`); without it the exit code is 1. Tests (`tests/stranded-tests.sh`) use `DEPLOYS_STRANDED_NOW` (the
+clock) and `DEPLOYS_STRANDED_NO_PERF=1` (no load check), temporary repos with a local bare origin and a stub `gh`.
+
 In the menu bar, "Left-behind work: N folders" lists them (scanned once an hour, "Check now" for a fresh look). A click
 on one shows what would be pushed and asks; only then it pushes and opens the draft pull request. A folder from an
 archived session that is new in the list gets a notification; the first scan is silent.

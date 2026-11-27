@@ -80,9 +80,8 @@ stranded_one() {  # stranded_one <tree> <now> <live cwds, newline separated> <se
   last=0
   while IFS= read -r f; do
     i=$((i+1)); [ "$i" -le 200 ] || break
-    f="${f:3}"; f="${f#\"}"; f="${f%\"}"; case "$f" in *" -> "*) f="${f##* -> }" ;; esac
     m="$(stranded_mtime "$t/$f" || true)"; [ -n "$m" ] && [ "$m" -gt "$last" ] && last="$m"
-  done <<<"$st"
+  done <<<"$(stranded_paths "$t")"
   [ "$last" -gt 0 ] || last="$(git -C "$t" log -1 --format=%ct 2>/dev/null || echo 0)"
   [ $(( (now - last) / 60 )) -ge "$STRANDED_RECENT_MIN" ] || return 0
   printf '%s\n' "$3" | grep -qxF "$t" && return 0
@@ -150,6 +149,7 @@ stranded_check() {  # stranded_check <tree> <changed paths, one per line>
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     n=$((n+1))
+    if [ "$f" = "(a file name with a line break)" ]; then echo "file name with a line break: cannot be checked"; continue; fi
     case "$(basename "$f")" in
       .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa|id_rsa*|id_ed25519*|id_ecdsa*|credentials|credentials.*|.npmrc|.pypirc|.netrc|*.keychain*)
         echo "secret-like file: $f" ;;
@@ -163,6 +163,20 @@ stranded_check() {  # stranded_check <tree> <changed paths, one per line>
     fi
   done <<<"$2"
   [ "$n" -le "$STRANDED_MAX_FILES" ] || echo "too many files: $n (at most $STRANDED_MAX_FILES; build output or node_modules not ignored?)"
+}
+
+# The changed paths of a work tree, one per line, unquoted: read NUL-separated (-z), so a name with a quote, a
+# backslash, a tab or a non-ASCII byte is the real name and its size and token checks run. For a rename the record
+# after it (the old name) is skipped. A name with a newline in it is refused by stranded_check (it cannot be listed).
+stranded_paths() {  # stranded_paths <tree>
+  local rec skip=0
+  stranded_git -C "$1" status --porcelain -z -uall 2>/dev/null | while IFS= read -r -d '' rec; do
+    if [ "$skip" = 1 ]; then skip=0; continue; fi
+    case "$rec" in R*|C*) skip=1 ;; esac
+    rec="${rec:3}"
+    case "$rec" in *$'\n'*) echo "(a file name with a line break)"; continue ;; esac
+    printf '%s\n' "$rec"
+  done
 }
 
 stranded_rescue() {
@@ -179,7 +193,7 @@ stranded_rescue() {
   fi
   local files head base tree commit name branch vis problems now
   now="$(stranded_now)"
-  files="$(stranded_git -C "$t" status --porcelain -uall 2>/dev/null | cut -c4- | sed 's/^"//; s/"$//; s/.* -> //' || true)"
+  files="$(stranded_paths "$t")"
   head="$(git -C "$t" rev-parse -q --verify HEAD 2>/dev/null || echo "")"
   problems="$(stranded_check "$t" "$files")"
   base="$(git -C "$t" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)"; [ -n "$base" ] || base=main
@@ -196,7 +210,11 @@ stranded_rescue() {
   }
   say() { if [ "${json:-0}" = 1 ]; then summary "$@"; else printf '%s\n' "$2"; [ -z "$problems" ] || printf '  %s\n' "$problems"; fi; }
   if [ "$nfiles" = 0 ] && [ "$up" = 0 ]; then say nothing "Nothing to rescue in $t."; return 0; fi
-  if [ -n "$problems" ]; then say refused "Not rescued: the changes in $t hold something that must not be pushed. Fix or ignore these first:"; return 1; fi
+  # With --json the refusal is an answer (exit 0, state "refused", the problems listed) so the app can show the files.
+  if [ -n "$problems" ]; then
+    say refused "Not rescued: the changes in $t hold something that must not be pushed. Fix or ignore these first:"
+    [ "${json:-0}" = 1 ] && return 0; return 1
+  fi
   # The commit, built beside the folder's own index.
   local idx; idx="$(mktemp "${TMPDIR:-/tmp}/stranded-idx.XXXXXX")"
   if [ -n "$head" ]; then GIT_INDEX_FILE="$idx" git -C "$t" read-tree HEAD; else rm -f "$idx"; fi
@@ -227,5 +245,6 @@ stranded_rescue() {
   jq -n --argjson cur "$( [ -f "$rec" ] && cat "$rec" || echo '{}')" --arg p "$t" --arg k "$tree:$head" --arg b "$branch" --arg pr "$pr" \
     '$cur + {($p): {key: $k, branch: $b, pr: $pr}}' > "$rec.tmp" 2>/dev/null && mv -f "$rec.tmp" "$rec"
   journal_add cli repos live "rescued $(basename "$t") to $branch${pr:+ ($pr)}" 2>/dev/null || true
-  say rescued "Pushed $what to $branch${pr:+; draft pull request: $pr}${pr:- (no pull request: gh failed; open one for $branch by hand)}" "$pr"
+  local tail="; draft pull request: $pr"; [ -n "$pr" ] || tail=" (no pull request: gh failed; open one for $branch by hand)"
+  say rescued "Pushed $what to $branch$tail" "$pr"
 }

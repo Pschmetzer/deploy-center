@@ -44,6 +44,7 @@ repo live;     echo change >> "$root/live/a.txt"; old "$root/live"
 repo arch;     echo change >> "$root/arch/a.txt"; old "$root/arch"
 repo secret;   echo 'KEY=x' > "$root/secret/.env"; old "$root/secret"
 repo token;    printf 'const k = "ghp_%s";\n' "abcdefghijklmnopqrstuvwx1234" > "$root/token/k.js"; old "$root/token"
+repo odd;      printf 'const k = "ghp_%s";\n' "abcdefghijklmnopqrstuvwx1234" > "$root/odd/tab	\"q\" café.js"; old "$root/odd"
 repo many;     mkdir -p "$root/many/gen"; for i in $(seq 1 12); do echo "$i" > "$root/many/gen/$i.txt"; done; old "$root/many"
 repo wt;       git -C "$root/wt" worktree add -q -b claude/w "$root/wt/.claude/worktrees/w1" 2>/dev/null; echo w > "$root/wt/.claude/worktrees/w1/w.txt"
                printf '.claude/\n' > "$root/wt/.git/info/exclude"; old "$root/wt/.claude/worktrees/w1"
@@ -55,14 +56,14 @@ jq -n --arg c "$root/arch" '{cwd: $c, isArchived: true, title: "Old task", lastA
 
 j="$(D repos stranded --json)" || fail "stranded runs" "exit $?"
 names() { jq -r '[.items[].name] | sort | join(" ")' <<<"$j"; }
-expect "listed folders" "$(names)" "ahead arch dirty many secret token w1"
+expect "listed folders" "$(names)" "ahead arch dirty many odd secret token w1"
 expect "archived first" "$(jq -r '.items[0].name' <<<"$j")" arch
 expect "archived class" "$(jq -r '.items[] | select(.name == "arch") | .class' <<<"$j")" archived
 expect "changed files counted" "$(jq -r '.items[] | select(.name == "dirty") | .changed' <<<"$j")" 2
 expect "unpushed without upstream" "$(jq -r '.items[] | select(.name == "ahead") | "\(.changed) \(.unpushed) \(.branch)"' <<<"$j")" "0 1 feature"
 expect "worktree under .claude/worktrees" "$(jq -r '.items[] | select(.name == "w1") | .repoName' <<<"$j")" wt
-expect "cached result" "$(D repos stranded --cached --json | jq -r '.summary.folders')" 7
-case "$(D repos stranded)" in *"Work left behind: 7 folders"*) ok "text output" ;; *) fail "text output" "$(D repos stranded)" ;; esac
+expect "cached result" "$(D repos stranded --cached --json | jq -r '.summary.folders')" 8
+case "$(D repos stranded)" in *"Work left behind: 8 folders"*) ok "text output" ;; *) fail "text output" "$(D repos stranded)" ;; esac
 
 # rescue: dry run first, the folder untouched
 state() { ( cd "$1" && git rev-parse HEAD; git status --porcelain; cksum .git/index; find . -path ./.git -prune -o -type f -exec cksum {} + | sort ) 2>/dev/null; }
@@ -89,6 +90,9 @@ expect "unpushed commit rescued as is" "$(git -C "$tmp/origin-ahead.git" rev-par
 # refusals
 expect "secret file refused" "$(D repos rescue "$root/secret" --yes --json | jq -r '"\(.state) \(.problems[0])"')" "refused secret-like file: .env"
 expect "token refused" "$(D repos rescue "$root/token" --yes --json | jq -r '"\(.state) \(.problems[0])"')" "refused looks like a key or token inside: k.js"
+expect "token in a quoted file name refused" "$(D repos rescue "$root/odd" --yes --json | jq -r '.state')" refused
+D repos rescue "$root/secret" --yes >/dev/null 2>&1; expect "refusal exits 1 without --json" "$?" 1
+case "$(D repos rescue "$root/dirty" --yes --json | jq -r .note)" in *"Pushed"*"pull/7"*"pull/7"*) fail "rescue note names the PR once" "twice" ;; *) ok "rescue note names the PR once" ;; esac
 expect "too many files refused" "$(DEPLOYS_STRANDED_MAX_FILES=10 D repos rescue "$root/many" --yes --json | jq -r '.state')" refused
 expect "big file refused" "$(DEPLOYS_STRANDED_MAX_KB=0 D repos rescue "$root/dirty" --json | jq -r '.problems | length > 0')" true
 D repos rescue "$root/live" --yes >/dev/null 2>&1; expect "live session refused" "$?" 1
