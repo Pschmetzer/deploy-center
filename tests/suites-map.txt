@@ -132,6 +132,8 @@ tests/localsessions-tests.sh tests/providers/*
 tests/desktopsessions-tests.sh deploys
 tests/desktopsessions-tests.sh lib/*
 tests/desktopsessions-tests.sh tests/fixtures/*
+tests/stranded-tests.sh deploys
+tests/stranded-tests.sh lib/*
 tests/prs-tests.sh deploys
 tests/prs-tests.sh lib/*
 tests/prs-tests.sh providers/*
