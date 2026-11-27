@@ -360,7 +360,8 @@ repos_schedule() {
 #   origin, and it has no uncommitted change, no commit on no remote, no merge or rebase running, no lock, no process
 #   inside, no running Claude session (session files, `claude agents --json`) and no open (not archived) desktop
 #   session, and was not touched for a day (an archived session's folder need not wait);
-#   a local branch merged into origin/<default> that no worktree has checked out is deleted (its commit is journaled);
+#   a local branch merged into origin/<default> that no worktree has checked out is deleted (its name and commit go to
+#   repos-clean-branches.log, one journal line per repo);
 #   then `git worktree prune`. With --yes the automatic rescue (`repos rescue --auto --yes`, when it is on) runs first,
 #   so left-behind work is in a draft pull request before anything is looked at; a folder with changes is never removed.
 # Without --yes nothing changes. The result goes to repos-clean-last.json. --scheduled (the LaunchAgent, daily at 04:00)
@@ -377,7 +378,8 @@ repos_clean_one() {  # repos_clean_one <repo> <apply> <live cwds> <sessions JSON
   [ -n "$def" ] || { row kept "$repo" "" "no origin/main or origin/master"; rm -rf "$REPOS_PR_CACHE"; return 0; }
   base="origin/$def"
   local gone_list="" keep_br=" $def "
-  while IFS=$'\t' read -r wt b lk; do
+  # Fields split on \037, not a tab: a tab is whitespace to read, so an empty branch (detached) would shift the rest.
+  while IFS=$'\037' read -r wt b lk; do
     [ -d "$wt" ] || continue
     h="$(git -C "$wt" rev-parse -q --verify HEAD 2>/dev/null || true)"
     why=""
@@ -409,19 +411,23 @@ repos_clean_one() {  # repos_clean_one <repo> <apply> <live cwds> <sessions JSON
     case "$gone_list" in *" $b "*) [ -z "$b" ] || keep_br="$keep_br$b " ;; esac
   done < <(git -C "$repo" worktree list --porcelain 2>/dev/null | awk '
     /^worktree /{p=substr($0,10); b=""; l=0} /^branch /{b=substr($0,19)} /^locked/{l=1}
-    /^$/{ if (n++) print p "\t" b "\t" l; p="" } END{ if (p!="" && n++) print p "\t" b "\t" l }')
+    /^$/{ if (n++) print p "\037" b "\037" l; p="" } END{ if (p!="" && n++) print p "\037" b "\037" l }')
   # The main checkout's branch is never deleted.
   b="$(git -C "$repo" symbolic-ref -q --short HEAD 2>/dev/null || true)"; [ -z "$b" ] || keep_br="$keep_br$b "
   [ "$apply" != 1 ] || git -C "$repo" worktree prune 2>/dev/null || true
+  # Deleted branches: one journal line per repo (a repo may have thousands); each name and commit goes to
+  # repos-clean-branches.log, so `git branch <name> <commit>` brings any of them back.
+  local nb=0 blog="$CONFIG_DIR/repos-clean-branches.log"
   while IFS=$'\t' read -r b h; do
     case "$keep_br" in *" $b "*) continue ;; esac
     repos_merged "$repo" "$base" "$b" "$h" || continue
     if [ "$apply" = 1 ]; then
       git -C "$repo" branch -D "$b" >/dev/null 2>&1 || continue
-      journal_add cli repos live "branch $b of $(basename "$repo") deleted (merged), was at $h: git branch $b $h brings it back" 2>/dev/null || true
+      printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$repo" "$b" "$h" >> "$blog"; nb=$((nb+1))
     fi
     row branch "" "$b" merged 0 "$h"
   done < <(git -C "$repo" for-each-ref --format='%(refname:short)%09%(objectname)' refs/heads/ 2>/dev/null)
+  [ "$nb" = 0 ] || journal_add cli repos live "$nb merged branches of $(basename "$repo") deleted; names and commits in repos-clean-branches.log (git branch <name> <commit> brings one back)" 2>/dev/null || true
   rm -rf "$REPOS_PR_CACHE"
 }
 

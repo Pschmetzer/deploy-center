@@ -122,8 +122,8 @@ deploys repos clean schedule on      # Sundays at 04:00 (a Mac that was off catc
   is only gone on origin stays;
 - runs `git worktree prune`.
 
-A folder with changes is never removed, rescued or not. Every removal and every deleted branch, with its commit, goes
-to the journal (`git branch <name> <commit>` brings one back); the result goes to `repos-clean-last.json`. It shares
+A folder with changes is never removed, rescued or not. Every removal goes to the journal, deleted branches with one
+line per repo; their names and commits are in `repos-clean-branches.log` (`git branch <name> <commit>` brings one back); the result goes to `repos-clean-last.json`. It shares
 its lock with `repos sync`. `deploys clean` stays what it was: build output in old worktrees, when the disk is full.
 
 ## In the app and for Claude
