@@ -13,7 +13,7 @@ In der Menüleiste steht neben dem Deploy-Center-Symbol ein Punkt:
 | Punkt | Bedeutet | Was tun |
 | --- | --- | --- |
 | grün | Speicherdruck normal, kein Swappen, Last unter einem Prozess pro Kern. | Alles starten. |
-| gelb | Ausgelastet: Speicherdruck auf „warn“, etwas Swappen, hohe Last, oder die Grenze für schwere Checks ist erreicht. | Schwere Checks warten kurz, bis die Bremse sie durchlässt. |
+| gelb | Ausgelastet: Speicherdruck auf „warn“, etwas Swappen, mehr als 3 GB Swap belegt, Last über einem Prozess pro Kern, oder die Grenze für schwere Checks ist erreicht. | Schwere Checks warten kurz, bis die Bremse sie durchlässt. |
 | rot | Überlastet: Speicherdruck kritisch, Swap fast voll und wächst, Last über 4 pro Kern. | Nichts Schweres mehr lokal starten. Alte Sitzungen archivieren, Arbeit in Cloud-Sitzungen geben. |
 
 Das Menü zeigt darunter den Grund, die drei größten Verbraucher (zum Beispiel „Checks and builds (26) – 7,3 GB“),
@@ -48,6 +48,17 @@ gemeldet, nie gelöscht). Im Menü unter „Docker“ hat jeder laufende Stack �
 wird nur mit `docker stop`: Container, Volumes und Daten bleiben. Automatisches Stoppen nach 2 Stunden ohne Benutzung
 (bei Gelb 1 Stunde, bei Rot 30 Minuten) ist aus und wird mit `deploys perf install --docker --yes` eingeschaltet;
 Stacks unter `"docker": {"always": [...]}` in `~/.config/deploys/perf.json` bleiben immer an.
+
+## Entlasten bei Speicherdruck
+
+`deploys perf install --clean --shed --yes` schaltet es ein (Standard: aus), `deploys perf shed` zeigt, was gerade
+gestoppt würde. Wird der Speicher knapp (Speicherdruck „warn“, Swappen, wenig freier Speicher oder Swap; hohe Last
+allein zählt nicht), stoppt der Agent höchstens alle 5 Minuten bis zu 3 Dev-Server (`next dev`, `vite` …), die
+niemand mehr braucht: deren Claude-Sitzung archiviert ist, deren Sitzung fertig ist und an deren Port seit
+30 Minuten kein Client hing, oder die ohne Sitzung, Terminal und Claude-Prozess 30 Minuten unbenutzt sind. Dazu
+ungenutzte Docker-Stacks ohne Datenbank. Jeder Stopp kommt als Mitteilung und ins Protokoll. Nie gestoppt: Claude,
+Chrome, Datenbanken, launchd-Jobs. Das hilft über Spitzen; ist der Mac den ganzen Tag voll, gehören Sitzungen in die
+Cloud.
 
 ## Aufräumer
 

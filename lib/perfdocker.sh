@@ -86,9 +86,12 @@ perfdocker_find() {  # perfdocker_find <name>: the stack JSON or an error
 }
 
 # perfdocker_idle_tick <level>: the optional idle stop (autoStop), every 5 minutes from perf tick.
+# With only shed on (lib/perfshed.sh) the timers run the same, but a stack is stopped only under memory pressure
+# (<tight> true) and never one that holds a database container.
 perfdocker_idle_tick() {
-  local lvl="$1" conf now seen list idle s k last
-  conf="$(perf_conf)"; [ "$(jq -r '(.docker // {}).autoStop // false' <<<"$conf")" = true ] || return 0
+  local lvl="$1" tight="${2:-false}" conf now seen list idle s k last auto shedonly=0
+  conf="$(perf_conf)"; auto="$(jq -r '(.docker // {}).autoStop // false' <<<"$conf")"
+  if [ "$auto" != true ]; then [ "$(jq -r '(.shed // {}).enabled // false' <<<"$conf")" = true ] || return 0; shedonly=1; fi
   perfdocker_have || return 0
   now="$(perf_now)"; seen="$PERF_DIR/docker-seen.json"; [ -f "$seen" ] || echo '{}' > "$seen"
   idle="$(jq -r --arg l "$lvl" '(.docker // {}) as $d | if $l == "red" then ($d.idleMinRed // 30) elif $l == "yellow" then ($d.idleMinYellow // 60) else ($d.idleMin // 120) end' <<<"$conf")"
@@ -109,7 +112,9 @@ perfdocker_idle_tick() {
     [ -n "$s" ] || continue
     k="$(jq -r .stack <<<"$s")"; last="$(jq -r --arg k "$k" '.[$k] // 0' "$seen")"
     [ $(( now - last )) -ge $(( idle * 60 )) ] || continue
-    if perfdocker_act stop "$s"; then perfdocker_record "$k" "$s"; perfdocker_log "idle stop $k (idle $(( (now - last) / 60 )) min, level $lvl)"
+    if [ "$shedonly" = 1 ]; then { [ "$tight" = true ] && [ -z "$(jq -r '.dbIds // "" | gsub(" "; "")' <<<"$s")" ] && ! jq -e '.stack | test("redis|mongo|mysql|maria|postgres|supabase|elastic|clickhouse|minio"; "i")' <<<"$s" >/dev/null; } || continue; fi
+    if perfdocker_act stop "$s"; then perfdocker_record "$k" "$s"; perfdocker_log "idle stop $k (idle $(( (now - last) / 60 )) min, level $lvl$( [ "$shedonly" = 1 ] && echo ", shed"))"
+      declare -F journal_add >/dev/null && journal_add local "$k" shed "Stopped an idle Docker stack (idle $(( (now - last) / 60 )) min, level $lvl). deploys perf wake $k starts it again" 2>/dev/null
       perf_notify "Docker stack stopped" "$k was idle for $(( (now - last) / 60 )) min. deploys perf wake $k starts it again."; fi
   done <<<"$(jq -c '.[] | select(.running > 0 and (.always | not) and (.active | not))' <<<"$list")"
 }

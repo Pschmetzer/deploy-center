@@ -16,7 +16,7 @@ deploys perf status --json   # the same for scripts, the app and the MCP server 
 | Level | Means |
 | --- | --- |
 | green | Memory pressure normal, no swapping, load under one per core. Start anything. |
-| yellow | Busy: pressure at "warn", some swapping, load above the core count, or the cap of heavy checks reached. Heavy commands may still start if the gate lets them. |
+| yellow | Busy: pressure at "warn", some swapping, over 3 GB swap in use, load above the core count, or the cap of heavy checks reached. Heavy commands may still start if the gate lets them. |
 | red | Overloaded: pressure critical, swap almost full and still growing, load over 4 per core, or under 10 % memory free. Heavy commands wait; after the wait they are refused. |
 
 The signals: the kernel's memory pressure level (`kern.memorystatus_vm_pressure_level`), the swap-out rate (the
@@ -37,7 +37,7 @@ deploys perf wait [--max-wait 10m] [--fail-open]      # the same, without a comm
 A heavy command starts when all of these hold:
 
 - memory pressure is normal, or at "warn" with a swap-out rate under 20 MB/min and at least 2 GB swap free;
-- load is under 2.5 per core;
+- load is under 1 per core, now or over the last five minutes (a short spike from one build does not hold the next);
 - fewer heavy checks run than the cap (`max(2, cores / 4)`);
 - the last start through the gate was at least 20 s ago (so the new process shows up before the next one starts).
 
@@ -135,24 +135,58 @@ stops the VM when no container runs) and a lower memory limit in Docker's settin
 Caches (npm, Playwright browsers, Xcode DerivedData, simulator caches, `~/.cache`) are measured once a day with low
 priority and only reported, never deleted.
 
+## Shedding load under memory pressure
+
+```bash
+deploys perf shed              # what it would stop now (dry run)
+deploys perf shed --yes        # stop them, only while memory is tight
+deploys perf install --clean --shed --yes   # let the agent do it (off by default)
+```
+
+When memory is tight (pressure at "warn", swapping, under 10 % memory or under 2 GB swap free; load alone does not
+count, a sleeping dev server costs no CPU) the agent stops, at most every 5 minutes and at most `shed.maxPerRun` (3)
+at a time, biggest first, dev servers (`next dev`, `vite`, `webpack-dev`, `nodemon`, with everything they started)
+that nobody uses any more. The folder decides, by the most specific Claude desktop session folder that holds it
+(read-only, as `deploys desktop-sessions` reads them):
+
+| Rule S | Stopped when |
+| --- | --- |
+| archived | every session with that folder is archived |
+| done | every session with that folder is archived or done, and no client was connected to its port for `shed.idleMin` (30) minutes |
+| idle | no client for 30 minutes, no Claude Code process above it, no terminal, and no open session with that folder |
+
+"No client" means no open TCP connection on the server's side of one of its listening ports; the agent looks every
+minute. A server that comes back after a stop (same folder and command) is left alone for 24 hours. With shedding on,
+the Docker idle stop below also runs under memory pressure, for stacks without a database container (Postgres,
+Supabase, Redis, MySQL, Mongo ...). Every stop sends a notification, goes to the journal and to
+`~/.config/deploys/perf/clean.log`; TERM first, KILL after 10 s. Never stopped: Claude, Chrome, databases, launchd
+jobs, anything under an editor or a debugger. `deploys perf clean` lists the same servers as rule S, but never stops
+them.
+
+Shedding helps a Mac over a peak. It is no answer to a Mac that is full all day: then fewer local sessions, and more
+work in cloud sessions, are.
+
 ## Settings
 
 `~/.config/deploys/perf.json`, every key optional:
 
 ```json
 {
-  "maxLoadPerCore": 2.5, "redLoadPerCore": 4,
+  "maxLoadPerCore": 1.0, "redLoadPerCore": 4, "maxSwapUsedMB": 3072,
   "maxSwapoutMBPerMin": 20, "redSwapoutMBPerMin": 50,
   "minSwapFreeMB": 2048, "redSwapFreeMB": 1536,
   "maxChecks": 0, "maxWait": "10m", "stagger": 20, "pollEvery": 10,
   "clean": false, "notifyAfterMin": 5, "notifyEveryMin": 30,
   "reap": { "enabled": false, "limitMin": 45, "hardLimitMin": 90, "stallMin": 15, "stallMB": 500,
             "devserverIdleMin": 120, "perCommand": { "playwright": 120 } },
+  "shed": { "enabled": false, "idleMin": 30, "maxPerRun": 3 },
   "docker": { "autoStop": false, "always": [], "idleMin": 120, "idleMinYellow": 60, "idleMinRed": 30 }
 }
 ```
 
-`maxChecks: 0` means `max(2, cores / 4)`.
+`maxChecks: 0` means `max(2, cores / 4)`. `maxSwapUsedMB`: swap in use at or over it makes the level yellow, but does
+not hold heavy commands (macOS keeps swap in use for hours after the pressure is gone; the swap rate and free swap
+hold them).
 
 ## The app
 

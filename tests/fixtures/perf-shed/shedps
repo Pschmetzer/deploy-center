@@ -1,0 +1,13 @@
+400 1 05:00:00 10000 S ?? /bin/zsh -c npm run dev
+401 400 05:00:00 50000 S ?? npm run dev
+402 401 05:00:00 300000 S ?? node /work/a/node_modules/.bin/next dev
+403 402 05:00:00 900000 S ?? next-server (v15)
+410 1 03:00:00 200000 S ?? node /work/b/node_modules/.bin/vite
+420 1 03:00:00 200000 S ?? node /work/c/node_modules/.bin/vite
+430 1 03:00:00 150000 S ?? node /work/d/node_modules/.bin/next dev -p 3005
+440 1 03:00:00 150000 S ttys002 node /work/e/node_modules/.bin/vite
+450 460 03:00:00 150000 S ?? node /work/f/node_modules/.bin/next dev
+460 1 10:00:00 400000 S ?? /Users/you/.local/bin/claude
+470 1 03:00:00 150000 S ?? node /work/g/node_modules/.bin/next dev
+480 1 03:00:00 150000 S ?? node /work/h/node_modules/.bin/next dev
+490 1 03:00:00 150000 S ?? /usr/local/bin/postgres -D /data
