@@ -68,7 +68,7 @@ perf_shed_list() {
         up = 0; bad = 0; live = 0; q = P[p]; h = 0
         while (q > 1 && h < 40) { if (isdev(A[q])) up = 1
           if (A[q] ~ /claude-code\/[^ ]*\/claude( |$)|\/\.local\/bin\/claude( |$)/) live = 1
-          if (A[q] ~ /Code Helper|Visual Studio Code|Cursor\.app|Xcode\.app|lldb|--inspect/ || ST[q] ~ /T/ || index(jobs, " " q " ")) bad = 1
+          if (A[q] ~ /Code Helper|Visual Studio Code|Cursor\.app|Xcode\.app|lldb|--inspect/ || ST[q] ~ /T/) bad = 1
           q = P[q]; h++ }
         if (up || bad) continue
         pl = ""; mb = 0; tree(p); pl = substr(pl, 2)
