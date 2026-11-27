@@ -175,6 +175,20 @@ that is archived or done (and to no open one), or, without a session, whose bran
 (`gh`, at most 5 look-ups a pass, cached for an hour), is stopped once it stayed so for `stopFinished.graceMin` (10)
 minutes. TERM, KILL after 10 s, a notification and a journal entry; one that comes back is left alone for 24 hours.
 
+### MCP servers
+
+```bash
+deploys perf mcp [--days 7] [--json]
+```
+
+Every Claude Code session starts its own MCP servers, so 20 sessions run 20 copies of each. This groups them by name
+(processes, memory, in how many sessions), counts their tool calls in the last days in the session transcripts
+(`~/.claude/projects/*/*.jsonl`, read-only, cached per file in `perf/mcp-usage.tsv`) per project (a worktree counts
+as its repo) and reads only the server names in `~/.claude.json` (global or per project, never a command or env
+value). The suggestion: off where it had no call at all, off in the projects that never used it, or only in the
+projects that use it instead of everywhere. Nothing is changed: turning a server off is yours (`claude mcp remove`,
+the plugin or connector settings, a project's `.mcp.json`). The Mac app shows the same in the performance panel.
+
 ### Quitting apps
 
 Settings → General → "Quit apps I picked when the Mac is overloaded" (off by default) lists the running apps with

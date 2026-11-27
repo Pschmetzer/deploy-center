@@ -66,6 +66,13 @@ Cloud.
 Claude-Sitzung archiviert oder fertig ist oder deren Branch-PR gemergt oder geschlossen ist, nach 10 Minuten Karenz,
 mit Mitteilung und Protokolleintrag. `deploys perf finished` zeigt sie vorher.
 
+## MCP-Server
+
+`deploys perf mcp` zeigt die MCP-Server aller Claude-Code-Sitzungen nach Name: Prozesse, Speicher, in wie vielen
+Sitzungen, und wie oft ihre Tools in den letzten 7 Tagen aufgerufen wurden (aus den Sitzungsverläufen, nur lesend).
+Dazu ein Vorschlag, wo ein Server aus sein könnte. Geändert wird nichts; Abschalten entscheidest du. Die Mac-App zeigt
+dasselbe im Leistungs-Panel.
+
 ## Apps beenden
 
 Einstellungen → Allgemein → „Ausgewählte Apps beenden, wenn der Mac überlastet ist“ (Standard: aus) zeigt die

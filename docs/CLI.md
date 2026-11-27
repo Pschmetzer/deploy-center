@@ -161,6 +161,7 @@ deploys perf clean [--yes] [--dev]      # orphaned dev processes and test browse
 deploys perf reap [--all] [--yes] [--pid N]   # hung and orphaned process trees by class (PERF.md)
 deploys perf consumers | docker | stop <stack> --yes | wake <stack>   # Docker stacks, simulators, caches
 deploys perf shed [--yes]               # unused dev servers (rule S), stopped only under memory pressure (PERF.md)
+deploys perf mcp [--days 7] [--json]   # MCP servers by name: memory, sessions, tool calls, where they could be off
 deploys perf finished [--yes]           # dev servers of archived or done sessions and merged branches (PERF.md)
 deploys perf install [--clean] [--docker] [--shed] [--stop-finished] --yes | uninstall | hook   # the launchd agent; the Claude Code hook entry
 deploys local-sessions [--json]         # Claude Code sessions on this Mac: tasks started together on one repo, twins, idle ones (LOCAL-SESSIONS.md)
