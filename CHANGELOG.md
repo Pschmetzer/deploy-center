@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New: `deploys desktop-sessions [--json]` and a menu line "Done, still open: N across M accounts": the Claude desktop app's Code sessions of every account on this Mac, which are done (all pull requests merged or closed, nothing running, nobody asked) but not archived, with a notification for new ones. Read-only; archiving stays with the Claude app's "Auto-archive sessions when their pull request closes" setting in each account ([docs/LOCAL-SESSIONS.md](docs/LOCAL-SESSIONS.md)).
 - `deploys prs`: your open pull requests in every repo, kept free of merge conflicts and merged. It merges the base into a conflicting branch (Claude Code resolves what git cannot, and pushes only when the checks pass), lets GitHub update branches that are behind, and merges green ones; never a rebase, force push or `--admin`, one attempt per commit, caps per pass and day, busy local sessions skipped. Off until you turn it on; `deploys prs schedule on` runs it every 5 minutes, the menu shows "PRs: 2 conflicts, 3 merged today", Settings > Deploy has the toggles (docs/PRS.md).
 - Log masking: a password or secret without spaces keeps what follows a `;` or `,` again (`password=x;next`); only a value with spaces (also after a `,` or `;`) takes the rest of the line.
 - Docker scheduler: stopping it also ends the job's own child processes where there is no `timeout`.

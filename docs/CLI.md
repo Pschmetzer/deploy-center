@@ -159,6 +159,7 @@ deploys perf consumers | docker | stop <stack> --yes | wake <stack>   # Docker s
 deploys perf install [--clean] [--docker] --yes | uninstall | hook   # the launchd agent; the Claude Code hook entry
 deploys local-sessions [--json]         # Claude Code sessions on this Mac: tasks started together on one repo, twins, idle ones (LOCAL-SESSIONS.md)
 deploys local-sessions stop <pid> --yes # end one session (its transcript file stays); without --yes only what it would do
+deploys desktop-sessions [--json]       # the desktop app's Code sessions per account: done but not archived yet (LOCAL-SESSIONS.md)
 deploys local-sessions set max-local 30 | bundle-to 3 | burst-min 10 | idle-min 60   # yellow count, what counts as started together, idle
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE-IN-APP.md
 deploys scan start owner/repo           # Claude Code looks for bugs and opens one fix PR (SCAN.md)
@@ -337,6 +338,7 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_ROUTINE_TOKEN` | the token of a Claude routine, instead of the keychain (for CI; never put it on a command line) |
 | `DEPLOYS_CLAUDE_PROJECTS` | where Claude Code keeps its project folders (default `~/.claude/projects`) |
 | `DEPLOYS_AUTOFIX_PER_DAY`, `DEPLOYS_AUTOFIX_PER_PROJECT` | autofix caps per 24 h (default 6 and 2; `0` = no cap); also `~/.config/deploys/autofix-limits.json` with `perDay` and `perProject`, the variables win |
+| `DEPLOYS_CLAUDE_BIN` | the `claude` CLI that `deploys desktop-sessions` asks for the signed-in account (default: found on PATH) |
 | `DEPLOYS_PRS_EVERY`, `DEPLOYS_PRS_TIMEOUT` | `deploys prs`: seconds between scheduled runs (default 300) and the most a conflict fix by Claude may take (default 1800); docs/PRS.md |
 | `DEPLOYS_GITLAB_HOSTS` | self-managed GitLab hosts (docs/GITLAB.md) |
 | `DEPLOYS_HTTP_TRACE` | `1`: one line per call to a platform on stderr (method, path without query, status, time; no header, no body); `--debug` sets it |

@@ -129,6 +129,8 @@ jobs:
         run: bash tests/sessions-tests.sh
       - name: Local session counter tests (deploys local-sessions)
         run: bash tests/localsessions-tests.sh
+      - name: Desktop session monitor tests (deploys desktop-sessions)
+        run: bash tests/desktopsessions-tests.sh
       - name: Pull request conflict and merge tests (deploys prs)
         run: bash tests/prs-tests.sh
       - name: Clean tests (deploys clean)
@@ -280,6 +282,8 @@ jobs:
         run: bash tests/sessions-tests.sh
       - name: Local session counter tests (deploys local-sessions)
         run: bash tests/localsessions-tests.sh
+      - name: Desktop session monitor tests (deploys desktop-sessions)
+        run: bash tests/desktopsessions-tests.sh
       - name: Pull request conflict and merge tests (deploys prs)
         run: bash tests/prs-tests.sh
       - name: Clean tests (deploys clean)
