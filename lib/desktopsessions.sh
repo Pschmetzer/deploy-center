@@ -204,8 +204,9 @@ dsess_judge() {  # dsess_judge <files> <live> <agents> <activeOrg> <conf> <now> 
            elif $s.status == "blocked" then "blocked"
            elif ($s.prs | length) == 0 and $s.status == "completed" then "idle"
            else "open" end) as $base
+        | ($t.end // "") as $end
         | ($base != "running" and $base != "waiting" and $base != "done"
-           and ($t.end // "") as $e | ($e == "limit" or $e == "error" or $e == "cut")
+           and ($end == "limit" or $end == "error" or $end == "cut")
            and $idleM != null and $idleM >= $conf.stoppedMin) as $stopped
         | $s + {live: ($procs | length > 0), busy: $busy, waiting: $asks, idleHours: $idleH, idleMin: $idleM,
                 folder: ($s.cwd | split("/") | map(select(. != "")) | last // ""),
