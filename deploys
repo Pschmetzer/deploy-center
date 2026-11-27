@@ -3926,9 +3926,7 @@ case "${1:-} ${2:-}" in
     declare -F note_main >/dev/null || die "lib/notes.sh is not next to deploys."
     note_main "${@:2}" ;;
 
-  "morning "*)
-    declare -F morning_main >/dev/null || die "lib/morning.sh is not next to deploys."
-    morning_main "${@:2}" ;;
+  "morning "*) declare -F morning_main >/dev/null || die "lib/morning.sh is not next to deploys."; morning_main "${@:2}" ;;
   "digest "*)
     declare -F digest_main >/dev/null || die "lib/digest.sh is not next to deploys."
     digest_main "${@:2}" ;;
