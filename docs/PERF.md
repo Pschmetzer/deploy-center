@@ -180,8 +180,8 @@ minutes. TERM, KILL after 10 s, a notification and a journal entry; one that com
 Settings → General → "Quit apps I picked when the Mac is overloaded" (off by default) lists the running apps with
 their memory and a "Not needed?" suggestion (everything running except Chrome and the never list) to pick with one
 click; the list is `"quitApps": {"enabled", "apps": [bundle ids], "idleMin": 30, "helpers": false}` in `perf.json`.
-Deploy Center itself does it, so it has to run: only when the Mac is red with memory pressure for 5 minutes and a
-shedding pass had 90 s to work, one app at a time (at most one every 2 minutes), biggest first, only apps in the
+Deploy Center itself does it, so it has to run, and it needs shedding on (`--shed`): only when the Mac is red with
+memory pressure for 5 minutes and a shedding pass in that time had 90 s to work, one app at a time (at most one every 2 minutes), biggest first, only apps in the
 background that were not active for `idleMin` minutes. Only like ⌘Q (`terminate`), never forced: an app with unsaved
 documents asks and stays open, and is left alone until the pressure is over. With `helpers`, windowless helper
 processes inside the quit app's bundle get a TERM (never login items, XPC services, launchd jobs or system services,
