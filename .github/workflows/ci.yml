@@ -131,6 +131,8 @@ jobs:
         run: bash tests/localsessions-tests.sh
       - name: Desktop session monitor tests (deploys desktop-sessions)
         run: bash tests/desktopsessions-tests.sh
+      - name: Pull request conflict and merge tests (deploys prs)
+        run: bash tests/prs-tests.sh
       - name: Clean tests (deploys clean)
         run: bash tests/clean-tests.sh
       - name: Extra commands (lib/x-*.sh, tests/x/)
@@ -282,6 +284,8 @@ jobs:
         run: bash tests/localsessions-tests.sh
       - name: Desktop session monitor tests (deploys desktop-sessions)
         run: bash tests/desktopsessions-tests.sh
+      - name: Pull request conflict and merge tests (deploys prs)
+        run: bash tests/prs-tests.sh
       - name: Clean tests (deploys clean)
         run: bash tests/clean-tests.sh
       - name: Extra commands (lib/x-*.sh)

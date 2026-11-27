@@ -32,6 +32,7 @@ tests/examples-tests.sh
 tests/sessions-tests.sh
 tests/localsessions-tests.sh
 tests/desktopsessions-tests.sh
+tests/prs-tests.sh
 tests/clean-tests.sh
 tests/x-tests.sh
 tests/repos-tests.sh

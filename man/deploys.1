@@ -81,7 +81,9 @@ No key is ever printed.
   deploys when [\-\-days 90] [\-\-by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
   deploys health [\-\-days 30] [\-\-project <p>] [\-\-no\-ci]   0\-100 per project from failures, recovery, age of the last deploy, CI
   deploys local\-sessions [\-\-json] | stop <pid> \-\-yes | set <key> <n>   Claude Code sessions on this Mac; tasks started together, twins (docs/LOCAL\-SESSIONS.md)
+  deploys desktop\-sessions [\-\-json]     Claude desktop sessions of every account on this Mac: done but still open (docs/LOCAL\-SESSIONS.md)
   deploys sessions [\-\-hours 6] [\-\-json] | add <owner/repo>   Claude cloud sessions on GitHub: merged, waiting, stuck
+  deploys prs [\-\-json] | run \-\-yes | schedule on|off   your open PRs in every repo: resolve conflicts, merge (opt\-in)
   deploys weeks [\-\-days 7] [\-\-project <p>]       the last days against the same number before: deploys, failure rate, recovery
   deploys export [\-\-format csv|json] [\-\-what journal|costs|all] [\-\-days 30] [\-\-out <file>]   journal and costs, fixed columns, secrets masked
   deploys doctor \-\-fix [\-\-json]             what to do about each problem (shown only, nothing is run)
@@ -320,6 +322,12 @@ where Claude Code keeps its project folders (default ~/.claude/projects)
 .TP
 .B DEPLOYS_AUTOFIX_PER_DAY, DEPLOYS_AUTOFIX_PER_PROJECT
 autofix caps per 24 h (default 6 and 2; 0 = no cap); also ~/.config/deploys/autofix\-limits.json with perDay and perProject, the variables win
+.TP
+.B DEPLOYS_CLAUDE_BIN
+the claude CLI that deploys desktop\-sessions asks for the signed\-in account (default: found on PATH)
+.TP
+.B DEPLOYS_PRS_EVERY, DEPLOYS_PRS_TIMEOUT
+deploys prs: seconds between scheduled runs (default 300) and the most a conflict fix by Claude may take (default 1800); docs/PRS.md
 .TP
 .B DEPLOYS_GITLAB_HOSTS
 self\-managed GitLab hosts (docs/GITLAB.md)
