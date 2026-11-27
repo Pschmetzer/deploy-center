@@ -100,4 +100,28 @@ expect "shed only, no memory pressure: no Docker stop" "$( [ -f "$tmp/docker.log
 perfdocker_idle_tick yellow true
 expect "under memory pressure: only the idle stack without a database (redis counts) is stopped" "$(grep 'docker stop' "$tmp/docker.log" | tr '\n' ' ')" "docker stop ffffffffffff "
 
+# --- the gate runs heavy commands at background priority while the Mac is busy ---
+printf '#!/bin/sh\necho "low:$*"\n' > "$tmp/taskpolicy"; chmod +x "$tmp/taskpolicy"
+export DEPLOYS_PERF_TASKPOLICY="$tmp/taskpolicy"
+echo '{"stagger":0,"pollEvery":1,"maxLoadPerCore":9}' > "$DEPLOYS_CONFIG/perf.json"
+expect "yellow: through taskpolicy -b" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" "low:-b echo hi"
+echo '{"stagger":0,"pollEvery":1,"maxLoadPerCore":9,"lowPriority":false}' > "$DEPLOYS_CONFIG/perf.json"
+expect "lowPriority false: as it is" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" "hi"
+printf '1\n61\n51539607552\n14\n{ 1.00 1.00 1.00 }\ntotal = 8192.00M  used = 10.00M  free = 8182.00M  (encrypted)\n' > "$fx/sysctl"
+echo '{"stagger":0,"pollEvery":1}' > "$DEPLOYS_CONFIG/perf.json"
+expect "green: full speed" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" "hi"
+echo '{"stagger":0,"pollEvery":1,"lowPriority":"always"}' > "$DEPLOYS_CONFIG/perf.json"
+expect "always: low even when green" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" "low:-b echo hi"
+unset DEPLOYS_PERF_TASKPOLICY
+
+# --- apps the Mac app would quit (its plan file), shown by perf clean ---
+echo '{"quitApps":{"enabled":true}}' > "$DEPLOYS_CONFIG/perf.json"
+rm -f "$DEPLOYS_CONFIG/perf/quit-plan.json"
+expect "no plan: the app is not running" "$(perf_quit_plan)" "$(printf '#\tthe Deploy Center app is not running: no apps are quit')"
+printf '{"time":%s,"enabled":true,"pressed":false,"candidates":[{"bundleId":"com.example.editor","name":"Example Editor","mb":2048,"idleMin":45}]}' "$now" > "$DEPLOYS_CONFIG/perf/quit-plan.json"
+expect "the plan lists the candidates" "$(json=0 perf_clean_main | grep -c 'would quit app  Example Editor  2048 MB  idle 45 min')" "1"
+expect "and in --json" "$(json=1 perf_clean_main | jq -c '.apps')" '[{"name":"Example Editor","mb":2048,"idleMin":45}]'
+echo '{}' > "$DEPLOYS_CONFIG/perf.json"
+expect "off: nothing about apps" "$(json=0 perf_clean_main | grep -c 'apps\|quit app')" "0"
+
 [ "$fails" = 0 ] && echo "perf-shed: all passed" || { echo "perf-shed: $fails failed"; exit 1; }

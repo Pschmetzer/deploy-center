@@ -80,13 +80,17 @@ perf_clean_main() {
   done
   list="$(perf_candidates 2>/dev/null || true)"
   # Rule S (lib/perfshed.sh) is only listed here; it stops under memory pressure through perf shed or the agent.
-  local shed=""; ! declare -F perf_shed_main >/dev/null || shed="$(perf_shed_main --tsv --snap '{}' 2>/dev/null || true)"
+  local shed="" quit=""; ! declare -F perf_shed_main >/dev/null || { shed="$(perf_shed_main --tsv --snap '{}' 2>/dev/null || true)"; quit="$(perf_quit_plan 2>/dev/null || true)"; }
   if [ "${json:-0}" = 1 ]; then
-    printf '%s\n' "$list" | jq -Rsc --argjson y "$doit" --argjson d "$dev" --arg s "$shed" '[split("\n")[] | select(length > 0) | split("\t") | {pid:(.[0] | tonumber), rule:.[1], ageS:(.[2] | tonumber), args:.[3]}] | {stopped:($y == 1), processes:(map(. + {stops:($y == 1 and (.rule != "C" or $d == 1))})
-      + [$s | split("\n")[] | select(length > 0) | split("\t") | {pid:(.[0] | tonumber), rule:"S", reason:.[1], ageS:(.[2] | tonumber), mb:(.[3] | tonumber), args:.[4], stops:false}])}'
+    printf '%s\n' "$list" | jq -Rsc --argjson y "$doit" --argjson d "$dev" --arg s "$shed" --arg q "$quit" '[split("\n")[] | select(length > 0) | split("\t") | {pid:(.[0] | tonumber), rule:.[1], ageS:(.[2] | tonumber), args:.[3]}] | {stopped:($y == 1), processes:(map(. + {stops:($y == 1 and (.rule != "C" or $d == 1))})
+      + [$s | split("\n")[] | select(length > 0) | split("\t") | {pid:(.[0] | tonumber), rule:"S", reason:.[1], ageS:(.[2] | tonumber), mb:(.[3] | tonumber), args:.[4], stops:false}]),
+      apps:[$q | split("\n")[] | select(length > 0) | split("\t") | select(.[0] != "#") | {name:.[0], mb:(.[1] | tonumber), idleMin:(.[2] | tonumber)}]}'
   fi
   if [ -n "$shed" ] && [ "$quiet" = 0 ] && [ "${json:-0}" != 1 ]; then
     printf '%s\n' "$shed" | awk -F'\t' '{ printf "would stop  %s  rule S (under memory pressure, with --shed)  %d min  %s MB  %s  %s\n", $1, $3 / 60, $4, $2, $5 }'
+  fi
+  if [ -n "$quit" ] && [ "$quiet" = 0 ] && [ "${json:-0}" != 1 ]; then
+    printf '%s\n' "$quit" | awk -F'\t' '$1 == "#" { print "apps: " $2; next } { printf "would quit app  %s  %s MB  idle %s min  (when red with memory pressure for 5 min, like Cmd-Q, by the Deploy Center app)\n", $1, $2, $3 }'
   fi
   if [ -z "$list" ]; then
     [ "$quiet" = 1 ] || [ "${json:-0}" = 1 ] || echo "perf clean: no orphaned dev processes."

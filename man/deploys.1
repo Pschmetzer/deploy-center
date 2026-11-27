@@ -314,6 +314,9 @@ seconds to wait after starting a Docker stack's databases (default 3)
 .B DEPLOYS_PERF_LABEL
 the launchd label of the performance agent (default app.deploycenter.perf)
 .TP
+.B DEPLOYS_PERF_TASKPOLICY
+the taskpolicy program perf gate runs a heavy command through at background priority (default /usr/sbin/taskpolicy; tests point it at a fake)
+.TP
 .B DEPLOYS_PERF_NOTIFY_CMD
 a program called with a title and a text instead of a Mac notification (no shell)
 .TP

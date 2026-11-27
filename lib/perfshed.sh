@@ -159,7 +159,21 @@ perf_shed_tick() {
   now="$(perf_now)"
   if [ "$(jq -r '.memoryTight // false' <<<"$snap")" = true ] && [ $(( now - $(cat "$PERF_DIR/last-shed" 2>/dev/null || echo 0) )) -ge 300 ]; then
     echo "$now" > "$PERF_DIR/last-shed"; json=0 perf_shed_main --yes --quiet --snap "$snap" || true
+    # The Mac app quits picked apps only after a shedding pass had its effect (app/AppQuit.swift).
+    perf_now > "$PERF_DIR/shed-done" 2>/dev/null || true
   else
     perf_shed_list --no-sessions >/dev/null 2>&1 || true
   fi
+}
+
+# perf_quit_plan: what the Mac app would quit now (perf/quit-plan.json, app/AppQuit.swift), as lines
+# `name<TAB>MB<TAB>idle min`, or one line `#<TAB>reason` when it cannot tell. Read-only.
+perf_quit_plan() {
+  local f="$PERF_DIR/quit-plan.json" on
+  on="$(perf_conf | jq -r '(.quitApps // {}).enabled // false')"
+  [ "$on" = true ] || return 0
+  if [ ! -f "$f" ] || [ $(( $(perf_now) - $(jq -r '.time // 0' "$f" 2>/dev/null || echo 0) )) -gt 180 ]; then
+    printf '#\tthe Deploy Center app is not running: no apps are quit\n'; return 0
+  fi
+  jq -r '.candidates[]? | "\(.name)\t\(.mb)\t\(.idleMin)"' "$f" 2>/dev/null
 }

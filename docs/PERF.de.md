@@ -60,6 +60,19 @@ ungenutzte Docker-Stacks ohne Datenbank. Jeder Stopp kommt als Mitteilung und in
 Chrome, Datenbanken, launchd-Jobs. Das hilft über Spitzen; ist der Mac den ganzen Tag voll, gehören Sitzungen in die
 Cloud.
 
+## Apps beenden
+
+Einstellungen → Allgemein → „Ausgewählte Apps beenden, wenn der Mac überlastet ist“ (Standard: aus) zeigt die
+laufenden Apps mit ihrem Speicher und einen Vorschlag „Nicht benötigt?“ zum Übernehmen mit einem Klick. Deploy Center
+muss laufen. Beendet wird nur bei Rot mit Speicherdruck seit 5 Minuten, nachdem das Entlasten oben seine Chance hatte,
+eine App nach der anderen, die größte zuerst, nur im Hintergrund und mindestens 30 Minuten unbenutzt, und nur wie ⌘Q:
+Mit ungesicherten Dokumenten bleibt die App offen. Optional auch ihre fensterlosen Helfer (nur TERM, nie Systemdienste
+oder launchd-Jobs). Jede App kommt als Mitteilung mit Name und Speicher und ins Protokoll. Nie: Claude, Terminal,
+iTerm, Xcode, Simulator, Finder, Deploy Center. `deploys perf clean` zeigt, was beendet würde.
+
+`deploys perf gate` startet schwere Befehle bei Gelb oder Rot mit niedriger Priorität (`taskpolicy -b`);
+`"lowPriority": false` in `perf.json` schaltet das ab.
+
 ## Aufräumer
 
 `deploys perf clean` listet verwaiste Dev-Prozesse (alte Checks ohne Elternprozess, Prozesse in gelöschten

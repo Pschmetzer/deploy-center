@@ -20,6 +20,8 @@ struct PerfStatus: Decodable, Equatable {
     let checks: Checks
     let claudeSessions: Int
     let groups: [Group]
+    /// Pressure at warn, swapping, little memory or swap free (lib/perf.sh); missing from older agents.
+    var memoryTight: Bool? = nil
 }
 
 /// A Docker stack from `deploys perf docker --json` (lib/perfdocker.sh).
@@ -97,6 +99,8 @@ final class PerfMonitor: ObservableObject {
                 await self?.refresh()
                 await self?.refreshDocker()
                 await self?.refreshRuns()
+                // Quitting the apps the person picked, when red with memory pressure (AppQuit.swift).
+                if let s = self?.status { await AppQuitter.shared.tick(level: s.level, memoryTight: s.memoryTight ?? false) }
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
         }

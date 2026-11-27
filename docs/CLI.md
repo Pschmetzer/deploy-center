@@ -340,6 +340,7 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_PERF_DB_WAIT` | seconds to wait after starting a Docker stack's databases (default 3) |
 | `DEPLOYS_PERF_NORECORD` | `1`: `perf status` does not record its sample |
 | `DEPLOYS_PERF_LABEL` | the launchd label of the performance agent (default `app.deploycenter.perf`) |
+| `DEPLOYS_PERF_TASKPOLICY` | the `taskpolicy` program `perf gate` runs a heavy command through at background priority (default /usr/sbin/taskpolicy; tests point it at a fake) |
 | `DEPLOYS_PERF_NOTIFY_CMD` | a program called with a title and a text instead of a Mac notification (no shell) |
 | `DEPLOYS_ROUTINE_TOKEN` | the token of a Claude routine, instead of the keychain (for CI; never put it on a command line) |
 | `DEPLOYS_CLAUDE_PROJECTS` | where Claude Code keeps its project folders (default `~/.claude/projects`) |

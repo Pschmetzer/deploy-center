@@ -178,6 +178,7 @@ struct SettingsView: View {
                 .disabled(!showMenuBar)
                 .help(L("From deploys perf status: memory pressure, swap, load and the biggest consumers.",
                         "Aus deploys perf status: Speicherdruck, Swap, Last und die größten Verbraucher."))
+            QuitAppsSettings()
             Toggle(L("Show the Claude Code sessions on this Mac", "Claude-Code-Sitzungen auf diesem Mac zeigen"), isOn: $localSessionsIndicator)
                 .disabled(!showMenuBar)
                 .help(L("From deploys local-sessions: tasks started together that belong in fewer sessions, the same task twice, idle ones. Ending one always asks first.",
