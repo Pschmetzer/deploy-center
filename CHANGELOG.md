@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.15.0 - 2026-11-27
+
+### Highlights
+
+- Pull request upkeep: `deploys prs` keeps your open pull requests in every repo free of merge conflicts and merges them, every 5 minutes if you turn it on
+- Claude desktop sessions of every account on this Mac: done but still open, stopped (limit, error, cut off), with "Open in Claude"
+- Left-behind work: `deploys repos stranded` finds uncommitted or unpushed work, `rescue` saves it to a draft pull request
+- `deploys lock`, `deploys more`, `deploys help <command>`; eight more known build failures with a hint
+- iPhone app: Render auto-deploy switch behind Face ID, private Live Activities, better contrast
+
 - New: `deploys repos stranded` finds work left behind in local checkouts and worktrees (uncommitted changes, commits on no remote), those of archived Claude sessions first; `deploys repos rescue <folder> --yes` pushes it to a new branch with a draft pull request without touching the folder, and refuses secrets, tokens, big files and build output. In the menu bar: "Left-behind work: N folders", a click asks first ([docs/REPOS.md](docs/REPOS.md)).
 - `deploys desktop-sessions` also finds stopped sessions (usage limit with its reset time, API error, a turn cut off mid-way; not ones you stopped yourself) idle for 10 minutes, with a link that opens each in the Claude app; the menu lists them with "Open in Claude" and can notify (opt-in, once per stop point, capped). The account in use is read from `~/.claude.json` (`accountUuid` only). Nothing is resumed automatically: there is no clean way to do that from outside the app ([docs/LOCAL-SESSIONS.md](docs/LOCAL-SESSIONS.md)).
 - New: `deploys desktop-sessions [--json]` and a menu line "Done, still open: N across M accounts": the Claude desktop app's Code sessions of every account on this Mac, which are done (all pull requests merged or closed, nothing running, nobody asked) but not archived, with a notification for new ones. Read-only; archiving stays with the Claude app's "Auto-archive sessions when their pull request closes" setting in each account ([docs/LOCAL-SESSIONS.md](docs/LOCAL-SESSIONS.md)).

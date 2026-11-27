@@ -32,7 +32,7 @@ jobs:
       # The action brings deploys (its own checkout of that release, with the vercel CLI cached) and
       # asks nothing. Pin to a release tag or a full commit SHA, not a branch. The tokens go only to
       # the steps that need them, not to the whole job.
-      - uses: Pschmetzer/deploy-center/integrations/action@v0.14.0
+      - uses: Pschmetzer/deploy-center/integrations/action@v0.15.0
         with:
           deploy: setup
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
