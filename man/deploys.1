@@ -23,8 +23,10 @@ No key is ever printed.
     [\-\-only <p>]... [\-\-exclude <p>]... [\-\-platform <p>] [\-\-max <n>]   narrow what it looks at
     [\-\-by\-rules]                            only what a "deploy" rule matches; "hold" rules always count
     [\-\-when\-green [\-\-wait 30m] [\-\-strict]]  only commits whose CI passed; waits for running checks
-  deploys plan [\-\-when\-green] [\-\-since 1d] [\-\-json]      what deploy\-changed \-\-yes would start, and an estimate of its cost
-  deploys schedule daily [HH:MM] [\-\-weekdays] [\-\-when\-green] [\-\-by\-rules] [\-\-strict] [\-\-only <p>] [\-\-exclude <p>] [\-\-platform <p>] [\-\-max <n>] | off | status [\-\-json]
+    [\-\-skip\-failed]                         leave out what failed at the commit that would go out (a newer commit still goes)
+    [\-\-between 03:00\-05:00]                 \-\-yes starts nothing outside these local times (a late launchd run after sleep)
+  deploys plan [\-\-when\-green] [\-\-skip\-failed] [\-\-since 1d] [\-\-json]      what deploy\-changed \-\-yes would start, and an estimate of its cost
+  deploys schedule daily [HH:MM] [\-\-weekdays] [\-\-when\-green] [\-\-skip\-failed] [\-\-between 03:00\-05:00] [\-\-by\-rules] [\-\-strict] [\-\-only <p>] [\-\-exclude <p>] [\-\-platform <p>] [\-\-max <n>] | off | status [\-\-json]
                                             deploy\-changed \-\-yes once a day (launchd; else the cron line)
   deploys rules check [\-\-json]              which rule of rules.json matches which waiting project, and why not
   deploys preview <p> [\-\-json]              what a production deploy of <p> would do (commits, files, risk, rule, window, budget); starts nothing

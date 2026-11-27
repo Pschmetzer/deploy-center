@@ -208,3 +208,6 @@ tests/repos-tests.sh lib/*
 tests/repos-tests.sh tests/fixtures/*
 tests/repos-tests.sh docs/*
 tests/x-tests.sh tests/x/*
+tests/nightbatch-tests.sh deploys
+tests/nightbatch-tests.sh lib/*
+tests/nightbatch-tests.sh docs/*
