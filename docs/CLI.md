@@ -160,7 +160,8 @@ deploys perf gate -- npm run verify     # start a heavy command only when there 
 deploys perf clean [--yes] [--dev]      # orphaned dev processes and test browsers; a dry run without --yes
 deploys perf reap [--all] [--yes] [--pid N]   # hung and orphaned process trees by class (PERF.md)
 deploys perf consumers | docker | stop <stack> --yes | wake <stack>   # Docker stacks, simulators, caches
-deploys perf install [--clean] [--docker] --yes | uninstall | hook   # the launchd agent; the Claude Code hook entry
+deploys perf shed [--yes]               # unused dev servers (rule S), stopped only under memory pressure (PERF.md)
+deploys perf install [--clean] [--docker] [--shed] --yes | uninstall | hook   # the launchd agent; the Claude Code hook entry
 deploys local-sessions [--json]         # Claude Code sessions on this Mac: tasks started together on one repo, twins, idle ones (LOCAL-SESSIONS.md)
 deploys local-sessions stop <pid> --yes # end one session (its transcript file stays); without --yes only what it would do
 deploys desktop-sessions [--json]       # the desktop app's Code sessions per account: done but not archived yet (LOCAL-SESSIONS.md)

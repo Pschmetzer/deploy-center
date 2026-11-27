@@ -24,7 +24,7 @@ perf_now() { if [ -n "${DEPLOYS_PERF_NOW:-}" ]; then echo "$DEPLOYS_PERF_NOW"; e
 perf_conf() {
   local f='{}'
   [ -f "$PERF_CONF" ] && f="$(jq -c 'if type == "object" then . else {} end' "$PERF_CONF" 2>/dev/null || echo '{}')"
-  jq -nc --argjson f "$f" '{maxLoadPerCore:2.5, redLoadPerCore:4, maxSwapoutMBPerMin:20, redSwapoutMBPerMin:50,
+  jq -nc --argjson f "$f" '{maxLoadPerCore:1.0, redLoadPerCore:4, maxSwapUsedMB:3072, maxSwapoutMBPerMin:20, redSwapoutMBPerMin:50,
     minSwapFreeMB:2048, redSwapFreeMB:1536, maxChecks:0, maxWait:"10m", stagger:20, pollEvery:10, clean:false,
     notifyAfterMin:5, notifyEveryMin:30} + $f'
 }
@@ -129,16 +129,18 @@ perf_judge() {
     | ([ (select($lvl == 2) | "kernel memory pressure is at warn"),
          (select(($rate // 0) >= 1) | "swapping out \($rate) MB/min"),
          (select($l1 >= $cpu) | "load \($l1) on \($cpu) cores"),
+         (select($su >= $c.maxSwapUsedMB) | "\($su / 1024 * 10 | round / 10) GB swap in use"),
          (select($p.checks >= $maxc) | "\($p.checks) heavy checks running (cap \($maxc))") ]) as $warn
     | ([ (select($lvl >= 4) | "pressure critical"),
          (select($lvl == 2 and ($rate == null)) | "pressure at warn, swap rate not known yet"),
          (select($lvl == 2 and $rate != null and $rate >= $c.maxSwapoutMBPerMin) | "pressure at warn and swapping \($rate) MB/min"),
          (select($lvl == 2 and $sfree != null and $sfree < $c.minSwapFreeMB) | "pressure at warn and only \($sfree) MB swap free"),
-         (select($lpc >= $c.maxLoadPerCore and $lpc <= $c.redLoadPerCore) | "load \($l1) is over \($c.maxLoadPerCore) per core"),
+         (select($lpc >= $c.maxLoadPerCore and ($l5 / $cpu) >= $c.maxLoadPerCore and $lpc <= $c.redLoadPerCore) | "load \($l1) is over \($c.maxLoadPerCore) per core"),
          (select($p.checks >= $maxc) | "\($p.checks) heavy checks already running (cap \($maxc))") ]) as $hold
     | { time:$t, level:(if ($red | length) > 0 then "red" elif ($warn | length) == 0 and ($rate == null or $rate < 1) then "green" else "yellow" end),
         reasons:(if ($red | length) > 0 then $red else $warn end),
         admit:(($red | length) == 0 and ($hold | length) == 0), hold:($red + $hold | unique),
+        memoryTight:($lvl >= 2 or ($rate // 0) >= 1 or ($free >= 0 and $free < 10) or ($sfree != null and $sfree < $c.minSwapFreeMB)),
         pressure:{level:$lvl, name:({"1":"normal","2":"warn","4":"critical"}[$lvl | tostring] // "unknown")},
         memory:{totalMB:$mem, freePct:(if $free < 0 then null else $free end)},
         swap:{totalMB:$st, usedMB:$su, freeMB:$sfree, swapoutMBPerMin:$rate},
@@ -278,10 +280,13 @@ perf_main() {
     docker|consumers|stop|wake)
       declare -F perfdocker_main >/dev/null || { echo "perf $sub needs lib/perfdocker.sh next to perf.sh" >&2; return 1; }
       perfdocker_main "$sub" ${rest[@]+"${rest[@]}"} ;;
+    shed)
+      declare -F perf_shed_main >/dev/null || { echo "perf shed needs lib/perfshed.sh next to perf.sh" >&2; return 1; }
+      perf_shed_main ${rest[@]+"${rest[@]}"} ;;
     clean|reap|tick|install|uninstall|hook)
       declare -F perfclean_main >/dev/null || { echo "perf $sub needs lib/perfclean.sh next to perf.sh" >&2; return 1; }
       perfclean_main "$sub" ${rest[@]+"${rest[@]}"} ;;
-    *) echo "Usage: deploys perf status|wait|gate|clean|reap|consumers|docker|stop|wake|install|uninstall|hook [--json]" >&2; return 2 ;;
+    *) echo "Usage: deploys perf status|wait|gate|clean|reap|shed|consumers|docker|stop|wake|install|uninstall|hook [--json]" >&2; return 2 ;;
   esac
 }
 
@@ -293,5 +298,9 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   [ -f "$_pd/perfclean.sh" ] && . "$_pd/perfclean.sh"
   # shellcheck source=lib/perfdocker.sh
   [ -f "$_pd/perfdocker.sh" ] && . "$_pd/perfdocker.sh"
+  # shellcheck source=lib/perfshed.sh
+  [ -f "$_pd/perfshed.sh" ] && . "$_pd/perfshed.sh"
+  # shellcheck source=lib/desktopsessions.sh
+  [ -f "$_pd/desktopsessions.sh" ] && . "$_pd/desktopsessions.sh"
   perf_main "$@"; exit $?
 fi

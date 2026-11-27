@@ -13,6 +13,7 @@
 #      30 minutes: stopped with its process group (its renderers);
 #   C  a dev server (next dev, vite) started without a terminal, older than 2 hours, with no live Claude Code session
 #      above it or in its folder: only listed, stopped only with --dev.
+#   S  a dev server nobody uses any more (lib/perfshed.sh): only listed here, stopped under memory pressure.
 # Never: a process launchd runs as a job, one listening on a TCP port (except C), Claude, Docker, databases, your
 # Chrome (/Applications/Google Chrome.app), Xcode.
 # The agent only reports (dry run) unless it was installed with --clean; `perf clean --yes` stops them by hand.
@@ -78,8 +79,14 @@ perf_clean_main() {
     shift
   done
   list="$(perf_candidates 2>/dev/null || true)"
+  # Rule S (lib/perfshed.sh) is only listed here; it stops under memory pressure through perf shed or the agent.
+  local shed=""; ! declare -F perf_shed_main >/dev/null || shed="$(perf_shed_main --tsv --snap '{}' 2>/dev/null || true)"
   if [ "${json:-0}" = 1 ]; then
-    printf '%s\n' "$list" | jq -Rsc --argjson y "$doit" --argjson d "$dev" '[split("\n")[] | select(length > 0) | split("\t") | {pid:(.[0] | tonumber), rule:.[1], ageS:(.[2] | tonumber), args:.[3]}] | {stopped:($y == 1), processes:map(. + {stops:($y == 1 and (.rule != "C" or $d == 1))})}'
+    printf '%s\n' "$list" | jq -Rsc --argjson y "$doit" --argjson d "$dev" --arg s "$shed" '[split("\n")[] | select(length > 0) | split("\t") | {pid:(.[0] | tonumber), rule:.[1], ageS:(.[2] | tonumber), args:.[3]}] | {stopped:($y == 1), processes:(map(. + {stops:($y == 1 and (.rule != "C" or $d == 1))})
+      + [$s | split("\n")[] | select(length > 0) | split("\t") | {pid:(.[0] | tonumber), rule:"S", reason:.[1], ageS:(.[2] | tonumber), mb:(.[3] | tonumber), args:.[4], stops:false}])}'
+  fi
+  if [ -n "$shed" ] && [ "$quiet" = 0 ] && [ "${json:-0}" != 1 ]; then
+    printf '%s\n' "$shed" | awk -F'\t' '{ printf "would stop  %s  rule S (under memory pressure, with --shed)  %d min  %s MB  %s  %s\n", $1, $3 / 60, $4, $2, $5 }'
   fi
   if [ -z "$list" ]; then
     [ "$quiet" = 1 ] || [ "${json:-0}" = 1 ] || echo "perf clean: no orphaned dev processes."
@@ -277,8 +284,9 @@ perf_tick_main() {
     echo "$now" > "$PERF_DIR/last-reap"; json=0 perf_reap_main --yes --quiet --notify || true
   fi
   if declare -F perfdocker_idle_tick >/dev/null && [ $(( now - $(cat "$PERF_DIR/last-docker" 2>/dev/null || echo 0) )) -ge 300 ]; then
-    echo "$now" > "$PERF_DIR/last-docker"; perfdocker_idle_tick "$lvl" || true
+    echo "$now" > "$PERF_DIR/last-docker"; perfdocker_idle_tick "$lvl" "$(jq -r '.memoryTight // false' <<<"$snap")" || true
   fi
+  ! declare -F perf_shed_tick >/dev/null || perf_shed_tick "$snap" || true
   declare -F perf_caches >/dev/null && perf_caches measure >/dev/null 2>&1 &
   lastc="$(cat "$PERF_DIR/last-clean" 2>/dev/null || echo 0)"
   if [ $(( now - lastc )) -ge 600 ]; then
@@ -303,15 +311,15 @@ perfclean_main() {
       echo "and add this entry to \"hooks\".\"PreToolUse\" in ~/.claude/settings.json (nothing is changed here):"
       perf_hook_json ;;
     install)
-      local yes=0 clean=0 dock=0 reap=0 a
-      for a in "$@"; do case "$a" in --yes) yes=1 ;; --clean) clean=1 ;; --docker) dock=1 ;; --reap) reap=1 ;; *) echo "Usage: deploys perf install [--reap] [--clean] [--docker] --yes" >&2; return 2 ;; esac; done
-      [ "$yes" = 1 ] || { echo "perf install writes a launchd agent ($PERF_LABEL, every minute: status, notification, cleanup report). Add --yes to do it; --reap lets it stop hung check runs, --clean orphaned dev processes, --docker idle Docker stacks." >&2; return 2; }
+      local yes=0 clean=0 dock=0 reap=0 shed=0 a
+      for a in "$@"; do case "$a" in --yes) yes=1 ;; --clean) clean=1 ;; --docker) dock=1 ;; --reap) reap=1 ;; --shed) shed=1 ;; *) echo "Usage: deploys perf install [--reap] [--clean] [--docker] [--shed] --yes" >&2; return 2 ;; esac; done
+      [ "$yes" = 1 ] || { echo "perf install writes a launchd agent ($PERF_LABEL, every minute: status, notification, cleanup report). Add --yes to do it; --reap lets it stop hung check runs, --clean orphaned dev processes, --docker idle Docker stacks, --shed unused dev servers and idle Docker stacks under memory pressure." >&2; return 2; }
       declare -F job_on >/dev/null || { echo "perf install runs through deploys (deploys perf install --yes)." >&2; return 1; }
       mkdir -p "$(dirname "$PERF_CONF")"
       [ -f "$PERF_CONF" ] || echo '{}' > "$PERF_CONF"
-      jq -c --argjson c "$clean" --argjson d "$dock" --argjson r "$reap" '.clean = ($c == 1) | .docker = ((.docker // {}) + {autoStop:($d == 1)}) | .reap = ((.reap // {}) + {enabled:($r == 1)})' "$PERF_CONF" > "$PERF_CONF.new" && mv -f "$PERF_CONF.new" "$PERF_CONF"
+      jq -c --argjson c "$clean" --argjson d "$dock" --argjson r "$reap" --argjson s "$shed" '.clean = ($c == 1) | .docker = ((.docker // {}) + {autoStop:($d == 1)}) | .reap = ((.reap // {}) + {enabled:($r == 1)}) | .shed = ((.shed // {}) + {enabled:($s == 1)})' "$PERF_CONF" > "$PERF_CONF.new" && mv -f "$PERF_CONF.new" "$PERF_CONF"
       job_on "$PERF_LABEL" 60 deploys-perf perf tick
-      echo "Installed $PERF_LABEL: every minute status and samples, a notification when red for a while, cleanup every 10 min ($( [ "$clean" = 1 ] && echo "stops orphans" || echo "report only" )), Docker idle stop $( [ "$dock" = 1 ] && echo on || echo off ), hung check runs stopped every 5 min $( [ "$reap" = 1 ] && echo on || echo off ). Log: $PERF_DIR/clean.log" ;;
+      echo "Installed $PERF_LABEL: every minute status and samples, a notification when red for a while, cleanup every 10 min ($( [ "$clean" = 1 ] && echo "stops orphans" || echo "report only" )), Docker idle stop $( [ "$dock" = 1 ] && echo on || echo off ), hung check runs stopped every 5 min $( [ "$reap" = 1 ] && echo on || echo off ), shedding under memory pressure $( [ "$shed" = 1 ] && echo on || echo off ). Log: $PERF_DIR/clean.log" ;;
     uninstall)
       declare -F job_off >/dev/null || { echo "perf uninstall runs through deploys." >&2; return 1; }
       job_off "$PERF_LABEL"; echo "Removed $PERF_LABEL." ;;
