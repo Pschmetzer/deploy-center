@@ -47,3 +47,7 @@ angemeldete Konto: offen, fertig aber noch offen, wartet auf dich, läuft. Nur l
 gemergt oder geschlossen, nichts läuft, niemand wird gefragt, nicht `review_ready` oder `blocked`. Archivieren macht
 die Claude-App selbst: in jedem Konto „Auto-archive sessions when their pull request closes“ einschalten
 (Einstellungen → Claude Code). Details in der englischen Fassung.
+
+Stehen gebliebene Sitzungen (Nutzungslimit, API-Fehler, mitten im Schritt abgebrochen, seit `stoppedMin` Minuten
+untätig) zeigt der Befehl als `stopped` mit einem Link `claude://claude.ai/epitaxy/<id>`, der sie in der Claude-App
+öffnet. Selbst fortgesetzt wird nichts: von außen gibt es dafür keinen sauberen Weg (siehe englische Fassung).
