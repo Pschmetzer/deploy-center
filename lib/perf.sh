@@ -263,7 +263,8 @@ perf_gate_main() {  # perf gate [options] -- <command…>: wait, then run it wit
   local lp tp="${DEPLOYS_PERF_TASKPOLICY:-/usr/sbin/taskpolicy}"
   lp="$(perf_conf 2>/dev/null | jq -r '.lowPriority | tostring' 2>/dev/null)"
   if [ -x "$tp" ] && { [ "$lp" = always ] || { [ "$lp" = busy ] && { [ "$PERF_LAST_LEVEL" = yellow ] || [ "$PERF_LAST_LEVEL" = red ]; }; }; }; then
-    "$tp" -b "$@"; return
+    # through bash, so a script without a #! line still runs (taskpolicy itself cannot start one)
+    "$tp" -b /bin/bash -c '"$@"' perf-gate "$@"; return
   fi
   "$@"
 }
