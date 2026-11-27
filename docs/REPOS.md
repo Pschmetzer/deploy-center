@@ -103,6 +103,29 @@ In the menu bar, "Left-behind work: N folders" lists them (scanned once an hour,
 on one shows what would be pushed and asks; only then it pushes and opens the draft pull request. A folder from an
 archived session that is new in the list gets a notification; the first scan is silent.
 
+## The weekly cleanup
+
+```bash
+deploys repos clean                  # what would go and how much space it frees; nothing changes
+deploys repos clean --yes            # do it
+deploys repos clean schedule on      # Sundays at 04:00 (a Mac that was off catches up the next day); off, status
+```
+
+`repos sync` leaves the worktrees under `.claude/worktrees` alone, and branches pile up. Once a week `repos clean`:
+
+- runs the automatic rescue first (when it is on), so left-behind work is in a draft pull request before anything goes;
+- removes a linked worktree (`git worktree remove`, no `--force`) whose branch is merged into `origin/main` or gone on
+  origin, when it has no uncommitted change, no commit that is on no remote, no merge or rebase running, no lock, no
+  process inside, no running Claude session (session files and `claude agents --json`), no open desktop session (an
+  archived one is fine), and was not touched for a day;
+- deletes local branches merged into `origin/main` (squash merges too) that no worktree has checked out; a branch that
+  is only gone on origin stays;
+- runs `git worktree prune`.
+
+A folder with changes is never removed, rescued or not. Every removal and every deleted branch, with its commit, goes
+to the journal (`git branch <name> <commit>` brings one back); the result goes to `repos-clean-last.json`. It shares
+its lock with `repos sync`. `deploys clean` stays what it was: build output in old worktrees, when the disk is full.
+
 ## In the app and for Claude
 
 Deploy menu → **Repo Upkeep …**: each checkout with its branch and how far behind it is, the ones that need you on top,

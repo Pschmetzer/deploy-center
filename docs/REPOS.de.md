@@ -73,3 +73,11 @@ zeigt vorher, was passieren würde. Gerettet werden ohne Rückfrage nur Ordner a
 24 Stunden unberührt sind; nie ein Ordner, in dem eine laufende Sitzung arbeitet (auch `claude agents --json`), nie ein
 öffentliches Repo (das hieße veröffentlichen: von Hand retten oder `"public": true`), höchstens 3 pro Lauf und 10 pro
 Tag. Einstellungen in `rescue.json`: `{"auto":true,"perRun":3,"perDay":10,"idleHours":24,"public":false}`.
+
+## Wöchentliches Aufräumen
+
+`deploys repos clean` zeigt, was gehen würde und wie viel Platz das frei macht; `--yes` macht es,
+`deploys repos clean schedule on` jeden Sonntag um 04:00. Zuerst läuft die automatische Rettung (wenn sie an ist). Dann
+gehen Worktrees (auch unter `.claude/worktrees`), deren Branch in `origin/main` gemergt oder auf origin gelöscht ist, ohne
+Änderungen, ohne ungepushte Commits, ohne laufende oder offene Sitzung und einen Tag unberührt; gemergte lokale Branches,
+die kein Worktree nutzt, werden gelöscht; am Ende `git worktree prune`. Alles steht im Journal.

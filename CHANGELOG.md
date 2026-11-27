@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Weekly cleanup: `deploys repos clean` removes worktrees whose branch is merged or gone (also under `.claude/worktrees`) and merged local branches, after rescuing left-behind work; dry run by default, `repos clean schedule on` runs it Sundays at 04:00
 - Left-behind work is rescued on its own: `deploys repos rescue schedule on` saves, every hour, the work of archived sessions and of folders idle for a day to draft pull requests (never a running session's folder, never a public repo, at most 3 per run and 10 per day; `rescue --auto` shows first)
 
 ## 0.15.0 - 2026-11-27
