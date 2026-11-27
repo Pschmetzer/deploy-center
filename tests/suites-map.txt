@@ -129,6 +129,9 @@ tests/localsessions-tests.sh providers/*
 tests/localsessions-tests.sh tests/fixtures/*
 tests/localsessions-tests.sh tests/cli/*
 tests/localsessions-tests.sh tests/providers/*
+tests/desktopsessions-tests.sh deploys
+tests/desktopsessions-tests.sh lib/*
+tests/desktopsessions-tests.sh tests/fixtures/*
 tests/clean-tests.sh deploys
 tests/clean-tests.sh lib/*
 tests/clean-tests.sh providers/*

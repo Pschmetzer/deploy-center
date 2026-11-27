@@ -593,7 +593,7 @@ struct SettingsView: View {
         s.pendingDeployAll = true
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) { SessionsWatch.shared.start() }
+    func applicationDidFinishLaunching(_ notification: Notification) { SessionsWatch.shared.start(); DesktopSessionsMonitor.shared.start() }
 
     func attach(_ s: Store) {
         guard store !== s else { return }
@@ -834,6 +834,7 @@ struct MenuBarContent: View {
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
         if perfIndicator { PerfMenuSection() }
         if localSessionsIndicator { LocalSessionsMenuSection() }
+        if localSessionsIndicator { DesktopSessionsMenuSection() }
         if tipOn { Text(L("Tip: ", "Tipp: ") + Tips.tip()).foregroundStyle(.secondary) }
         // Stopping needs no confirmation in the window either; it is the same cancel as the row's.
         let active = store.allItems.filter { $0.state.isActive }.sorted { $0.name < $1.name }
