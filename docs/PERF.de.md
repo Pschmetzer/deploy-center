@@ -64,7 +64,7 @@ Cloud.
 
 Einstellungen → Allgemein → „Ausgewählte Apps beenden, wenn der Mac überlastet ist“ (Standard: aus) zeigt die
 laufenden Apps mit ihrem Speicher und einen Vorschlag „Nicht benötigt?“ zum Übernehmen mit einem Klick. Deploy Center
-muss laufen. Beendet wird nur bei Rot mit Speicherdruck seit 5 Minuten, nachdem das Entlasten oben seine Chance hatte,
+muss laufen, und Entlasten (`--shed`) muss an sein. Beendet wird nur bei Rot mit Speicherdruck seit 5 Minuten, nachdem das Entlasten oben seine Chance hatte,
 eine App nach der anderen, die größte zuerst, nur im Hintergrund und mindestens 30 Minuten unbenutzt, und nur wie ⌘Q:
 Mit ungesicherten Dokumenten bleibt die App offen. Optional auch ihre fensterlosen Helfer (nur TERM, nie Systemdienste
 oder launchd-Jobs). Jede App kommt als Mitteilung mit Name und Speicher und ins Protokoll. Nie: Claude, Terminal,

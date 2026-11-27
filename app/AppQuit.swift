@@ -96,14 +96,14 @@ enum QuitApps {
 
     /// The helpers that belong to a running app: its descendants whose executable lies in its bundle, with their
     /// start times. Taken right before the quit, so later only these very processes can be stopped.
-    static func family(of app: pid_t, bundle: URL) -> [pid_t: String] {
+    static func family(of app: pid_t, bundle: URL) -> [pid_t: UInt64] {
         let path = bundle.standardizedFileURL.path
         let all = processes()
-        var out: [pid_t: String] = [:]
+        var out: [pid_t: UInt64] = [:]
         for (pid, x) in all where pid != app && x.exe.hasPrefix(path + "/") {
             var q = x.ppid, hops = 0
             while q > 1 && q != app && hops < 40 { q = all[q]?.ppid ?? 0; hops += 1 }
-            if q == app { out[pid] = x.start }
+            if q == app, let t = Tool.startTime(pid) { out[pid] = t }
         }
         return out
     }
@@ -111,7 +111,7 @@ enum QuitApps {
     /// Of an app's family (taken before the quit), the windowless helpers still running after it: the same process
     /// (pid and start time), not a login item, XPC service or launchd job, owning no window and not a regular app.
     /// Only for apps in /Applications or ~/Applications; any list that cannot be read stops nothing.
-    static func helpers(of bundle: URL, family: [pid_t: String]) -> [pid_t] {
+    static func helpers(of bundle: URL, family: [pid_t: UInt64]) -> [(pid: pid_t, start: UInt64)] {
         let path = bundle.standardizedFileURL.path
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         guard !family.isEmpty, path.hasPrefix("/Applications/") || path.hasPrefix(home + "/Applications/") else { return [] }
@@ -120,11 +120,11 @@ enum QuitApps {
         let windowOwners = Set(info.compactMap { ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value })
         let now = processes()
         return family.compactMap { pid, start in
-            guard let x = now[pid], x.start == start, x.exe.hasPrefix(path + "/"),
+            guard let x = now[pid], Tool.startTime(pid) == start, x.exe.hasPrefix(path + "/"),
                   !x.exe.contains("/Contents/Library/LoginItems/"), !x.exe.contains("/Contents/XPCServices/"),
                   !jobs.contains(pid), !windowOwners.contains(pid), pid != getpid() else { return nil }
             if let ra = NSRunningApplication(processIdentifier: pid), ra.activationPolicy == .regular { return nil }
-            return pid
+            return (pid, start)
         }
     }
 
@@ -154,10 +154,12 @@ final class AppQuitter: ObservableObject {
     @Published var config = QuitApps.load()
 
     private let started = Date()
-    private var lastActive: [String: Date] = [:]
+    /// Per app instance (pid), so a relaunched app starts afresh.
+    private var lastActive: [pid_t: Date] = [:]
+    private var firstSeen: [pid_t: Date] = [:]
     private var tightSince: Date?
     private var keptOpen: Set<String> = []
-    private var pending: (app: NSRunningApplication, id: String, name: String, mb: Int, at: Date, family: [pid_t: String])?
+    private var pending: (app: NSRunningApplication, id: String, name: String, mb: Int, at: Date, family: [pid_t: UInt64])?
     private var lastQuit = Date.distantPast
     private var observing = false
 
@@ -169,8 +171,9 @@ final class AppQuitter: ObservableObject {
         let nc = NSWorkspace.shared.notificationCenter
         for name in [NSWorkspace.didActivateApplicationNotification, NSWorkspace.didDeactivateApplicationNotification] {
             nc.addObserver(forName: name, object: nil, queue: .main) { n in
-                guard let a = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication, let id = a.bundleIdentifier else { return }
-                MainActor.assumeIsolated { AppQuitter.shared.lastActive[id] = Date() }
+                guard let a = n.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+                let pid = a.processIdentifier
+                MainActor.assumeIsolated { AppQuitter.shared.lastActive[pid] = Date() }
             }
         }
     }
@@ -185,10 +188,16 @@ final class AppQuitter: ObservableObject {
         let now = Date()
         let list = running.map { a -> RunningAppInfo in
             let id = a.bundleIdentifier ?? ""
-            let last = a.isActive ? now : (lastActive[id] ?? started)
+            let pid = a.processIdentifier
+            if firstSeen[pid] == nil { firstSeen[pid] = now }
+            // Never used since: idle from its own launch (or first sighting), and never before Deploy Center started.
+            let born = max(a.launchDate ?? firstSeen[pid] ?? now, started)
+            let last = a.isActive ? now : max(lastActive[pid] ?? born, born)
             return RunningAppInfo(id: id, name: a.localizedName ?? id, mb: mb[a.processIdentifier] ?? 0,
                                   idleMin: Int(now.timeIntervalSince(last) / 60), front: a.isActive)
         }.sorted { $0.mb > $1.mb }
+        let alive = Set(pids)
+        lastActive = lastActive.filter { alive.contains($0.key) }; firstSeen = firstSeen.filter { alive.contains($0.key) }
         if list != apps { apps = list }
     }
 
@@ -232,16 +241,19 @@ final class AppQuitter: ObservableObject {
     /// A shedding pass that just ran gets 90 s to show its effect (perf/shed-done, lib/perfshed.sh).
     private func shedSettled(_ now: Date) -> Bool {
         let f = PerfMonitor.agentFile.deletingLastPathComponent().appendingPathComponent("shed-done")
-        guard let m = (try? FileManager.default.attributesOfItem(atPath: f.path))?[.modificationDate] as? Date else { return true }
+        // No pass (or none in this pressure phase): no quit. Needs shedding on (deploys perf install --shed --yes).
+        guard let m = (try? FileManager.default.attributesOfItem(atPath: f.path))?[.modificationDate] as? Date,
+              let since = tightSince, m >= since else { return false }
         return now.timeIntervalSince(m) >= 90
     }
 
-    private func finish(_ p: (app: NSRunningApplication, id: String, name: String, mb: Int, at: Date, family: [pid_t: String])) {
+    private func finish(_ p: (app: NSRunningApplication, id: String, name: String, mb: Int, at: Date, family: [pid_t: UInt64])) {
         pending = nil
         var extra = ""
         if config.helpers, let url = p.app.bundleURL {
             let pids = QuitApps.helpers(of: url, family: p.family)
-            for pid in pids { kill(pid, SIGTERM) }
+            // the start time (microseconds) once more right before the signal: a reused pid is skipped
+            for h in pids where Tool.startTime(h.pid) == h.start { kill(h.pid, SIGTERM) }
             if !pids.isEmpty { extra = L(", \(pids.count) helper(s) stopped", ", \(pids.count) Helfer beendet") }
         }
         let gb = PerfText.gb(p.mb)
