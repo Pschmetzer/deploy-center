@@ -163,6 +163,39 @@ Supabase, Redis, MySQL, Mongo ...). Every stop sends a notification, goes to the
 jobs, anything under an editor or a debugger. `deploys perf clean` lists the same servers as rule S, but never stops
 them.
 
+### Dev servers of finished work
+
+```bash
+deploys perf finished          # what it would stop (dry run)
+deploys perf install --clean --shed --stop-finished --yes   # the agent does it every 5 minutes
+```
+
+At any load, not only under pressure: a dev server (the same ones as rule S) whose folder belongs to a desktop session
+that is archived or done (and to no open one), or, without a session, whose branch's pull request is merged or closed
+(`gh`, at most 5 look-ups a pass, cached for an hour), is stopped once it stayed so for `stopFinished.graceMin` (10)
+minutes. TERM, KILL after 10 s, a notification and a journal entry; one that comes back is left alone for 24 hours.
+
+### Quitting apps
+
+Settings → General → "Quit apps I picked when the Mac is overloaded" (off by default) lists the running apps with
+their memory and a "Not needed?" suggestion (everything running except Chrome and the never list) to pick with one
+click; the list is `"quitApps": {"enabled", "apps": [bundle ids], "idleMin": 30, "helpers": false}` in `perf.json`.
+Deploy Center itself does it, so it has to run: only when the Mac is red with memory pressure for 5 minutes and a
+shedding pass had 90 s to work, one app at a time (at most one every 2 minutes), biggest first, only apps in the
+background that were not active for `idleMin` minutes. Only like ⌘Q (`terminate`), never forced: an app with unsaved
+documents asks and stays open, and is left alone until the pressure is over. With `helpers`, windowless helper
+processes inside the quit app's bundle get a TERM (never login items, XPC services, launchd jobs or system services,
+nothing with sudo). Each quit sends a notification with the app's name and the memory it held and goes to the journal.
+Never quit, whatever the file says: Claude, Terminal, iTerm, Xcode, the Simulator, Finder, Deploy Center.
+`deploys perf clean` shows which apps would be quit now (from `perf/quit-plan.json`, which the app writes).
+
+### Lower priority for heavy checks
+
+`deploys perf gate` starts the command through `taskpolicy -b` (background QoS: efficiency cores, low disk priority,
+no admin needed) while the Mac is yellow or red. `"lowPriority": "always"` does it always, `false` never. The Claude
+Code hook only waits: changing the command it runs would need `updatedInput` with `permissionDecision: "allow"`,
+which skips your permission rules.
+
 Shedding helps a Mac over a peak. It is no answer to a Mac that is full all day: then fewer local sessions, and more
 work in cloud sessions, are.
 
@@ -176,10 +209,12 @@ work in cloud sessions, are.
   "maxSwapoutMBPerMin": 20, "redSwapoutMBPerMin": 50,
   "minSwapFreeMB": 2048, "redSwapFreeMB": 1536,
   "maxChecks": 0, "maxWait": "10m", "stagger": 20, "pollEvery": 10,
-  "clean": false, "notifyAfterMin": 5, "notifyEveryMin": 30,
+  "clean": false, "lowPriority": "busy", "notifyAfterMin": 5, "notifyEveryMin": 30,
   "reap": { "enabled": false, "limitMin": 45, "hardLimitMin": 90, "stallMin": 15, "stallMB": 500,
             "devserverIdleMin": 120, "perCommand": { "playwright": 120 } },
   "shed": { "enabled": false, "idleMin": 30, "maxPerRun": 3 },
+  "stopFinished": { "enabled": false, "graceMin": 10 },
+  "quitApps": { "enabled": false, "apps": [], "idleMin": 30, "helpers": false },
   "docker": { "autoStop": false, "always": [], "idleMin": 120, "idleMinYellow": 60, "idleMinRed": 30 }
 }
 ```
