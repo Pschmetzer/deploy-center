@@ -449,7 +449,11 @@ repos_clean() {
   mkdir "$lock" 2>/dev/null || { echo "A repos run is going on; try again in a minute." >&2; [ "${json:-0}" != 1 ] || echo '{"ranAt":null,"busy":true}'; return 0; }
   trap_add "rmdir '$lock' 2>/dev/null || true"
   local GIT_OPTIONAL_LOCKS=0; export GIT_OPTIONAL_LOCKS
-  local live sess rows r; live="$(stranded_live_cwds 2>/dev/null || true)"; sess="$(stranded_sessions 2>/dev/null || echo '{}')"; [ -n "$sess" ] || sess='{}'
+  local live sess rows r; live="$(STRANDED_STRICT=1 stranded_live_cwds 2>/dev/null)" || {
+    rmdir "$lock" 2>/dev/null || true; trap_pop
+    echo "Not now: claude agents --json gave no answer, so it is unclear which worktrees are in use." >&2
+    [ "${json:-0}" != 1 ] || echo '{"ranAt":null,"skipped":"claude agents --json gave no answer"}'; return 0; }
+  sess="$(stranded_sessions 2>/dev/null || echo '{}')"; [ -n "$sess" ] || sess='{}'
   rows="$(mktemp)"
   while IFS= read -r r; do repos_clean_one "$r" "$yes" "$live" "$sess" >> "$rows"; done < <(repos_list)
   local res
