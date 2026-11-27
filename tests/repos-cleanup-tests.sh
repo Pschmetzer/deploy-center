@@ -1,7 +1,7 @@
 #!/bin/bash
 # Tests for the weekly cleanup `deploys repos clean` (lib/repos.sh): one made-up repo with a local bare origin and
 # worktrees in every state, stub gh and claude on PATH, made-up session files. Nothing leaves the temporary folder.
-# Run: bash tests/repos-clean-tests.sh
+# Run: bash tests/repos-cleanup-tests.sh
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 exec </dev/null

@@ -207,6 +207,6 @@ tests/repos-tests.sh deploys
 tests/repos-tests.sh lib/*
 tests/repos-tests.sh tests/fixtures/*
 tests/repos-tests.sh docs/*
-tests/repos-clean-tests.sh deploys
-tests/repos-clean-tests.sh lib/*
+tests/repos-cleanup-tests.sh deploys
+tests/repos-cleanup-tests.sh lib/*
 tests/x-tests.sh tests/x/*
