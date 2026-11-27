@@ -72,7 +72,7 @@ Automatisch: `deploys repos rescue schedule on` schaltet es ein (stündlich, ein
 zeigt vorher, was passieren würde. Gerettet werden ohne Rückfrage nur Ordner aus archivierten Sitzungen oder solche, die
 24 Stunden unberührt sind; nie ein Ordner, in dem eine laufende Sitzung arbeitet (auch `claude agents --json`), nie ein
 öffentliches Repo (das hieße veröffentlichen: von Hand retten oder `"public": true`), höchstens 3 pro Lauf und 10 pro
-Tag. Einstellungen in `rescue.json`: `{"auto":true,"perRun":3,"perDay":10,"idleHours":24,"public":false}`.
+Tag. Direkt vor jedem Push fragt er erneut, welche Sessions laufen und ob das Repo noch privat ist; antwortet `claude agents --json` nicht, tut der Lauf (und das wöchentliche Aufräumen) nichts. Einstellungen in `rescue.json`: `{"auto":true,"perRun":3,"perDay":10,"idleHours":24,"public":false}`.
 
 ## Wöchentliches Aufräumen
 

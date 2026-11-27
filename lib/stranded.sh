@@ -56,12 +56,17 @@ stranded_live_cwds() {
     if [ -n "$c" ] && kill -0 "$p" 2>/dev/null; then echo "$c"; fi
   done
   # Plus the sessions `claude agents --json` knows (background ones too). Read once per run: STRANDED_AGENTS.
-  [ -n "${STRANDED_AGENTS+x}" ] || STRANDED_AGENTS="$(stranded_agent_cwds)"
+  # A failed query is no answer: with STRANDED_STRICT=1 (automatic runs) it fails, so nothing is pushed or removed.
+  if [ -z "${STRANDED_AGENTS+x}" ]; then
+    STRANDED_AGENTS="$(stranded_agent_cwds)" || { STRANDED_AGENTS=""; [ "${STRANDED_STRICT:-}" != 1 ] || return 1; }
+  fi
   [ -z "$STRANDED_AGENTS" ] || printf '%s\n' "$STRANDED_AGENTS"
 }
-stranded_agent_cwds() {
+stranded_agent_cwds() {  # exit 1 when claude is there but its answer is not a list
   [ "${DEPLOYS_STRANDED_NO_AGENTS:-}" != 1 ] && command -v claude >/dev/null 2>&1 || return 0
-  perl -e 'alarm 20; exec @ARGV' claude agents --json </dev/null 2>/dev/null | jq -r '.[]? | .cwd // empty' 2>/dev/null || true
+  local out; out="$(perl -e 'alarm 20; exec @ARGV' claude agents --json </dev/null 2>/dev/null)" || return 1
+  jq -e 'type == "array"' >/dev/null 2>&1 <<<"$out" || return 1
+  jq -r '.[] | .cwd // empty' <<<"$out"
 }
 
 STRANDED_PICK='select(type == "object" and (.cwd | type) == "string")
@@ -204,7 +209,8 @@ stranded_rescue() {
   local top; top="$(git -C "$t" rev-parse --show-toplevel 2>/dev/null)" || die "$t is not a git work tree"
   [ "$(cd "$top" && pwd -P)" = "$t" ] || die "$t is not the top of its work tree ($top)"
   git -C "$t" remote get-url origin >/dev/null 2>&1 || die "$t has no remote named origin"
-  if stranded_live_cwds | awk -v t="$t" '$0 == t || index($0 "/", t "/") == 1 { f = 1 } END { exit !f }'; then
+  local live; live="$(stranded_live_cwds)" || die "Could not ask claude agents --json which sessions are running; $t is left alone."
+  if printf '%s\n' "$live" | awk -v t="$t" '$0 == t || index($0 "/", t "/") == 1 { f = 1 } END { exit !f }'; then
     die "A Claude Code session is working in $t; rescue it after that session ends."
   fi
   local files head base tree commit name branch vis problems now
@@ -241,6 +247,10 @@ stranded_rescue() {
   if [ -n "$prev" ]; then say done-before "Already rescued as $prev; nothing new since."; return 0; fi
   local what="$nfiles changed files"; [ "$up" = 0 ] || what="$what and $up commits on no remote"
   local warn=""; [ "$vis" != PUBLIC ] || warn=" The repo is PUBLIC: pushing publishes this work."
+  # Automatic runs (STRANDED_PRIVATE_ONLY=1) check the visibility again right before the push.
+  if [ "$yes" = 1 ] && [ "${STRANDED_PRIVATE_ONLY:-}" = 1 ] && [ "$vis" != PRIVATE ] && [ "$vis" != INTERNAL ]; then
+    say public "Not pushed: the repo is $(printf '%s' "$vis" | tr '[:upper:]' '[:lower:]')."; return 0
+  fi
   if [ "$yes" != 1 ]; then
     say plan "Would push $what from $t to a new branch $branch on origin and open a draft pull request into $base. The folder itself is not changed.$warn Add --yes."
     return 0
@@ -305,7 +315,13 @@ stranded_auto() {
   day="$(date -u -r "$(stranded_now)" +%Y-%m-%d 2>/dev/null || date -u +%Y-%m-%d)"
   count="$( [ -f "$st" ] && jq -r --arg d "$day" 'if .day == $d then .count // 0 else 0 end' "$st" 2>/dev/null || echo 0)"
   refused="$( [ -f "$st" ] && jq -c '.refused // {}' "$st" 2>/dev/null || echo '{}')"; [ -n "$refused" ] || refused='{}'
-  STRANDED_AGENTS="$(stranded_agent_cwds)"; export STRANDED_AGENTS
+  if ! STRANDED_AGENTS="$(stranded_agent_cwds)"; then
+    rmdir "$lock" 2>/dev/null || true; trap_pop
+    if [ "${json:-0}" = 1 ]; then echo '{"ranAt":null,"skipped":"claude agents --json gave no answer","items":[]}'
+    else echo "Not now: claude agents --json gave no answer, so it is unclear which folders are in use."; fi
+    return 0
+  fi
+  export STRANDED_AGENTS
   local scan; scan="$(stranded_scan)"
   if [ -n "$(jq -r '.skipped // empty' <<<"$scan")" ]; then
     rmdir "$lock" 2>/dev/null || true; trap_pop
@@ -324,7 +340,8 @@ stranded_auto() {
       if [ "$state" = plan ] && [ "$vis" != PRIVATE ] && [ "$vis" != INTERNAL ] && [ "$pub" != true ]; then
         state=public; note="the repo is $(printf '%s' "$vis" | tr '[:upper:]' '[:lower:]'): not pushed without asking. Rescue it by hand: deploys repos rescue $p --yes"
       elif [ "$state" = plan ] && [ "$yes" = 1 ]; then
-        r="$(stranded_try "$p" --yes)"; state="$(jq -r '.state // "error"' <<<"$r")"; note="$(jq -r '.note // ""' <<<"$r")"
+        # The push asks again: a session started since the scan, a repo made public since the plan.
+        r="$(unset STRANDED_AGENTS; STRANDED_STRICT=1 STRANDED_PRIVATE_ONLY="$([ "$pub" = true ] || echo 1)" stranded_try "$p" --yes)"; state="$(jq -r '.state // "error"' <<<"$r")"; note="$(jq -r '.note // ""' <<<"$r")"
         [ "$state" != rescued ] || { done_now=$((done_now+1)); count=$((count+1)); }
       elif [ "$state" = plan ]; then state=would-rescue
       fi

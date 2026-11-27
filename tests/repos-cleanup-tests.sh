@@ -24,6 +24,7 @@ case "$1 $2" in "repo view") echo PRIVATE ;; "pr create") echo "https://example.
 GH
 cat > "$tmp/bin/claude" <<'CL'
 #!/bin/bash
+[ -z "${AGENTS_FAIL:-}" ] || { echo 'not json'; exit 0; }
 [ "$1 $2" = "agents --json" ] && { cat "$AGENTS_JSON" 2>/dev/null || echo '[]'; }
 CL
 chmod +x "$tmp/bin/gh" "$tmp/bin/claude"; export PATH="$tmp/bin:$PATH" AGENTS_JSON="$tmp/agents.json"
@@ -79,6 +80,8 @@ expect "gone: reason" "$(jq -r '.worktrees[] | select(.branch == "gone") | .reas
 expect "size counted" "$(jq -r '.summary.kb > 0' <<<"$j")" true
 case "$(D repos clean)" in *"Would remove: 4 worktrees and 3 merged branches"*"deploys repos clean --yes"*) ok "dry run text" ;; *) fail "dry run text" "$(D repos clean)" ;; esac
 
+before="$(list)"; j="$(AGENTS_FAIL=1 D repos clean --yes --json 2>/dev/null)"
+expect "claude agents without an answer: nothing removed" "$(jq -r '.skipped // "ran"' <<<"$j" | cut -c1-13):$([ "$(list)" = "$before" ] && echo same)" "claude agents:same"
 j="$(D repos clean --yes --json)"
 expect "removed" "$(list)" "$(printf '%s\n' "$before" | tr ' ' '\n' | grep -vxE 'archrec|detached|gone|merged' | tr '\n' ' ' | sed 's/ $//')"
 expect "folders gone" "$([ -e "$W/merged" ] || [ -e "$W/gone" ] || [ -e "$W/archrec" ] || [ -e "$W/detached" ] && echo there || echo gone)" gone
