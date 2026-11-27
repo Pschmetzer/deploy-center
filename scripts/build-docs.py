@@ -73,6 +73,8 @@ PAGES = [
      "deploys perf shows how full the Mac is, holds heavy checks like tsc or next build until there is room, and finds orphaned dev processes."),
     ("local-sessions", "Local session counter", "Using it", "docs/LOCAL-SESSIONS.md",
      "deploys local-sessions counts the Claude Code sessions on this Mac and finds tasks started together that belong in one to three sessions."),
+    ("prs", "Pull request upkeep", "Using it", "docs/PRS.md",
+     "deploys prs keeps your open pull requests in every repo free of merge conflicts and merges the green ones (opt-in)."),
     ("extras", "Extra commands", "Using it", "docs/EXTRAS.md",
      "deploys more lists the extra commands that live in lib/x-*.sh, one line each, and how to add one."),
     ("repos", "Repo upkeep", "Using it", "docs/REPOS.md",

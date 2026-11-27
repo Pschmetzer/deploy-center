@@ -129,6 +129,12 @@ tests/localsessions-tests.sh providers/*
 tests/localsessions-tests.sh tests/fixtures/*
 tests/localsessions-tests.sh tests/cli/*
 tests/localsessions-tests.sh tests/providers/*
+tests/prs-tests.sh deploys
+tests/prs-tests.sh lib/*
+tests/prs-tests.sh providers/*
+tests/prs-tests.sh tests/fixtures/*
+tests/prs-tests.sh tests/cli/*
+tests/prs-tests.sh tests/providers/*
 tests/clean-tests.sh deploys
 tests/clean-tests.sh lib/*
 tests/clean-tests.sh providers/*

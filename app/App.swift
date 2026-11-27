@@ -101,7 +101,7 @@ struct SettingsView: View {
             page(.general) { _ in generalSection; notificationsSection; updatesSection; CommandPaletteSettings() }
             page(.platforms) { _ in platformsSection; HealthCard(store: store); HealthScoreCard(); AccountsCard(store: store); FailureGroupsCard(store: store) }
             page(.projects) { _ in projectsSection }
-            page(.deploy) { _ in deploySection; DeployWindowSettings(); RulesSettings(); GuardSettings(store: store) }
+            page(.deploy) { _ in deploySection; DeployWindowSettings(); RulesSettings(); GuardSettings(store: store); PRsSettingsSection() }
             page(.costs) { _ in costsSection }
             page(.claude) { proxy in
                 ClaudeSettings { withAnimation { proxy.scrollTo("autofix", anchor: .top) } }
@@ -593,7 +593,7 @@ struct SettingsView: View {
         s.pendingDeployAll = true
     }
 
-    func applicationDidFinishLaunching(_ notification: Notification) { SessionsWatch.shared.start() }
+    func applicationDidFinishLaunching(_ notification: Notification) { SessionsWatch.shared.start(); PRsWatch.shared.start() }
 
     func attach(_ s: Store) {
         guard store !== s else { return }
@@ -834,6 +834,7 @@ struct MenuBarContent: View {
         ForEach(store.providerIssues, id: \.self) { Text("⚠︎ " + $0) }
         if perfIndicator { PerfMenuSection() }
         if localSessionsIndicator { LocalSessionsMenuSection() }
+        PRsMenuSection()
         if tipOn { Text(L("Tip: ", "Tipp: ") + Tips.tip()).foregroundStyle(.secondary) }
         // Stopping needs no confirmation in the window either; it is the same cancel as the row's.
         let active = store.allItems.filter { $0.state.isActive }.sorted { $0.name < $1.name }
