@@ -100,7 +100,10 @@ final class PerfMonitor: ObservableObject {
                 await self?.refreshDocker()
                 await self?.refreshRuns()
                 // Quitting the apps the person picked, when red with memory pressure (AppQuit.swift).
-                if let s = self?.status { await AppQuitter.shared.tick(level: s.level, memoryTight: s.memoryTight ?? false) }
+                // Only a fresh reading (at most 3 minutes old) counts; an old red one never quits anything.
+                let s = self?.status
+                let fresh = s.map { Date().timeIntervalSince1970 - Double($0.time) < 180 } ?? false
+                await AppQuitter.shared.tick(level: fresh ? (s?.level ?? "unknown") : "unknown", memoryTight: fresh && (s?.memoryTight ?? false))
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
         }

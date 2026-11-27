@@ -87,7 +87,8 @@ enum QuitApps {
         let pipe = Pipe(); p.standardOutput = pipe; p.standardError = FileHandle.nullDevice
         guard (try? p.run()) != nil else { return [] }
         let data = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
-        let jobs = launchdPids()
+        // Without a readable launchd list nothing is stopped (fail closed).
+        guard let jobs = launchdPids() else { return [] }
         var out: [pid_t] = []
         for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
             let s = line.trimmingCharacters(in: .whitespaces)
@@ -95,16 +96,19 @@ enum QuitApps {
             let exe = String(s[sp...]).trimmingCharacters(in: .whitespaces)
             guard exe.hasPrefix(path + "/"), !exe.contains("/Contents/Library/LoginItems/"), !exe.contains("/Contents/XPCServices/"),
                   !jobs.contains(pid), pid != getpid() else { continue }
+            // Windowless only: a process macOS counts as a regular app (Dock icon, windows) is quit with ⌘Q or not at all.
+            if let ra = NSRunningApplication(processIdentifier: pid), ra.activationPolicy == .regular { continue }
             out.append(pid)
         }
         return out
     }
 
-    private static func launchdPids() -> Set<pid_t> {
+    private static func launchdPids() -> Set<pid_t>? {
         let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/launchctl"); p.arguments = ["list"]
         let pipe = Pipe(); p.standardOutput = pipe; p.standardError = FileHandle.nullDevice
-        guard (try? p.run()) != nil else { return [] }
+        guard (try? p.run()) != nil else { return nil }
         let data = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
+        guard p.terminationStatus == 0, !data.isEmpty else { return nil }
         return Set(String(decoding: data, as: UTF8.self).split(separator: "\n").compactMap { pid_t($0.split(separator: "\t").first ?? "") })
     }
 }

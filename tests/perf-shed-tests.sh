@@ -104,14 +104,18 @@ expect "under memory pressure: only the idle stack without a database (redis cou
 printf '#!/bin/sh\necho "low:$*"\n' > "$tmp/taskpolicy"; chmod +x "$tmp/taskpolicy"
 export DEPLOYS_PERF_TASKPOLICY="$tmp/taskpolicy"
 echo '{"stagger":0,"pollEvery":1,"maxLoadPerCore":9}' > "$DEPLOYS_CONFIG/perf.json"
-expect "yellow: through taskpolicy -b" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" "low:-b echo hi"
+expect "yellow: through taskpolicy -b (and bash, for a script without #!)" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" 'low:-b /bin/bash -c "$@" perf-gate echo hi'
 echo '{"stagger":0,"pollEvery":1,"maxLoadPerCore":9,"lowPriority":false}' > "$DEPLOYS_CONFIG/perf.json"
 expect "lowPriority false: as it is" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" "hi"
 printf '1\n61\n51539607552\n14\n{ 1.00 1.00 1.00 }\ntotal = 8192.00M  used = 10.00M  free = 8182.00M  (encrypted)\n' > "$fx/sysctl"
 echo '{"stagger":0,"pollEvery":1}' > "$DEPLOYS_CONFIG/perf.json"
 expect "green: full speed" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" "hi"
 echo '{"stagger":0,"pollEvery":1,"lowPriority":"always"}' > "$DEPLOYS_CONFIG/perf.json"
-expect "always: low even when green" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" "low:-b echo hi"
+expect "always: low even when green" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null | cut -c1-6)" "low:-b"
+printf '#!/bin/sh\nshift; exec "$@"\n' > "$tmp/taskpolicy"
+printf 'echo no-shebang\nexit 4\n' > "$tmp/ns"; chmod +x "$tmp/ns"
+out="$(bash lib/perf.sh gate --max-wait 0 "$tmp/ns" 2>/dev/null)"; rc=$?
+expect "a script without #! runs, its exit code is kept" "$out $rc" "no-shebang 4"
 unset DEPLOYS_PERF_TASKPOLICY
 
 # --- apps the Mac app would quit (its plan file), shown by perf clean ---
