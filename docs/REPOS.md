@@ -94,7 +94,7 @@ The automatic mode takes the folders `stranded` lists and rescues, without askin
 archived or that were not touched for 24 hours. Every refusal above stays, and it adds its own: never a folder a running
 Claude Code session works in (the session files and `claude agents --json`), never a public repo or one whose
 visibility `gh` cannot tell (pushing there publishes the work: rescue those by hand, or set `"public": true`), at most
-3 rescues per run and 10 per day. A refusal is journaled once, not every hour; each run ends with one summary line in
+3 rescues per run and 10 per day. Right before each push it asks again which sessions run and whether the repo is still private; when `claude agents --json` gives no answer, the run (and the weekly cleanup) does nothing. A refusal is journaled once, not every hour; each run ends with one summary line in
 the journal and its result in `rescue-last.json`. Settings, all optional, in `rescue.json` in the config folder:
 `{"auto":true,"perRun":3,"perDay":10,"idleHours":24,"public":false}` (`schedule on` sets `auto`, `off` clears it).
 Without `"auto": true`, `--auto --yes` does nothing.

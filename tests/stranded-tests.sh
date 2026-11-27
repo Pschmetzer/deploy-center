@@ -21,13 +21,18 @@ cat > "$tmp/bin/gh" <<'GH'
 #!/bin/bash
 echo "$*" >> "$GH_LOG"
 case "$1 $2" in
-  "repo view") echo "${GH_VIS:-PRIVATE}" ;;
+  "repo view") # GH_FLIP=<folder>: private on the first look there, public after (made public between plan and push)
+    if [ -n "${GH_FLIP:-}" ] && [ "$PWD" = "$GH_FLIP" ]; then [ -f "$GH_LOG.flip" ] && echo PUBLIC || { echo PRIVATE; touch "$GH_LOG.flip"; }
+    else echo "${GH_VIS:-PRIVATE}"; fi ;;
   "pr create") [ -z "${GH_FAIL:-}" ] || exit 1; echo "https://example.invalid/pull/7" ;;
 esac
 GH
 # claude stub: `claude agents --json` lists the sessions in $tmp/agents.json (none by default)
 cat > "$tmp/bin/claude" <<'CL'
 #!/bin/bash
+[ -z "${AGENTS_FAIL:-}" ] || { echo 'not json'; exit 0; }
+# AGENTS_LATE=<folder>: a session there starts after the first look
+if [ -n "${AGENTS_LATE:-}" ]; then [ -f "$AGENTS_JSON.seen" ] && printf '[{"cwd":"%s"}]\n' "$AGENTS_LATE" || { echo '[]'; touch "$AGENTS_JSON.seen"; }; exit 0; fi
 [ "$1 $2" = "agents --json" ] && { cat "$AGENTS_JSON" 2>/dev/null || echo '[]'; }
 CL
 chmod +x "$tmp/bin/gh" "$tmp/bin/claude"; export PATH="$tmp/bin:$PATH" GH_LOG="$tmp/gh.log" AGENTS_JSON="$tmp/agents.json"
@@ -157,6 +162,13 @@ expect "auto: public repo not pushed" "$(GH_VIS=PUBLIC D repos rescue --auto --y
 expect "auto: unknown visibility not pushed" "$(GH_VIS=UNKNOWN D repos rescue --auto --yes --json | jq -r '.items[] | select(.name == "a8") | .state')" public
 echo '{"auto":true,"public":true}' > "$tmp/config2/rescue.json"
 expect "auto: public allowed by rescue.json" "$(GH_VIS=PUBLIC D repos rescue --auto --yes --json | jq -r '.items[] | select(.name == "a8") | .state')" rescued
+repo a9; echo change >> "$root/a9/a.txt"; old "$root/a9"; a9="$(cd "$root/a9" && pwd -P)"
+echo '{"auto":true}' > "$tmp/config2/rescue.json"
+expect "auto: claude agents without an answer stops the run" "$(AGENTS_FAIL=1 D repos rescue --auto --yes --json | jq -r '.skipped // "ran"' | cut -c1-13):$(pushed a9)" "claude agents:0"
+expect "auto: made public between plan and push, not pushed" "$(GH_FLIP="$a9" D repos rescue --auto --yes --json | jq -r '.items[] | select(.name == "a9") | .state'):$(pushed a9)" "public:0"
+rm -f "$GH_LOG.flip"
+expect "auto: push asks claude agents again" "$(AGENTS_LATE="$a9" D repos rescue --auto --yes --json | jq -r '.items[] | select(.name == "a9") | .state'):$(pushed a9)" "error:0"
+rm -f "$tmp/agents.json.seen"
 case "$(D repos rescue --auto)" in *"Automatic rescue:"*"Nothing was pushed"*) ok "auto: text output" ;; *) fail "auto: text output" "$(D repos rescue --auto)" ;; esac
 if command -v launchctl >/dev/null 2>&1 && command -v plutil >/dev/null 2>&1; then
   ( export DEPLOYS_LAUNCH_DIR="$tmp/la"; launchctl() { [ "$1" != print ]; }; export -f launchctl
