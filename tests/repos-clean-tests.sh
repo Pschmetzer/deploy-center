@@ -52,7 +52,9 @@ wt archrec;   session "$W/archrec" true 2
 wt recent
 wt unmerged;  echo m > "$W/unmerged/m.txt"; g "$W/unmerged" add m.txt; g "$W/unmerged" commit -qm m; g "$W/unmerged" push -q -u origin unmerged 2>/dev/null
 wt locked;    g "$r" worktree lock "$W/locked"
-for n in merged gone dirty unpushed live open unmerged locked; do old "$W/$n"; done
+g "$r" worktree add -q --detach "$W/detached" origin/main 2>/dev/null   # no branch: merged by its commit
+g "$r" worktree add -q --detach "$W/detlock" origin/main 2>/dev/null; g "$r" worktree lock "$W/detlock"
+for n in merged gone dirty unpushed live open unmerged locked detached detlock; do old "$W/$n"; done
 g "$r" branch -q --no-track b-merged origin/main; g "$r" branch -q --no-track b-own origin/main
 g "$r" checkout -q b-own; echo own > "$r/own.txt"; g "$r" add own.txt; g "$r" commit -qm own; g "$r" checkout -q main
 jq -n --arg c "$W/live" '[{pid: 1, cwd: $c, kind: "background", status: "busy"}]' > "$tmp/agents.json"
@@ -61,7 +63,7 @@ sleep 1 & wait
 list() { g "$r" worktree list --porcelain | sed -n 's#^worktree .*/##p' | sort | tr '\n' ' ' | sed 's/ $//'; }
 before="$(list)"
 j="$(D repos clean --json)" || fail "dry run runs" "exit $?"
-expect "dry run: worktrees" "$(jq -r '[.worktrees[] | .path | split("/") | last] | sort | join(" ")' <<<"$j")" "archrec gone merged"
+expect "dry run: worktrees" "$(jq -r '[.worktrees[] | .path | split("/") | last] | sort | join(" ")' <<<"$j")" "archrec detached gone merged"
 expect "dry run: branches" "$(jq -r '[.branches[].branch] | sort | join(" ")' <<<"$j")" "archrec b-merged merged"
 expect "dry run changes nothing" "$(list)" "$before"
 kept() { jq -r --arg n "$1" '.kept[] | select(.path | endswith("/" + $n)) | .reason' <<<"$j"; }
@@ -72,18 +74,20 @@ expect "kept: open desktop session" "$(kept open)" "its desktop session is open 
 expect "kept: recent, no session" "$(kept recent)" "used within the last day"
 expect "kept: unmerged on origin" "$(kept unmerged)" "branch not merged: unmerged"
 expect "kept: locked" "$(kept locked)" "locked"
+expect "kept: locked, detached" "$(kept detlock)" "locked"
 expect "gone: reason" "$(jq -r '.worktrees[] | select(.branch == "gone") | .reason' <<<"$j")" "gone on origin, every commit pushed"
 expect "size counted" "$(jq -r '.summary.kb > 0' <<<"$j")" true
-case "$(D repos clean)" in *"Would remove: 3 worktrees and 3 merged branches"*"deploys repos clean --yes"*) ok "dry run text" ;; *) fail "dry run text" "$(D repos clean)" ;; esac
+case "$(D repos clean)" in *"Would remove: 4 worktrees and 3 merged branches"*"deploys repos clean --yes"*) ok "dry run text" ;; *) fail "dry run text" "$(D repos clean)" ;; esac
 
 j="$(D repos clean --yes --json)"
-expect "removed" "$(list)" "$(printf '%s\n' "$before" | tr ' ' '\n' | grep -vxE 'archrec|gone|merged' | tr '\n' ' ' | sed 's/ $//')"
-expect "folders gone" "$([ -e "$W/merged" ] || [ -e "$W/gone" ] || [ -e "$W/archrec" ] && echo there || echo gone)" gone
+expect "removed" "$(list)" "$(printf '%s\n' "$before" | tr ' ' '\n' | grep -vxE 'archrec|detached|gone|merged' | tr '\n' ' ' | sed 's/ $//')"
+expect "folders gone" "$([ -e "$W/merged" ] || [ -e "$W/gone" ] || [ -e "$W/archrec" ] || [ -e "$W/detached" ] && echo there || echo gone)" gone
 expect "merged branches deleted, gone and own kept" "$(g "$r" for-each-ref --format='%(refname:short)' refs/heads/ | sort | tr '\n' ' ')" "b-own dirty gone live locked main open recent unmerged unpushed "
 expect "dirty work untouched" "$(g "$W/dirty" status --porcelain)" " M a.txt"
 expect "journal: worktree" "$(grep -c 'worktree .*merged removed (merged)' "$tmp/journal.jsonl")" 1
-expect "journal: branch with its commit" "$(grep -c 'branch b-merged of app deleted (merged), was at' "$tmp/journal.jsonl")" 1
-expect "journal: summary" "$(grep -c 'Weekly cleanup: removed 3 worktrees and 3 merged branches' "$tmp/journal.jsonl")" 1
+expect "journal: branches, one line" "$(grep -c '3 merged branches of app deleted' "$tmp/journal.jsonl")" 1
+expect "branch log: name and commit" "$(awk -F'\t' '$3 == "b-merged" {print $4}' "$tmp/config/repos-clean-branches.log")" "$(git --git-dir="$tmp/origin.git" rev-parse main)"
+expect "journal: summary" "$(grep -c 'Weekly cleanup: removed 4 worktrees and 3 merged branches' "$tmp/journal.jsonl")" 1
 expect "last result" "$(jq -r '.applied' "$tmp/config/repos-clean-last.json")" true
 expect "second run: nothing" "$(D repos clean --yes --json | jq -r '.summary | "\(.worktrees) \(.branches)"')" "0 0"
 
