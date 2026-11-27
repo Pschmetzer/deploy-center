@@ -80,7 +80,7 @@ Each rescue is in the journal.
 Limits: `DEPLOYS_STRANDED_MAX_FILES` (300), `DEPLOYS_STRANDED_MAX_KB` (5120) and `DEPLOYS_STRANDED_RECENT_MIN` (60,
 the minutes a folder must be untouched). With `--json` a refusal is an answer (exit 0, `"state": "refused"`, the files
 in `problems`); without it the exit code is 1. Tests (`tests/stranded-tests.sh`) use `DEPLOYS_STRANDED_NOW` (the
-clock) and `DEPLOYS_STRANDED_NO_PERF=1` (no load check), temporary repos with a local bare origin and a stub `gh`.
+clock), `DEPLOYS_STRANDED_NO_PERF=1` (no load check) and `DEPLOYS_STRANDED_NO_AGENTS=1` (no `claude agents`), temporary repos with a local bare origin and stubs for `gh` and `claude`.
 
 ### Automatically
 
