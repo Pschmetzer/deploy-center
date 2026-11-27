@@ -461,8 +461,7 @@ declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions desktopsessions locks repos prs prsfix; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
-done
-unset _l
+done; unset _l
 # Extra commands: each lib/x-<name>.sh adds `deploys <name>` (function x_<name>_main) without touching this file; `deploys more` lists them.
 # shellcheck source=/dev/null
 for _l in "$LIB_DIR"/x-*.sh; do if [ -f "$_l" ]; then . "$_l"; fi; done
