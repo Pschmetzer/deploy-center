@@ -5,6 +5,7 @@
 #   deploys repos sync [--yes] [--json]          without --yes the same report; with --yes it does it
 #   deploys repos last [--json]                  the result of the last run (repos-last.json), no git, no network
 #   deploys repos schedule on|off|status         a LaunchAgent: `repos sync --yes` every 30 minutes and at login
+#   deploys repos clean [--yes] [--json]         merged worktrees and branches (the weekly cleanup, below); schedule on|off
 #
 # When sessions work in worktrees or in the cloud and merge through pull requests, the main checkout stays
 # on an old branch and falls hundreds of commits behind. Per repo, after `git fetch origin` (stale refs are pruned once a sync has decided):
@@ -265,13 +266,15 @@ repos_main() {
   [ $# -eq 0 ] || shift
   case "$cmd" in
     schedule) repos_schedule "$@"; return ;;
+    clean) repos_clean "$@"; return ;;
     stranded|rescue) declare -F stranded_main >/dev/null || die "deploys repos $cmd needs lib/stranded.sh"
-      if [ "$cmd" = stranded ]; then stranded_main "$@"; else stranded_rescue "$@"; fi; return ;;
+      if [ "$cmd" = stranded ]; then stranded_main "$@"; return; fi
+      case "${1:-} $* " in "schedule "*) shift; stranded_schedule "$@" ;; *" --auto "*) stranded_auto "$@" ;; *) stranded_rescue "$@" ;; esac; return ;;
     status|sync) ;;
     last)
       [ -f "$CONFIG_DIR/repos-last.json" ] || { [ "${json:-0}" = 1 ] && echo '{"ranAt":null,"repos":[]}' || echo "No run yet: deploys repos status"; return 0; }
       cat "$CONFIG_DIR/repos-last.json"; return 0 ;;
-    *) die "Usage: deploys repos status [--no-fetch] [--json] | repos sync [--yes] [--json] | repos last | repos schedule on|off|status | repos stranded [--json] | repos rescue <folder> [--yes]" ;;
+    *) die "Usage: deploys repos status [--no-fetch] [--json] | repos sync [--yes] [--json] | repos last | repos schedule on|off|status | repos stranded [--json] | repos rescue <folder> [--yes] | repos rescue --auto [--yes] | repos rescue schedule on|off|status | repos clean [--yes] | repos clean schedule on|off|status" ;;
   esac
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -347,5 +350,137 @@ repos_schedule() {
       if [ -f "$(job_plist "$REPOS_LABEL")" ]; then echo "on (every 30 minutes and at login)"; else echo "off"; fi
       [ ! -f "$CONFIG_DIR/repos-last.json" ] || jq -r '"last run \(.ranAt): \(.summary.repos) repos, \(.summary.needsHand) need you"' "$CONFIG_DIR/repos-last.json" 2>/dev/null || true ;;
     *) die "Usage: deploys repos schedule on|off|status" ;;
+  esac
+}
+
+# ---- The weekly cleanup: deploys repos clean [--yes] [--json] | repos clean schedule on|off|status ------------------
+# What `repos sync` leaves: worktrees under .claude/worktrees (sync never touches them), merged local branches nobody
+# has checked out. Per repo, after a fetch (no prune: a stale remote-tracking ref is what shows a gone branch was pushed):
+#   a linked worktree goes (git worktree remove, no --force) when its branch is merged into origin/<default> or gone on
+#   origin, and it has no uncommitted change, no commit on no remote, no merge or rebase running, no lock, no process
+#   inside, no running Claude session (session files, `claude agents --json`) and no open (not archived) desktop
+#   session, and was not touched for a day (an archived session's folder need not wait);
+#   a local branch merged into origin/<default> that no worktree has checked out is deleted (its name and commit go to
+#   repos-clean-branches.log, one journal line per repo);
+#   then `git worktree prune`. With --yes the automatic rescue (`repos rescue --auto --yes`, when it is on) runs first,
+#   so left-behind work is in a draft pull request before anything is looked at; a folder with changes is never removed.
+# Without --yes nothing changes. The result goes to repos-clean-last.json. --scheduled (the LaunchAgent, daily at 04:00)
+# runs only on Sundays, or when the last cleanup is a week old (a Mac that was off on Sunday catches up).
+REPOS_CLEAN_LABEL="com.deploycenter.repos-clean"
+
+repos_clean_one() {  # repos_clean_one <repo> <apply> <live cwds> <sessions JSON>: JSON rows (worktree, branch, kept)
+  local repo="$1" apply="$2" live="$3" sess="$4" def base wt b lk h why up kb s
+  local REPOS_CWDS="" REPOS_PR_CACHE; REPOS_PR_CACHE="$(mktemp -d)"
+  row() { jq -nc --arg kind "$1" --arg repo "$repo" --arg path "$2" --arg branch "$3" --arg why "$4" --argjson kb "${5:-0}" --arg commit "${6:-}" \
+    '{kind: $kind, repo: $repo, path: $path, branch: $branch, reason: $why, kb: $kb, commit: $commit}'; }
+  if ! repos_fetch "$repo" >/dev/null; then row kept "$repo" "" "git fetch failed: repo skipped"; rm -rf "$REPOS_PR_CACHE"; return 0; fi
+  def="$(repos_default "$repo" || true)"
+  [ -n "$def" ] || { row kept "$repo" "" "no origin/main or origin/master"; rm -rf "$REPOS_PR_CACHE"; return 0; }
+  base="origin/$def"
+  local gone_list="" keep_br=" $def "
+  # Fields split on \037, not a tab: a tab is whitespace to read, so an empty branch (detached) would shift the rest.
+  while IFS=$'\037' read -r wt b lk; do
+    [ -d "$wt" ] || continue
+    h="$(git -C "$wt" rev-parse -q --verify HEAD 2>/dev/null || true)"
+    why=""
+    if [ "$lk" = 1 ]; then why="locked"
+    elif printf '%s\n' "$live" | awk -v t="$wt" 'NF && ($0 == t || index($0, t "/") == 1) { f = 1 } END { exit !f }'; then why="a running session works in it"
+    else
+      s="$(jq -r --arg p "$wt" 'if has($p) then (if .[$p].archived then "archived" else "open" end) else "none" end' <<<"$sess" 2>/dev/null || echo none)"
+      if [ "$s" = open ]; then why="its desktop session is open (not archived)"
+      elif repos_busy "$wt"; then why="a merge, rebase or cherry-pick is running"
+      elif [ -z "$h" ]; then why="no commit"
+      elif repos_dirty "$wt"; then why="uncommitted changes"
+      elif up="$(git -C "$wt" rev-list --count HEAD --not --remotes 2>/dev/null || echo 1)" && [ "$up" != 0 ]; then why="$up commits on no remote"
+      elif [ "$s" != archived ] && REPOS_IDLE_MIN=1440 repos_recent "$wt"; then why="used within the last day"
+      elif [ -n "$b" ] && repos_merged "$repo" "$base" "$b" "$h"; then :
+      elif [ -z "$b" ] && repos_in_base "$repo" "$base" "$h"; then :
+      elif [ -n "$b" ] && [ -n "$(git -C "$repo" config "branch.$b.merge" 2>/dev/null)" ] && repos_gone "$repo" "$(git -C "$repo" config "branch.$b.merge")"; then gone_list="$gone_list $b "
+      else why="branch not merged$([ -z "$b" ] || echo ": $b")"; fi
+      [ -n "$why" ] || ! repos_in_use "$wt" || why="a process has its folder inside"
+    fi
+    if [ -n "$why" ]; then row kept "$wt" "$b" "$why"; [ -z "$b" ] || keep_br="$keep_br$b "; continue; fi
+    kb="$(du -sk "$wt" 2>/dev/null | awk '{print $1+0}')"
+    local how="merged"; case "$gone_list" in *" $b "*) how="gone on origin, every commit pushed" ;; esac
+    if [ "$apply" = 1 ]; then
+      if ! git -C "$repo" worktree remove "$wt" >/dev/null 2>&1; then row kept "$wt" "$b" "git worktree remove refused"; [ -z "$b" ] || keep_br="$keep_br$b "; continue; fi
+      journal_add cli repos live "worktree $wt removed ($how), was at $h" 2>/dev/null || true
+    fi
+    row worktree "$wt" "$b" "$how" "$kb" "$h"
+    # A gone (unmerged) branch stays: its commits are on origin only as a stale ref.
+    case "$gone_list" in *" $b "*) [ -z "$b" ] || keep_br="$keep_br$b " ;; esac
+  done < <(git -C "$repo" worktree list --porcelain 2>/dev/null | awk '
+    /^worktree /{p=substr($0,10); b=""; l=0} /^branch /{b=substr($0,19)} /^locked/{l=1}
+    /^$/{ if (n++) print p "\037" b "\037" l; p="" } END{ if (p!="" && n++) print p "\037" b "\037" l }')
+  # The main checkout's branch is never deleted.
+  b="$(git -C "$repo" symbolic-ref -q --short HEAD 2>/dev/null || true)"; [ -z "$b" ] || keep_br="$keep_br$b "
+  [ "$apply" != 1 ] || git -C "$repo" worktree prune 2>/dev/null || true
+  # Deleted branches: one journal line per repo (a repo may have thousands); each name and commit goes to
+  # repos-clean-branches.log, so `git branch <name> <commit>` brings any of them back.
+  local nb=0 blog="$CONFIG_DIR/repos-clean-branches.log"
+  while IFS=$'\t' read -r b h; do
+    case "$keep_br" in *" $b "*) continue ;; esac
+    repos_merged "$repo" "$base" "$b" "$h" || continue
+    if [ "$apply" = 1 ]; then
+      git -C "$repo" branch -D "$b" >/dev/null 2>&1 || continue
+      printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$repo" "$b" "$h" >> "$blog"; nb=$((nb+1))
+    fi
+    row branch "" "$b" merged 0 "$h"
+  done < <(git -C "$repo" for-each-ref --format='%(refname:short)%09%(objectname)' refs/heads/ 2>/dev/null)
+  [ "$nb" = 0 ] || journal_add cli repos live "$nb merged branches of $(basename "$repo") deleted; names and commits in repos-clean-branches.log (git branch <name> <commit> brings one back)" 2>/dev/null || true
+  rm -rf "$REPOS_PR_CACHE"
+}
+
+repos_clean() {
+  local yes=0 sched=0 a
+  case "${1:-}" in schedule) shift; repos_clean_schedule "$@"; return ;; esac
+  for a in "$@"; do case "$a" in --yes) yes=1 ;; --json) json=1 ;; --scheduled) sched=1 ;; *) die "Usage: deploys repos clean [--yes] [--json] | repos clean schedule on|off|status" ;; esac; done
+  local stamp="$CONFIG_DIR/repos-clean.stamp" now; now="$(date +%s)"
+  if [ "$sched" = 1 ] && [ "$(date +%u)" != 7 ] && [ -f "$stamp" ] && [ $(( now - $(cat "$stamp" 2>/dev/null || echo 0) )) -lt 518400 ]; then
+    echo "Not today: the weekly cleanup runs on Sundays (or when the last one is a week old)."; return 0
+  fi
+  local rescued=0 rj
+  if [ "$yes" = 1 ] && declare -F stranded_auto >/dev/null && [ "$(stranded_cfg .auto 2>/dev/null)" = true ]; then
+    rj="$( (json=1 stranded_auto --yes) 2>/dev/null | tail -n 1)"; rescued="$(jq -r '.summary.rescued // 0' <<<"$rj" 2>/dev/null || echo 0)"
+  fi
+  mkdir -p "$CONFIG_DIR/locks"
+  local lock="$CONFIG_DIR/locks/repos.lock"
+  lock_clear_stale "$lock" 1800
+  mkdir "$lock" 2>/dev/null || { echo "A repos run is going on; try again in a minute." >&2; [ "${json:-0}" != 1 ] || echo '{"ranAt":null,"busy":true}'; return 0; }
+  trap_add "rmdir '$lock' 2>/dev/null || true"
+  local GIT_OPTIONAL_LOCKS=0; export GIT_OPTIONAL_LOCKS
+  local live sess rows r; live="$(stranded_live_cwds 2>/dev/null || true)"; sess="$(stranded_sessions 2>/dev/null || echo '{}')"; [ -n "$sess" ] || sess='{}'
+  rows="$(mktemp)"
+  while IFS= read -r r; do repos_clean_one "$r" "$yes" "$live" "$sess" >> "$rows"; done < <(repos_list)
+  local res
+  res="$(jq -sc --argjson applied "$yes" --argjson rescued "${rescued:-0}" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" '
+    {ranAt: $at, applied: ($applied == 1), rescued: $rescued,
+     worktrees: [.[] | select(.kind == "worktree")], branches: [.[] | select(.kind == "branch")], kept: [.[] | select(.kind == "kept")]}
+    | . + {summary: {worktrees: (.worktrees | length), branches: (.branches | length), kept: (.kept | length),
+                     kb: ([.worktrees[].kb] | add // 0), rescued: $rescued}}' < "$rows")"
+  rm -f "$rows"; rmdir "$lock" 2>/dev/null || true; trap_pop
+  printf '%s\n' "$res" > "$CONFIG_DIR/repos-clean-last.json.tmp" && mv -f "$CONFIG_DIR/repos-clean-last.json.tmp" "$CONFIG_DIR/repos-clean-last.json"
+  local sum; sum="$(jq -r '.summary | "\(.worktrees) worktrees and \(.branches) merged branches, \(.kb / 1048576 * 10 | round / 10) GB; \(.kept) worktrees kept"' <<<"$res")"
+  if [ "$yes" = 1 ]; then
+    echo "$now" > "$stamp"
+    journal_add cli repos live "Weekly cleanup: removed $sum$([ "${rescued:-0}" = 0 ] || echo "; $rescued rescued first")" 2>/dev/null || true
+  fi
+  if [ "${json:-0}" = 1 ]; then printf '%s\n' "$res"; return 0; fi
+  jq -r '
+    (.worktrees[] | "  worktree  \(.path)  [\(.branch // "-")]  \(.reason), \(.kb / 1024 | floor) MB"),
+    (.branches[] | "  branch    \(.repo | split("/") | last): \(.branch)  merged"),
+    (if (.kept | length) > 0 then "Kept:", (.kept | group_by(.reason) | .[] | "  \(length)x \(.[0].reason)") else empty end)' <<<"$res"
+  if [ "$yes" = 1 ]; then echo "Removed: $sum."; else echo "Would remove: $sum. Nothing was changed. To do it: deploys repos clean --yes"; fi
+}
+
+repos_clean_schedule() {
+  case "${1:-status}" in
+    on) job_on "$REPOS_CLEAN_LABEL" @04:00 deploys-repos-clean repos clean --yes --scheduled
+        echo "The weekly cleanup runs on Sundays at 04:00 (or the next day the Mac is on). Log: ~/Library/Logs/deploys-repos-clean.log" ;;
+    off) job_off "$REPOS_CLEAN_LABEL"; echo "The weekly cleanup is off." ;;
+    status)
+      if [ -f "$(job_plist "$REPOS_CLEAN_LABEL")" ]; then echo "on (Sundays at 04:00)"; else echo "off"; fi
+      [ ! -f "$CONFIG_DIR/repos-clean-last.json" ] || jq -r '"last run \(.ranAt)\(if .applied then "" else " (dry run)" end): \(.summary.worktrees) worktrees, \(.summary.branches) branches"' "$CONFIG_DIR/repos-clean-last.json" 2>/dev/null || true ;;
+    *) die "Usage: deploys repos clean schedule on|off|status" ;;
   esac
 }
