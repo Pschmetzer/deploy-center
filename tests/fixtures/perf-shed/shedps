@@ -11,3 +11,5 @@
 470 1 03:00:00 150000 S ?? node /work/g/node_modules/.bin/next dev
 480 1 03:00:00 150000 S ?? node /work/h/node_modules/.bin/next dev
 490 1 03:00:00 150000 S ?? /usr/local/bin/postgres -D /data
+495 1 10:00:00 100000 S ?? /Applications/Example.app/Contents/MacOS/Example
+496 495 03:00:00 100000 S ?? node /work/i/node_modules/.bin/vite

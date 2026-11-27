@@ -40,25 +40,26 @@ sed -i.bak 's/^2$/1/' "$fx/sysctl"
 
 # --- rule S: who would be stopped ---
 # every server last had a client an hour ago (perf/shed-seen.tsv: pid, start, last)
-for p in 402 410 420 430 440 450 470 480; do printf '%s\t%s\t%s\n' "$p" "$((now - (p == 402 ? 18000 : 10800)))" "$((now - 3600))"; done > "$DEPLOYS_CONFIG/perf/shed-seen.tsv"
+for p in 402 410 420 430 440 450 470 480 496; do printf '%s\t%s\t%s\n' "$p" "$((now - (p == 402 ? 18000 : 10800)))" "$((now - 3600))"; done > "$DEPLOYS_CONFIG/perf/shed-seen.tsv"
 . lib/perf.sh; . lib/perfclean.sh; . lib/perfdocker.sh; . lib/desktopsessions.sh; . lib/perfshed.sh
 list="$(perf_shed_list)"
-expect "archived session, done and idle, idle without a session" "$(cut -f1 <<<"$list" | sort | tr '\n' ' ')" "402 410 430 "
+expect "archived session, done and idle, idle without a session" "$(cut -f1 <<<"$list" | sort | tr '\n' ' ')" "402 410 430 496 "
 expect "biggest first: next dev with its next-server" "$(head -n 1 <<<"$list" | cut -f1,4,5)" "$(printf '402\t1171\t402,403')"
 expect "archived wins even without idle ports" "$(awk -F'\t' '$1 == 402 {print $2}' <<<"$list")" "its Claude session is archived"
 expect "done needs idle ports" "$(awk -F'\t' '$1 == 410 {print $2}' <<<"$list")" "its Claude session is done, no client on port 5173 for 60 min"
 expect "a client on the port keeps it (420); our own outgoing connection does not (430)" "$(grep -c '^420' <<<"$list")" "0"
 expect "terminal, live Claude above it, open session, shared folder with an open session: kept" \
   "$(cut -f1 <<<"$list" | grep -cE '^(440|450|470|480)$')" "0"
+expect "an app above it that launchd runs (the Claude app) does not protect it" "$(grep -c '^496' <<<"$list")" "1"
 expect "the npm and shell wrappers are not listed, postgres never" "$(cut -f1 <<<"$list" | grep -cE '^(400|401|490)$')" "0"
 expect "a server first seen now is not idle yet" "$(rm -f "$DEPLOYS_CONFIG/perf/shed-seen.tsv"; perf_shed_list | cut -f1 | tr '\n' ' ')" "402 "
 expect "its first sighting is remembered" "$(grep -c '^430' "$DEPLOYS_CONFIG/perf/shed-seen.tsv")" "1"
-for p in 402 410 420 430 440 450 470 480; do printf '%s\t%s\t%s\n' "$p" "$((now - (p == 402 ? 18000 : 10800)))" "$((now - 3600))"; done > "$DEPLOYS_CONFIG/perf/shed-seen.tsv"
+for p in 402 410 420 430 440 450 470 480 496; do printf '%s\t%s\t%s\n' "$p" "$((now - (p == 402 ? 18000 : 10800)))" "$((now - 3600))"; done > "$DEPLOYS_CONFIG/perf/shed-seen.tsv"
 
 # --- perf clean lists S, never stops it ---
 out="$(json=1 perf_clean_main)"
-expect "clean --json carries S, not stopping" "$(jq -c '[.processes[] | select(.rule == "S") | [.pid, .stops]]' <<<"$out")" '[[402,false],[410,false],[430,false]]'
-expect "clean text names the condition" "$(json=0 perf_clean_main | grep -c 'rule S (under memory pressure, with --shed)')" "3"
+expect "clean --json carries S, not stopping" "$(jq -c '[.processes[] | select(.rule == "S") | [.pid, .stops]]' <<<"$out")" '[[402,false],[410,false],[430,false],[496,false]]'
+expect "clean text names the condition" "$(json=0 perf_clean_main | grep -c 'rule S (under memory pressure, with --shed)')" "4"
 
 # --- the stop: only under memory pressure, a real dummy process ---
 dummy="$(bash -c '(exec -a "node /work/z/node_modules/.bin/next dev" sleep 300) >/dev/null 2>&1 & echo $!')"
