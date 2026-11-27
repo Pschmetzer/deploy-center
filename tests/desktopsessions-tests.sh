@@ -91,7 +91,7 @@ expect "an idle process is done" "$(st 'Idle process')" "done"
 expect "lower-case state is read" "$(st '')" "done"
 expect "deleted_ and broken files are skipped" "$(jq -r '[.accounts[].sessions[] | select(.title == "Not a local file")] | length' <<<"$j")" 0
 
-expect "totals" "$(jq -c '.totals' <<<"$j")" '{"accounts":3,"open":14,"done":5,"waiting":3,"running":2,"accountsWithDone":3}'
+expect "totals" "$(jq -c '.totals' <<<"$j")" '{"accounts":3,"open":14,"done":5,"waiting":3,"running":2,"stopped":0,"accountsWithDone":3}'
 expect "per account" "$(jq -c '[.accounts[] | [.open, .done, .waiting, .running, .idle]]' <<<"$j")" '[[8,2,1,1,1],[5,2,2,1,0],[1,1,0,0,0]]'
 expect "idle hours" "$(jq -r '[.accounts[].sessions[] | select(.title == "No PR, idle") | .idleHours][0]' <<<"$j")" 30
 expect "fallback labels, sorted" "$(jq -c '[.accounts[].label]' <<<"$j")" '["Account 1 (11111111)","Account 2 (22222222)","Account 3 (33333333)"]'
@@ -106,7 +106,7 @@ expect "label from config" "$(d --json | jq -c '[.accounts[].label]')" '["Accoun
 
 t="$(d)"
 case "$t" in *"done, still open: 5"*) ok "text: summary line" ;; *) fail "text: summary line" "$t" ;; esac
-case "$t" in *"Work: 5 open, 2 done but open, 2 waiting on you, 1 running"*) ok "text: account line" ;; *) fail "text: account line" "$t" ;; esac
+case "$t" in *"Work: 5 open, 2 done but open, 2 waiting on you, 0 stopped, 1 running"*) ok "text: account line" ;; *) fail "text: account line" "$t" ;; esac
 case "$t" in *"done     Merged one"*) ok "text: done row" ;; *) fail "text: done row" "$t" ;; esac
 case "$t" in *"Auto-archive sessions when their pull request closes"*) ok "text: archive hint" ;; *) fail "text: archive hint" "$t" ;; esac
 case "$t" in *"(signed in now)"*) ok "text: active mark" ;; *) fail "text: active mark" "$t" ;; esac
@@ -116,8 +116,70 @@ expect "deploys desktop-sessions --json" "$(./deploys desktop-sessions --json | 
 ./deploys desktop-sessions nonsense >/dev/null 2>&1; expect "unknown subcommand" "$?" 2
 
 # no folder at all
-expect "no base folder" "$(DEPLOYS_DESKTOP_SESSIONS_BASE="$tmp/none" d --json | jq -c '.totals')" '{"accounts":0,"open":0,"done":0,"waiting":0,"running":0,"accountsWithDone":0}'
+expect "no base folder" "$(DEPLOYS_DESKTOP_SESSIONS_BASE="$tmp/none" d --json | jq -c '.totals')" '{"accounts":0,"open":0,"done":0,"waiting":0,"running":0,"stopped":0,"accountsWithDone":0}'
 expect "no fixture answers" "$(rm -f "$tmp/fx/agents.json" "$tmp/fx/auth.json"; d --json | jq -c '[.accounts[].active]')" '[false,false,false]'
+
+# Stopped sessions: a fourth account with transcripts (DEPLOYS_CLAUDE_PROJECTS).
+export DEPLOYS_CLAUDE_PROJECTS="$tmp/projects"; mkdir -p "$tmp/projects/-work-x"
+A4=44444444-dddd-4000-8000-000000000004
+# tr <n> <minutes ago> <jsonl lines...>: the transcript of cli id cccccccc-...-00000000020n
+tr() {
+  local f ago="$2"; f="$tmp/projects/-work-x/cccccccc-0000-4000-8000-0000000002$(printf '%02d' "$1").jsonl"; shift 2
+  printf '%s\n' "$@" > "$f"; perl -e 'utime $ARGV[0], $ARGV[0], $ARGV[1]' "$((now - ago * 60))" "$f"
+}
+cli() { echo "\"cliSessionId\":\"cccccccc-0000-4000-8000-0000000002$(printf '%02d' "$1")\""; }
+old="\"lastActivityAt\":$(( (now - 3 * 3600) * 1000 ))"
+U='{"type":"user","uuid":"u1","message":{"content":"Do the thing"}}'
+AT='{"type":"assistant","uuid":"a1","message":{"content":[{"type":"text","text":"All done."}]}}'
+STOP='{"type":"system","subtype":"stop_hook_summary","uuid":"s1"}'
+LIM='{"type":"assistant","uuid":"lim1","isApiErrorMessage":true,"error":"rate_limit","message":{"content":[{"type":"text","text":"You hit your weekly limit · resets Dec 1 at 11am (Europe/Example)"}]}}'
+ERR='{"type":"system","subtype":"api_error","uuid":"err1","level":"error"}'
+TU='{"type":"assistant","uuid":"tu1","message":{"content":[{"type":"tool_use","name":"Bash","input":{}}]}}'
+TR='{"type":"user","uuid":"tr1","message":{"content":[{"type":"tool_result","content":"ok"}]}}'
+INT='{"type":"user","uuid":"int1","message":{"content":[{"type":"text","text":"[Request interrupted by user]"}]}}'
+NOISE='{"type":"cost-state"}'
+desk $A4 $O1 20 "{\"title\":\"Limit\",$(cli 20),$old}";            tr 20 120 "$U" "$LIM" "$NOISE"
+desk $A4 $O1 21 "{\"title\":\"Api error\",$(cli 21),$old}";        tr 21 120 "$U" "$AT" "$ERR" '{"type":"api-request"}'
+desk $A4 $O1 22 "{\"title\":\"Cut off\",$(cli 22),$old}";          tr 22 120 "$U" "$TU" "$TR"
+desk $A4 $O1 23 "{\"title\":\"User stopped\",$(cli 23),$old}";     tr 23 120 "$U" "$TU" "$INT"
+desk $A4 $O1 24 "{\"title\":\"Finished\",$(cli 24),$old}";         tr 24 120 "$U" "$AT" "$STOP" "$NOISE"
+desk $A4 $O1 25 "{\"title\":\"Tool pending\",$(cli 25),$old}";     tr 25 120 "$U" "$TU"
+desk $A4 $O1 26 "{\"title\":\"Asks, then error\",$(cli 26),$old,\"postTurnSummary\":{\"status_category\":\"blocked\",\"needs_action\":\"Pick one\"}}"; tr 26 120 "$U" "$ERR"
+desk $A4 $O1 27 "{\"title\":\"Done, then error\",$(cli 27),$old,\"prs\":[$M]}"; tr 27 120 "$U" "$ERR"
+desk $A4 $O1 28 "{\"title\":\"Fresh error\",$(cli 28),\"lastActivityAt\":$(( (now - 120) * 1000 ))}"; tr 28 2 "$U" "$ERR"
+desk $A4 $O1 30 "{\"title\":\"Notice after the turn\",$(cli 30),$old}"; tr 30 120 "$U" "$AT" "$STOP" '{"type":"user","uuid":"n1","message":{"content":"<task-notification>\\n<task-id>x</task-id>"}}'
+desk $A4 $O1 29 "{\"title\":\"Broken tail\",$(cli 29),$old}";      tr 29 120 'not json' "$U" '{"type":"assistant","uu'
+jt="$(find "$tmp/projects" -type f -exec cksum {} + | sort)"
+j="$(d --json)"
+expect "transcripts untouched" "$(find "$tmp/projects" -type f -exec cksum {} + | sort)" "$jt"
+s4() { jq -r --arg t "$1" '[.accounts[].sessions[] | select(.title == $t) | "\(.state):\(.stopReason // "")"] | join(",")' <<<"$j"; }
+expect "usage limit is stopped" "$(s4 Limit)" "stopped:limit"
+expect "limit note" "$(jq -r '[.accounts[].sessions[] | select(.title == "Limit") | .stopNote][0]' <<<"$j")" "resets Dec 1 at 11am (Europe/Example)"
+expect "api error is stopped" "$(s4 'Api error')" "stopped:error"
+expect "a tool result without an answer is stopped" "$(s4 'Cut off')" "stopped:cut"
+expect "stopped by the person: not stopped" "$(s4 'User stopped')" "idle:"
+expect "user-stopped is marked" "$(jq -r '[.accounts[].sessions[] | select(.title == "User stopped") | .userStopped][0]' <<<"$j")" true
+expect "a finished turn is not stopped" "$(s4 Finished)" "idle:"
+expect "a pending tool call is left alone" "$(s4 'Tool pending')" "idle:"
+expect "waiting beats stopped" "$(s4 'Asks, then error')" "waiting:"
+expect "done beats stopped" "$(s4 'Done, then error')" "done:"
+expect "under stoppedMin: not yet" "$(s4 'Fresh error')" "idle:"
+expect "a task notice after a finished turn is no stop" "$(s4 'Notice after the turn')" "idle:"
+expect "a broken tail line is skipped" "$(s4 'Broken tail')" "stopped:cut"
+expect "stop key is the last entry" "$(jq -r '[.accounts[].sessions[] | select(.title == "Api error") | .stopKey][0]' <<<"$j")" err1
+expect "open link" "$(jq -r '[.accounts[].sessions[] | select(.title == "Limit") | .openUrl][0]' <<<"$j")" "claude://claude.ai/epitaxy/local_dddddddd-0000-4000-8000-000000000020"
+expect "stopped per account" "$(jq -r '.accounts[] | select(.id == "'"$A4"'") | .stopped' <<<"$j")" 4
+case "$j" in *"Do the thing"*|*"All done."*) fail "no conversation text in the output" "found" ;; *) ok "no conversation text in the output" ;; esac
+echo "{\"stoppedMin\":180}" > "$DEPLOYS_CONFIG/desktop-sessions.json"
+expect "stoppedMin from the config" "$(d --json | jq -r '.totals.stopped')" 0
+case "$(d)" in *"stopped  Limit"*) fail "text: stopped row" "shown above stoppedMin" ;; *) ok "text: stopped row hidden under stoppedMin" ;; esac
+rm -f "$DEPLOYS_CONFIG/desktop-sessions.json"
+case "$(d)" in *"stopped  Limit — shop — limit (resets Dec 1 at 11am (Europe/Example)) — open: claude://"*) ok "text: stopped row" ;; *) fail "text: stopped row" "$(d)" ;; esac
+
+# The signed-in account from ~/.claude.json (accountUuid) wins over the org guess.
+echo "{\"oauthAccount\":{\"accountUuid\":\"$A2\",\"emailAddress\":\"someone@example.invalid\"}}" > "$tmp/fx/claude.json"
+expect "active by account uuid" "$(d --json | jq -c '[[.accounts[].active], .activeAmbiguous]')" '[[false,true,false,false],false]'
+case "$(d --json)" in *example.invalid*) fail "no email from claude.json" "found" ;; *) ok "no email from claude.json" ;; esac
 
 echo
 [ "$fails" = 0 ] && echo "all desktop-sessions tests passed" || { echo "$fails failed"; exit 1; }

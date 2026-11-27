@@ -115,7 +115,7 @@ Accounts are labelled "Account N (first 8 hex characters)", never by email. Your
 `~/.config/deploys/desktop-sessions.json`:
 
 ```json
-{"labels": {"<account folder id>": "Work"}, "idleHours": 24}
+{"labels": {"<account folder id>": "Work"}, "idleHours": 24, "stoppedMin": 10}
 ```
 
 **Archiving is the Claude app's job.** Turn on "Auto-archive sessions when their pull request closes" (Settings →
@@ -127,6 +127,35 @@ In the menu bar (with "Show the Claude Code sessions on this Mac") a line "Done,
 opens the list per account with that hint. A notification comes only for a session that newly became done or newly
 waits on you; the first look after installing is silent.
 
+### Stopped sessions
+
+A session that is not done, not running and nobody is asked is **stopped** when the end of its transcript
+(`~/.claude/projects/*/<cliSessionId>.jsonl`, the last 80 lines) shows that its last turn did not finish, and it has
+been idle for `stoppedMin` minutes (10):
+
+- `limit`: the last answer is a usage-limit message; its "resets ..." text is shown,
+- `error`: an API error (`api_error`, a server error, "connection lost"),
+- `cut`: a tool result or a prompt with no answer after it (the process died or the app restarted mid-turn).
+
+Never stopped: a turn the person stopped (`[Request interrupted by user`), a tool call without its result (that can
+be a permission prompt), a finished turn (a `stop_hook_summary` or a plain answer), a notice of a background task that
+arrived after a finished turn, and anything done, running or waiting on you. Only the kind of the last entry and its
+uuid (the stop point) are kept; no conversation text leaves the transcript, except the limit's reset time.
+
+Each session has `openUrl` (`claude://claude.ai/epitaxy/<local id>`), which opens it in the Claude app. The menu lists
+stopped sessions with an "Open in Claude" button. Notifications for them are opt-in (a switch in that menu), once
+per stop point, at most 6 an hour and 30 a day.
+
+**Why there is no automatic resume.** What was checked: `claude --bg --resume <id>` continues a session under the
+same id only when no process runs it, and starts a copy when one does (`claude --help`). The desktop app keeps a
+process for each open session of the account in use, so for that account every resume would be a copy on the same
+transcript. For the other accounts `claude` is not signed in, and a resume would run under the wrong account. The
+app's own way to send a message into a session is only open to Claude sessions inside the app. So Deploy Center
+detects, tells and links, and the person (or a Claude session in the app) continues.
+
+The account in use comes from `oauthAccount.accountUuid` in `~/.claude.json` (only that field is read); it names the
+account folder. Without it the `orgId` of `claude auth status` is the fallback.
+
 ## Tests
 
 `tests/localsessions-tests.sh` runs on made-up files: `DEPLOYS_LOCAL_SESSIONS_FIXTURE` (a folder with a `ps` output),
@@ -135,5 +164,6 @@ waits on you; the first look after installing is silent.
 
 `tests/desktopsessions-tests.sh` runs on made-up account folders with made-up UUIDs: `DEPLOYS_DESKTOP_SESSIONS_BASE`
 (the `claude-code-sessions` folder), `DEPLOYS_LOCAL_SESSIONS_DIR` (the live files), `DEPLOYS_DESKTOP_SESSIONS_FIXTURE`
-(a folder with `auth.json`, `agents.json` and `alive`, so `claude` and `kill -0` are never called) and
+(a folder with `auth.json`, `agents.json`, `alive` and `claude.json`, so `claude`, `kill -0` and `~/.claude.json` are
+never used), `DEPLOYS_CLAUDE_PROJECTS` (made-up transcripts) and
 `DEPLOYS_DESKTOP_SESSIONS_NOW` (the clock).
