@@ -75,6 +75,7 @@
 #   deploys when [--days 90] [--by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
 #   deploys health [--days 30] [--project <p>] [--no-ci]   0-100 per project from failures, recovery, age of the last deploy, CI
 #   deploys local-sessions [--json] | stop <pid> --yes | set <key> <n>   Claude Code sessions on this Mac; tasks started together, twins (docs/LOCAL-SESSIONS.md)
+#   deploys desktop-sessions [--json]     Claude desktop sessions of every account on this Mac: done but still open (docs/LOCAL-SESSIONS.md)
 #   deploys sessions [--hours 6] [--json] | add <owner/repo>   Claude cloud sessions on GitHub: merged, waiting, stuck
 #   deploys prs [--json] | run --yes | schedule on|off   your open PRs in every repo: resolve conflicts, merge (opt-in)
 #   deploys weeks [--days 7] [--project <p>]       the last days against the same number before: deploys, failure rate, recovery
@@ -457,7 +458,7 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions locks repos prs prsfix; do
+for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker sessions localsessions desktopsessions locks repos prs prsfix; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done
@@ -3892,8 +3893,8 @@ case "${1:-} ${2:-}" in
   "lock "*|"unlock "*)
     declare -F locks_main >/dev/null || die "$1 needs lib/locks.sh next to deploys."
     locks_main "$@" ;;
-  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*|"local-sessions "*|"clean "*|"repos "*)
-    case "$1" in env-diff) _f=envdiff_main ;; group) _f=groups_main ;; local-sessions) _f=localsessions_main ;; *) _f="${1}_main" ;; esac
+  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*|"local-sessions "*|"desktop-sessions "*|"clean "*|"repos "*)
+    case "$1" in env-diff) _f=envdiff_main ;; group) _f=groups_main ;; local-sessions) _f=localsessions_main ;; desktop-sessions) _f=desktopsessions_main ;; *) _f="${1}_main" ;; esac
     declare -F "$_f" >/dev/null || die "$1 needs its file in lib/ next to deploys."
     "$_f" "${@:2}" ;;
   "timeline "*)

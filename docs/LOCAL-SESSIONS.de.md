@@ -39,3 +39,11 @@ Cloud-Sitzungen, wie GitHub sie sieht (gemergt, wartend, hängend), zeigt `deplo
 „Cloud-Sessions“. Wie viele Cloud-Sitzungen gerade laufen, lässt sich auf dem Mac nicht lesen: Weder die Claude-CLI noch
 die Dateien der Desktop-App sagen es, und GitHub sieht nur beobachtete Repos und nur Sitzungen, die schon gepusht haben.
 Deshalb steht im JSON „unbekannt“ statt einer geratenen Zahl. Details in [LOCAL-SESSIONS.md](LOCAL-SESSIONS.md).
+
+## Desktop-Sitzungen aller Konten
+
+`deploys desktop-sessions [--json]` zeigt die Code-Sitzungen der Claude-Desktop-App für jedes auf diesem Mac
+angemeldete Konto: offen, fertig aber noch offen, wartet auf dich, läuft. Nur lesend. Fertig heißt: alle Pull Requests
+gemergt oder geschlossen, nichts läuft, niemand wird gefragt, nicht `review_ready` oder `blocked`. Archivieren macht
+die Claude-App selbst: in jedem Konto „Auto-archive sessions when their pull request closes“ einschalten
+(Einstellungen → Claude Code). Details in der englischen Fassung.
