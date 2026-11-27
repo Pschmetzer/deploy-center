@@ -29,7 +29,8 @@ prs_brake() {  # the reason when memory or swap is tight, else nothing
   if [ "${DEPLOYS_TESTING:-}" = 1 ] && [ -n "${DEPLOYS_PRS_BRAKE+x}" ]; then printf '%s' "$DEPLOYS_PRS_BRAKE"; return 0; fi
   declare -F perf_snapshot >/dev/null || return 0
   local s; s="$(perf_snapshot 2>/dev/null)" || return 0
-  jq -r 'if .admit == false then (.hold | join("; ")) else empty end' <<<"$s" 2>/dev/null || true
+  # Only memory and swap count: a busy CPU or other heavy checks slow a pass down but do not freeze the Mac.
+  jq -r '[.hold[]? | select(test("swap|pressure|memory|RAM"; "i"))] | if length > 0 then join("; ") else empty end' <<<"$s" 2>/dev/null || true
 }
 prs_repo_of_url() { printf '%s' "$1" | sed -E 's#\.git/?$##; s#/+$##' | awk -F'[/:]' 'NF >= 2 { print $(NF-1) "/" $NF }'; }
 
@@ -158,7 +159,7 @@ prs_run() {  # prs_run <dry: 1 or "">
     prs_put '.lastRun = (.run + {off: true}) | del(.run)'
     echo "deploys prs: resolving and merging are off (deploys prs set autoResolve on, deploys prs set autoMerge on)."; return 0
   fi
-  brake="$(prs_brake)"
+  brake=""; [ -n "$dry" ] && [ -z "$first" ] || brake="$(prs_brake)"
   if [ -n "$brake" ]; then
     prs_put --arg b "$brake" '.run.brake = $b | .lastRun = .run | del(.run)'
     echo "deploys prs: skipped, the Mac is busy ($brake). The next pass tries again."; return 0
