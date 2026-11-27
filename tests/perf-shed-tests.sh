@@ -40,25 +40,26 @@ sed -i.bak 's/^2$/1/' "$fx/sysctl"
 
 # --- rule S: who would be stopped ---
 # every server last had a client an hour ago (perf/shed-seen.tsv: pid, start, last)
-for p in 402 410 420 430 440 450 470 480; do printf '%s\t%s\t%s\n' "$p" "$((now - (p == 402 ? 18000 : 10800)))" "$((now - 3600))"; done > "$DEPLOYS_CONFIG/perf/shed-seen.tsv"
+for p in 402 410 420 430 440 450 470 480 496; do printf '%s\t%s\t%s\n' "$p" "$((now - (p == 402 ? 18000 : 10800)))" "$((now - 3600))"; done > "$DEPLOYS_CONFIG/perf/shed-seen.tsv"
 . lib/perf.sh; . lib/perfclean.sh; . lib/perfdocker.sh; . lib/desktopsessions.sh; . lib/perfshed.sh
 list="$(perf_shed_list)"
-expect "archived session, done and idle, idle without a session" "$(cut -f1 <<<"$list" | sort | tr '\n' ' ')" "402 410 430 "
+expect "archived session, done and idle, idle without a session" "$(cut -f1 <<<"$list" | sort | tr '\n' ' ')" "402 410 430 496 "
 expect "biggest first: next dev with its next-server" "$(head -n 1 <<<"$list" | cut -f1,4,5)" "$(printf '402\t1171\t402,403')"
 expect "archived wins even without idle ports" "$(awk -F'\t' '$1 == 402 {print $2}' <<<"$list")" "its Claude session is archived"
 expect "done needs idle ports" "$(awk -F'\t' '$1 == 410 {print $2}' <<<"$list")" "its Claude session is done, no client on port 5173 for 60 min"
 expect "a client on the port keeps it (420); our own outgoing connection does not (430)" "$(grep -c '^420' <<<"$list")" "0"
 expect "terminal, live Claude above it, open session, shared folder with an open session: kept" \
   "$(cut -f1 <<<"$list" | grep -cE '^(440|450|470|480)$')" "0"
+expect "an app above it that launchd runs (the Claude app) does not protect it" "$(grep -c '^496' <<<"$list")" "1"
 expect "the npm and shell wrappers are not listed, postgres never" "$(cut -f1 <<<"$list" | grep -cE '^(400|401|490)$')" "0"
 expect "a server first seen now is not idle yet" "$(rm -f "$DEPLOYS_CONFIG/perf/shed-seen.tsv"; perf_shed_list | cut -f1 | tr '\n' ' ')" "402 "
 expect "its first sighting is remembered" "$(grep -c '^430' "$DEPLOYS_CONFIG/perf/shed-seen.tsv")" "1"
-for p in 402 410 420 430 440 450 470 480; do printf '%s\t%s\t%s\n' "$p" "$((now - (p == 402 ? 18000 : 10800)))" "$((now - 3600))"; done > "$DEPLOYS_CONFIG/perf/shed-seen.tsv"
+for p in 402 410 420 430 440 450 470 480 496; do printf '%s\t%s\t%s\n' "$p" "$((now - (p == 402 ? 18000 : 10800)))" "$((now - 3600))"; done > "$DEPLOYS_CONFIG/perf/shed-seen.tsv"
 
 # --- perf clean lists S, never stops it ---
 out="$(json=1 perf_clean_main)"
-expect "clean --json carries S, not stopping" "$(jq -c '[.processes[] | select(.rule == "S") | [.pid, .stops]]' <<<"$out")" '[[402,false],[410,false],[430,false]]'
-expect "clean text names the condition" "$(json=0 perf_clean_main | grep -c 'rule S (under memory pressure, with --shed)')" "3"
+expect "clean --json carries S, not stopping" "$(jq -c '[.processes[] | select(.rule == "S") | [.pid, .stops]]' <<<"$out")" '[[402,false],[410,false],[430,false],[496,false]]'
+expect "clean text names the condition" "$(json=0 perf_clean_main | grep -c 'rule S (under memory pressure, with --shed)')" "4"
 
 # --- the stop: only under memory pressure, a real dummy process ---
 dummy="$(bash -c '(exec -a "node /work/z/node_modules/.bin/next dev" sleep 300) >/dev/null 2>&1 & echo $!')"
@@ -98,5 +99,33 @@ perfdocker_idle_tick yellow false
 expect "shed only, no memory pressure: no Docker stop" "$( [ -f "$tmp/docker.log" ] && grep -c 'docker stop' "$tmp/docker.log" || echo 0)" "0"
 perfdocker_idle_tick yellow true
 expect "under memory pressure: only the idle stack without a database (redis counts) is stopped" "$(grep 'docker stop' "$tmp/docker.log" | tr '\n' ' ')" "docker stop ffffffffffff "
+
+# --- the gate runs heavy commands at background priority while the Mac is busy ---
+printf '#!/bin/sh\necho "low:$*"\n' > "$tmp/taskpolicy"; chmod +x "$tmp/taskpolicy"
+export DEPLOYS_PERF_TASKPOLICY="$tmp/taskpolicy"
+echo '{"stagger":0,"pollEvery":1,"maxLoadPerCore":9}' > "$DEPLOYS_CONFIG/perf.json"
+expect "yellow: through taskpolicy -b (and bash, for a script without #!)" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" 'low:-b /bin/bash -c "$@" perf-gate echo hi'
+echo '{"stagger":0,"pollEvery":1,"maxLoadPerCore":9,"lowPriority":false}' > "$DEPLOYS_CONFIG/perf.json"
+expect "lowPriority false: as it is" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" "hi"
+printf '1\n61\n51539607552\n14\n{ 1.00 1.00 1.00 }\ntotal = 8192.00M  used = 10.00M  free = 8182.00M  (encrypted)\n' > "$fx/sysctl"
+echo '{"stagger":0,"pollEvery":1}' > "$DEPLOYS_CONFIG/perf.json"
+expect "green: full speed" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null)" "hi"
+echo '{"stagger":0,"pollEvery":1,"lowPriority":"always"}' > "$DEPLOYS_CONFIG/perf.json"
+expect "always: low even when green" "$(bash lib/perf.sh gate --max-wait 0 echo hi 2>/dev/null | cut -c1-6)" "low:-b"
+printf '#!/bin/sh\nshift; exec "$@"\n' > "$tmp/taskpolicy"
+printf 'echo no-shebang\nexit 4\n' > "$tmp/ns"; chmod +x "$tmp/ns"
+out="$(bash lib/perf.sh gate --max-wait 0 "$tmp/ns" 2>/dev/null)"; rc=$?
+expect "a script without #! runs, its exit code is kept" "$out $rc" "no-shebang 4"
+unset DEPLOYS_PERF_TASKPOLICY
+
+# --- apps the Mac app would quit (its plan file), shown by perf clean ---
+echo '{"quitApps":{"enabled":true}}' > "$DEPLOYS_CONFIG/perf.json"
+rm -f "$DEPLOYS_CONFIG/perf/quit-plan.json"
+expect "no plan: the app is not running" "$(perf_quit_plan)" "$(printf '#\tthe Deploy Center app is not running: no apps are quit')"
+printf '{"time":%s,"enabled":true,"pressed":false,"candidates":[{"bundleId":"com.example.editor","name":"Example Editor","mb":2048,"idleMin":45}]}' "$now" > "$DEPLOYS_CONFIG/perf/quit-plan.json"
+expect "the plan lists the candidates" "$(json=0 perf_clean_main | grep -c 'would quit app  Example Editor  2048 MB  idle 45 min')" "1"
+expect "and in --json" "$(json=1 perf_clean_main | jq -c '.apps')" '[{"name":"Example Editor","mb":2048,"idleMin":45}]'
+echo '{}' > "$DEPLOYS_CONFIG/perf.json"
+expect "off: nothing about apps" "$(json=0 perf_clean_main | grep -c 'apps\|quit app')" "0"
 
 [ "$fails" = 0 ] && echo "perf-shed: all passed" || { echo "perf-shed: $fails failed"; exit 1; }

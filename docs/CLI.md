@@ -161,7 +161,8 @@ deploys perf clean [--yes] [--dev]      # orphaned dev processes and test browse
 deploys perf reap [--all] [--yes] [--pid N]   # hung and orphaned process trees by class (PERF.md)
 deploys perf consumers | docker | stop <stack> --yes | wake <stack>   # Docker stacks, simulators, caches
 deploys perf shed [--yes]               # unused dev servers (rule S), stopped only under memory pressure (PERF.md)
-deploys perf install [--clean] [--docker] [--shed] --yes | uninstall | hook   # the launchd agent; the Claude Code hook entry
+deploys perf finished [--yes]           # dev servers of archived or done sessions and merged branches (PERF.md)
+deploys perf install [--clean] [--docker] [--shed] [--stop-finished] --yes | uninstall | hook   # the launchd agent; the Claude Code hook entry
 deploys local-sessions [--json]         # Claude Code sessions on this Mac: tasks started together on one repo, twins, idle ones (LOCAL-SESSIONS.md)
 deploys local-sessions stop <pid> --yes # end one session (its transcript file stays); without --yes only what it would do
 deploys desktop-sessions [--json]       # the desktop app's Code sessions per account: done but not archived yet (LOCAL-SESSIONS.md)
@@ -340,6 +341,7 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_PERF_DB_WAIT` | seconds to wait after starting a Docker stack's databases (default 3) |
 | `DEPLOYS_PERF_NORECORD` | `1`: `perf status` does not record its sample |
 | `DEPLOYS_PERF_LABEL` | the launchd label of the performance agent (default `app.deploycenter.perf`) |
+| `DEPLOYS_PERF_TASKPOLICY` | the `taskpolicy` program `perf gate` runs a heavy command through at background priority (default /usr/sbin/taskpolicy; tests point it at a fake) |
 | `DEPLOYS_PERF_NOTIFY_CMD` | a program called with a title and a text instead of a Mac notification (no shell) |
 | `DEPLOYS_ROUTINE_TOKEN` | the token of a Claude routine, instead of the keychain (for CI; never put it on a command line) |
 | `DEPLOYS_CLAUDE_PROJECTS` | where Claude Code keeps its project folders (default `~/.claude/projects`) |

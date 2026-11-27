@@ -25,7 +25,7 @@ perf_conf() {
   local f='{}'
   [ -f "$PERF_CONF" ] && f="$(jq -c 'if type == "object" then . else {} end' "$PERF_CONF" 2>/dev/null || echo '{}')"
   jq -nc --argjson f "$f" '{maxLoadPerCore:1.0, redLoadPerCore:4, maxSwapUsedMB:3072, maxSwapoutMBPerMin:20, redSwapoutMBPerMin:50,
-    minSwapFreeMB:2048, redSwapFreeMB:1536, maxChecks:0, maxWait:"10m", stagger:20, pollEvery:10, clean:false,
+    minSwapFreeMB:2048, redSwapFreeMB:1536, maxChecks:0, maxWait:"10m", stagger:20, pollEvery:10, clean:false, lowPriority:"busy",
     notifyAfterMin:5, notifyEveryMin:30} + $f'
 }
 
@@ -210,6 +210,7 @@ perf_wait_main() {
     [ -n "$prev" ] || prev="$(perf_prev_sample "${raw%% *}" 30)"
     snap="$(perf_judge "$raw" "$(perf_procs 2>/dev/null || echo '{"sessions":0,"checks":0,"groups":[],"top":[]}')" "$conf" "$prev" 2>/dev/null)" || return 0
     [ -n "$snap" ] || return 0
+    PERF_LAST_LEVEL="$(jq -r .level <<<"$snap" 2>/dev/null)"
     # The next reading measures the swap rate against this one (at least 5 s apart).
     prev="${raw%% *} $(echo "$raw" | awk '{print $11}')"
     if [ "$(jq -r .admit <<<"$snap")" = true ]; then
@@ -254,8 +255,17 @@ perf_gate_main() {  # perf gate [options] -- <command…>: wait, then run it wit
     shift
   done
   [ "$#" -gt 0 ] || { echo "Usage: deploys perf gate [--max-wait 10m] [--fail-open] [--quiet] -- <command…>" >&2; return 2; }
+  PERF_LAST_LEVEL=""
   perf_wait_main ${opts[@]+"${opts[@]}"}; rc=$?
   [ "$rc" = 0 ] || return "$rc"
+  # Background QoS (efficiency cores, low I/O priority; no admin needed) while the Mac is busy, or always:
+  # perf.json "lowPriority": "busy" (default, yellow or red), "always" or false.
+  local lp tp="${DEPLOYS_PERF_TASKPOLICY:-/usr/sbin/taskpolicy}"
+  lp="$(perf_conf 2>/dev/null | jq -r '.lowPriority | tostring' 2>/dev/null)"
+  if [ -x "$tp" ] && { [ "$lp" = always ] || { [ "$lp" = busy ] && { [ "$PERF_LAST_LEVEL" = yellow ] || [ "$PERF_LAST_LEVEL" = red ]; }; }; }; then
+    # through bash, so a script without a #! line still runs (taskpolicy itself cannot start one)
+    "$tp" -b /bin/bash -c '"$@"' perf-gate "$@"; return
+  fi
   "$@"
 }
 
@@ -280,13 +290,16 @@ perf_main() {
     docker|consumers|stop|wake)
       declare -F perfdocker_main >/dev/null || { echo "perf $sub needs lib/perfdocker.sh next to perf.sh" >&2; return 1; }
       perfdocker_main "$sub" ${rest[@]+"${rest[@]}"} ;;
+    finished)
+      declare -F perf_finished_main >/dev/null || { echo "perf finished needs lib/perffinished.sh next to perf.sh" >&2; return 1; }
+      perf_finished_main ${rest[@]+"${rest[@]}"} ;;
     shed)
       declare -F perf_shed_main >/dev/null || { echo "perf shed needs lib/perfshed.sh next to perf.sh" >&2; return 1; }
       perf_shed_main ${rest[@]+"${rest[@]}"} ;;
     clean|reap|tick|install|uninstall|hook)
       declare -F perfclean_main >/dev/null || { echo "perf $sub needs lib/perfclean.sh next to perf.sh" >&2; return 1; }
       perfclean_main "$sub" ${rest[@]+"${rest[@]}"} ;;
-    *) echo "Usage: deploys perf status|wait|gate|clean|reap|shed|consumers|docker|stop|wake|install|uninstall|hook [--json]" >&2; return 2 ;;
+    *) echo "Usage: deploys perf status|wait|gate|clean|reap|shed|finished|consumers|docker|stop|wake|install|uninstall|hook [--json]" >&2; return 2 ;;
   esac
 }
 
@@ -300,6 +313,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   [ -f "$_pd/perfdocker.sh" ] && . "$_pd/perfdocker.sh"
   # shellcheck source=lib/perfshed.sh
   [ -f "$_pd/perfshed.sh" ] && . "$_pd/perfshed.sh"
+  # shellcheck source=lib/perffinished.sh
+  [ -f "$_pd/perffinished.sh" ] && . "$_pd/perffinished.sh"
   # shellcheck source=lib/desktopsessions.sh
   [ -f "$_pd/desktopsessions.sh" ] && . "$_pd/desktopsessions.sh"
   perf_main "$@"; exit $?

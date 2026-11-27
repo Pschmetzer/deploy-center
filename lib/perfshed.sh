@@ -35,7 +35,7 @@ perf_shed_sessions() {
 # perf_shed_list [--no-sessions]: TSV `pid<TAB>why<TAB>age s<TAB>MB<TAB>pids<TAB>ports<TAB>folder<TAB>args`, and
 # rewrites perf/shed-seen.tsv (pid, start, last time a client was connected).
 perf_shed_list() {
-  local me jobs listen est cwds sess="" seen now conf idle back
+  local me jobs listen est cwds sess="" seen now conf idle back mode=shed
   me="$(id -u)"; now="$(perf_now)"; conf="$(perf_shed_conf)"; idle="$(jq -r '.idleMin | floor' <<<"$conf")"
   mkdir -p "$PERF_DIR" 2>/dev/null; seen="$PERF_DIR/shed-seen.tsv"; [ -f "$seen" ] || : > "$seen" 2>/dev/null
   jobs="$(perf_src launchctl launchctl list | awk 'NR > 1 && $1 ~ /^[0-9]+$/ {print $1}' | tr '\n' ' ')"
@@ -43,12 +43,13 @@ perf_shed_list() {
   # Our side of each open connection (the part before ->): a client on a listening port shows there.
   est="$(perf_src shedest lsof -nP -iTCP -sTCP:ESTABLISHED -a -u "$me" -Fn | sed -n 's/^n//p' | sed 's/->.*//' | sed -n 's/.*:\([0-9][0-9]*\)$/\1/p' | sort -u | tr '\n' ' ')"
   cwds="$(perf_src shedcwd lsof -a -d cwd -u "$me" -c node -c next-serv -c vite -c nodemon -Fpn | awk '/^p/ {p = substr($0, 2)} /^n/ {print p "\t" substr($0, 2)}' | tr '\n' '\034')"
+  [ "${1:-}" != --finished ] || mode=finished
   [ "${1:-}" = --no-sessions ] || sess="$(perf_shed_sessions | tr '\n' '\034')"
   # folder+command of the servers stopped in the last 24 h: one that is back is wanted
   back="$( [ -f "$PERF_DIR/shed-stopped.tsv" ] && awk -F'\t' -v now="$now" '$1 >= now - 86400 {print $2}' "$PERF_DIR/shed-stopped.tsv" | tr '\n' '\034')"
   { cat "$seen"; echo "@@"; perf_src shedps ps -U "$me" -o pid=,ppid=,etime=,rss=,stat=,tty=,args=; } | awk \
     -v prot="$PERF_PROTECT_RE|/deploys( |$)|lib/perf\\.sh" -v now="$now" -v idle="$idle" -v jobs=" $jobs " -v listen="$listen" \
-    -v est=" $est " -v cwds="$cwds" -v sess="$sess" -v back="$back" -v seenf="$seen.new" '
+    -v est=" $est " -v cwds="$cwds" -v sess="$sess" -v back="$back" -v mode="$mode" -v seenf="$seen.new" '
     function secs(e,   d, n, t, s, i) { d = 0; if (e ~ /-/) { d = substr(e, 1, index(e, "-") - 1); e = substr(e, index(e, "-") + 1) }
       n = split(e, t, ":"); s = 0; for (i = 1; i <= n; i++) s = s * 60 + t[i]; return d * 86400 + s }
     function isdev(a) { return a ~ /next dev|next-server|vite( |$)|webpack-dev|nodemon/ && a !~ /vite build|next build/ }
@@ -68,7 +69,7 @@ perf_shed_list() {
         up = 0; bad = 0; live = 0; q = P[p]; h = 0
         while (q > 1 && h < 40) { if (isdev(A[q])) up = 1
           if (A[q] ~ /claude-code\/[^ ]*\/claude( |$)|\/\.local\/bin\/claude( |$)/) live = 1
-          if (A[q] ~ /Code Helper|Visual Studio Code|Cursor\.app|Xcode\.app|lldb|--inspect/ || ST[q] ~ /T/ || index(jobs, " " q " ")) bad = 1
+          if (A[q] ~ /Code Helper|Visual Studio Code|Cursor\.app|Xcode\.app|lldb|--inspect/ || ST[q] ~ /T/) bad = 1
           q = P[q]; h++ }
         if (up || bad) continue
         pl = ""; mb = 0; tree(p); pl = substr(pl, 2)
@@ -89,7 +90,9 @@ perf_shed_list() {
         st = ""; if (best != "") { st = "archived"; for (i = 1; i <= ns; i++) if (S[i] != "") { split(S[i], sv, "\t")
             if (sv[2] == best && sv[1] == "open") st = "open"; else if (sv[2] == best && sv[1] == "done" && st == "archived") st = "done" } }
         idlefor = "no client on port " ports " for " int((now - last) / 60) " min"
-        if (st == "archived") why = "its Claude session is archived"
+        # --finished (lib/perffinished.sh): archived or done at any level; "?" = no session, its branch decides
+        if (mode == "finished") { why = (st == "archived" || st == "done") ? st : (st == "" && dir != "" ? "?" : "") }
+        else if (st == "archived") why = "its Claude session is archived"
         else if (st == "done" && isidle) why = "its Claude session is done, " idlefor
         else if (st == "" && isidle && !live && !tty) why = idlefor
         if (why != "") printf "%s\t%s\t%d\t%d\t%s\t%s\t%s\t%s\n", p, why, AGE[p], mb / 1024, pl, ports, dir, substr(a, 1, 200) } }' \
@@ -159,7 +162,21 @@ perf_shed_tick() {
   now="$(perf_now)"
   if [ "$(jq -r '.memoryTight // false' <<<"$snap")" = true ] && [ $(( now - $(cat "$PERF_DIR/last-shed" 2>/dev/null || echo 0) )) -ge 300 ]; then
     echo "$now" > "$PERF_DIR/last-shed"; json=0 perf_shed_main --yes --quiet --snap "$snap" || true
+    # The Mac app quits picked apps only after a shedding pass had its effect (app/AppQuit.swift).
+    perf_now > "$PERF_DIR/shed-done" 2>/dev/null || true
   else
     perf_shed_list --no-sessions >/dev/null 2>&1 || true
   fi
+}
+
+# perf_quit_plan: what the Mac app would quit now (perf/quit-plan.json, app/AppQuit.swift), as lines
+# `name<TAB>MB<TAB>idle min`, or one line `#<TAB>reason` when it cannot tell. Read-only.
+perf_quit_plan() {
+  local f="$PERF_DIR/quit-plan.json" on
+  on="$(perf_conf | jq -r '(.quitApps // {}).enabled // false')"
+  [ "$on" = true ] || return 0
+  if [ ! -f "$f" ] || [ $(( $(perf_now) - $(jq -r '.time // 0' "$f" 2>/dev/null || echo 0) )) -gt 180 ]; then
+    printf '#\tthe Deploy Center app is not running: no apps are quit\n'; return 0
+  fi
+  jq -r '.candidates[]? | "\(.name)\t\(.mb)\t\(.idleMin)"' "$f" 2>/dev/null
 }
