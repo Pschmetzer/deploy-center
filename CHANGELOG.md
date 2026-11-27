@@ -3,6 +3,7 @@
 ## Unreleased
 
 - New: `deploy-changed --skip-failed` (also on `plan` and `schedule daily`) leaves out a project whose newest build failed at the commit that would go out; a newer commit, such as a fix, still goes. `--between 03:00-05:00` makes a scheduled run that launchd starts late (the Mac slept) start nothing
+- New: `deploys morning` sums up the night: deployed, failed, merged pull requests, handed to autofix and still waiting, as a text file and one notification; `deploys morning schedule on 08:00` runs it every morning
 
 ## 0.15.0 - 2026-11-27
 

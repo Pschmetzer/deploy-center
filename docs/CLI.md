@@ -24,6 +24,8 @@ deploys prepare on [HH:MM] [--weekdays] [--when-green] [--no-freeze] [--yes] [--
 deploys creds [--max-age 90] [--json]   # per platform: where its key comes from (environment, keychain, login), if it works, how old a keychain key is. Reads only; never shows a key.
 deploys doctor --text                   # one line each (ok or the problem), with the fix
 deploys doctor --fix [--json]           # what to do about each problem, as commands for you to type; shows only, runs and changes nothing
+deploys morning [--hours 24] [--json] [--no-notify] [--no-file] [--offline]   # overnight: what was deployed, failed, merged (deploys prs), handed to autofix and still waits; writes ~/.config/deploys/morning/<date>.txt (the newest 30 stay) and sends one notification (also to DEPLOYS_NOTIFY_CMD). Starts nothing
+deploys morning schedule on [08:00] | off | status [--json]   # the same every morning (launchd; off until you turn it on)
 deploys digest [--days 7] [--json] [--no-savings]   # the last week from the journal: deploys, failures, rollbacks, busiest day, projects, and the saving of `ledger` (an estimate; --no-savings skips it, it needs the network)
 deploys preview <project> [--json]       # what a production deploy would do: commits, files, risk, rule, deploy window, budget, verdict. Starts nothing
 deploys timeline [--days 3] [--project <name>] [--limit 50] [--json]   # what happened, newest day first: deploys, failures, rollbacks, forced starts (from the journal, UTC; reads only)

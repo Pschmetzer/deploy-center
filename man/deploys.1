@@ -73,6 +73,7 @@ No key is ever printed.
   deploys freeze add <days> <from> [<to>] [\-\-reason "why"] | remove <n> | clear   e.g. freeze add fri 15:00
   deploys lock <p> "why" | lock [list] [\-\-json]   close one project for starts until it is unlocked (no time window)
   deploys unlock <p>                        open a locked project again
+  deploys morning [\-\-hours 24] [\-\-json] [\-\-no\-notify] [\-\-offline] | schedule on [HH:MM]|off|status   overnight: deployed, failed, merged, waiting (a file and a notification)
   deploys digest [\-\-days 7] [\-\-json] [\-\-no\-savings]   the last week from the journal: deploys, failures, savings
   deploys timeline [\-\-days 3] [\-\-project <p>] [\-\-limit 50]   what happened, newest day first (from the journal)
   deploys recovery [\-\-days 30] [\-\-project <p>]   how long a failure lasted until the next deploy

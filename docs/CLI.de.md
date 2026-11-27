@@ -18,6 +18,8 @@ deploys certs [--days 14] [--json]      # TLS-Zertifikat der Adresse jedes Proje
 deploys creds [--max-age 90] [--json]   # je Plattform: woher der Schlüssel kommt (Umgebung, Schlüsselbund, Login), ob er geht, wie alt ein Schlüsselbund-Schlüssel ist. Nur lesend; zeigt nie einen Schlüssel.
 deploys doctor --text                   # eine Zeile je Prüfung (ok oder das Problem), mit der Lösung
 deploys doctor --fix [--json]           # was bei jedem Problem zu tun ist, als Befehle zum Selbsttippen; zeigt nur an, führt nichts aus und ändert nichts
+deploys morning [--hours 24] [--json] [--no-notify] [--no-file] [--offline]   # über Nacht: was deployt wurde, gescheitert ist, gemergt wurde (deploys prs), an Autofix ging und noch wartet; schreibt ~/.config/deploys/morning/<Datum>.txt (die neuesten 30 bleiben) und schickt eine Mitteilung (auch an DEPLOYS_NOTIFY_CMD). Startet nichts
+deploys morning schedule on [08:00] | off | status [--json]   # dasselbe jeden Morgen (launchd; aus, bis du es einschaltest)
 deploys digest [--days 7] [--json] [--no-savings]   # die letzte Woche aus dem Journal: Deploys, Fehler, Rollbacks, aktivster Tag, Projekte und die Ersparnis aus `ledger` (eine Schätzung; --no-savings lässt sie weg, sie braucht das Netz)
 deploys list --format tsv               # Plattform, Projekt, auto oder manuell, letzter Stand: Tabs, ohne Kopfzeile, für Skripte ohne jq
 deploys idle [--days 90] [--json]       # Projekte ohne Deploy seit N Tagen: Kandidaten zum Pausieren (nur lesend)
