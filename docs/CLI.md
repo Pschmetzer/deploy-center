@@ -337,6 +337,7 @@ JSON is `{"kind":"deploys-export","schema":1,"journal":[...],"costs":{"rows":[..
 | `DEPLOYS_ROUTINE_TOKEN` | the token of a Claude routine, instead of the keychain (for CI; never put it on a command line) |
 | `DEPLOYS_CLAUDE_PROJECTS` | where Claude Code keeps its project folders (default `~/.claude/projects`) |
 | `DEPLOYS_AUTOFIX_PER_DAY`, `DEPLOYS_AUTOFIX_PER_PROJECT` | autofix caps per 24 h (default 6 and 2; `0` = no cap); also `~/.config/deploys/autofix-limits.json` with `perDay` and `perProject`, the variables win |
+| `DEPLOYS_PRS_EVERY`, `DEPLOYS_PRS_TIMEOUT` | `deploys prs`: seconds between scheduled runs (default 300) and the most a conflict fix by Claude may take (default 1800); docs/PRS.md |
 | `DEPLOYS_GITLAB_HOSTS` | self-managed GitLab hosts (docs/GITLAB.md) |
 | `DEPLOYS_HTTP_TRACE` | `1`: one line per call to a platform on stderr (method, path without query, status, time; no header, no body); `--debug` sets it |
 | `DEPLOYS_QUIET`, `DEPLOYS_DEBUG` | what the global `--quiet` and `--debug` set: only the result; the trace of the calls |
