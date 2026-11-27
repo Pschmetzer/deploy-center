@@ -25,7 +25,12 @@ case "$1 $2" in
   "pr create") [ -z "${GH_FAIL:-}" ] || exit 1; echo "https://example.invalid/pull/7" ;;
 esac
 GH
-chmod +x "$tmp/bin/gh"; export PATH="$tmp/bin:$PATH" GH_LOG="$tmp/gh.log"
+# claude stub: `claude agents --json` lists the sessions in $tmp/agents.json (none by default)
+cat > "$tmp/bin/claude" <<'CL'
+#!/bin/bash
+[ "$1 $2" = "agents --json" ] && { cat "$AGENTS_JSON" 2>/dev/null || echo '[]'; }
+CL
+chmod +x "$tmp/bin/gh" "$tmp/bin/claude"; export PATH="$tmp/bin:$PATH" GH_LOG="$tmp/gh.log" AGENTS_JSON="$tmp/agents.json"
 D() { ./deploys "$@"; }
 
 # repo <name>: a repo under the root with a bare origin and one pushed commit
@@ -109,6 +114,59 @@ expect "clean: nothing to rescue" "$(D repos rescue "$root/clean" --yes --json |
 GH_VIS=PUBLIC; export GH_VIS
 case "$(D repos rescue "$root/w1" 2>&1; D repos rescue "$root/wt/.claude/worktrees/w1")" in *"PUBLIC"*) ok "public repo warned" ;; *) fail "public repo warned" "no warning" ;; esac
 D repos rescue "$root/dirty/sub" >/dev/null 2>&1; expect "missing folder" "$?" 1
+
+# ---- the automatic rescue: its own config folder and root, so the folders above do not count ----
+unset GH_VIS
+export DEPLOYS_CONFIG="$tmp/config2"; mkdir -p "$tmp/config2"
+root="$tmp/code2"; mkdir -p "$root"; echo "{\"roots\":[\"$root\"]}" > "$tmp/config2/repos.json"
+two_h="$(date -r $(( $(date +%s) - 7200 )) +%Y%m%d%H%M 2>/dev/null || date -d @$(( $(date +%s) - 7200 )) +%Y%m%d%H%M)"
+recent2h() { find "$1" -path "$1/.git" -prune -o -exec touch -t "$two_h" {} + 2>/dev/null; }
+for n in a1 a6 a7; do repo "$n"; echo change >> "$root/$n/a.txt"; old "$root/$n"; done
+repo a2; echo change >> "$root/a2/a.txt"; recent2h "$root/a2"                  # idle 2 h, no session: left
+repo a3; echo change >> "$root/a3/a.txt"; recent2h "$root/a3"                  # idle 2 h, archived session: rescued
+repo a4; echo change >> "$root/a4/a.txt"; old "$root/a4"                       # a running agent: never
+repo a5; echo 'KEY=x' > "$root/a5/.env"; old "$root/a5"                        # a secret: refused
+jq -n --arg c "$root/a3" '{cwd: $c, isArchived: true, title: "Done", lastActivityAt: 2}' \
+  > "$tmp/desk/aaaaaaaa-0000-4000-8000-000000000001/bbbbbbbb-0000-4000-8000-000000000002/local_cccccccc-0000-4000-8000-000000000004.json"
+jq -n --arg c "$root/a4" '[{pid: 1, cwd: $c, kind: "background", status: "busy"}]' > "$tmp/agents.json"
+pushed() { git -C "$tmp/origin-$1.git" branch --list 'rescue/*' | wc -l | tr -d ' '; }
+
+j="$(D repos rescue --auto --json)"
+expect "auto dry run: candidates" "$(jq -r '[.items[] | "\(.name):\(.state)"] | sort | join(" ")' <<<"$j")" "a1:would-rescue a3:would-rescue a5:refused a6:would-rescue a7:would-rescue"
+expect "auto dry run pushes nothing" "$(pushed a1)$(pushed a3)" 00
+expect "auto --yes is off without the opt-in" "$(D repos rescue --auto --yes --json | jq -r .off)" true
+expect "off: nothing pushed" "$(pushed a1)" 0
+echo '{"auto":true,"perRun":3,"perDay":4}' > "$tmp/config2/rescue.json"
+j="$(D repos rescue --auto --yes --json)"
+expect "auto: 3 rescued, 1 for later, 1 refused" "$(jq -r '.summary | "\(.rescued) \(.capped) \(.refused)"' <<<"$j")" "3 1 1"
+expect "auto: archived one first" "$(jq -r '.items[0] | "\(.name) \(.state)"' <<<"$j")" "a3 rescued"
+expect "auto: draft pull request" "$(jq -r '[.items[] | select(.state == "rescued") | .pr] | unique | join(" ")' <<<"$j")" "https://example.invalid/pull/7"
+expect "auto: running agent left alone" "$(pushed a4):$(jq -r '[.items[] | select(.name == "a4")] | length' <<<"$j")" "0:0"
+expect "auto: idle 2 h without session left alone" "$(pushed a2)" 0
+expect "auto: secret not pushed" "$(pushed a5)" 0
+expect "auto: refusal journaled" "$(grep -c 'rescue of a5 refused' "$tmp/journal.jsonl")" 1
+expect "auto: summary journaled" "$(grep -c 'Automatic rescue: 3 rescued' "$tmp/journal.jsonl")" 1
+j="$(D repos rescue --auto --yes --json)"
+expect "auto: next run takes the rest, day cap 4" "$(jq -r '.summary | "\(.rescued) \(.today)"' <<<"$j")" "1 4"
+expect "auto: rescued ones are not pushed again" "$(pushed a1)$(pushed a3)$(pushed a6)$(pushed a7)" 1111
+expect "auto: refusal journaled once" "$(grep -c 'rescue of a5 refused' "$tmp/journal.jsonl")" 1
+repo a8; echo change >> "$root/a8/a.txt"; old "$root/a8"
+expect "auto: day cap reached" "$(D repos rescue --auto --yes --json | jq -r '.items[] | select(.name == "a8") | .state')" capped
+echo '{"auto":true}' > "$tmp/config2/rescue.json"; echo '{}' > "$tmp/config2/rescue-state.json"
+expect "auto: public repo not pushed" "$(GH_VIS=PUBLIC D repos rescue --auto --yes --json | jq -r '.items[] | select(.name == "a8") | .state'):$(pushed a8)" "public:0"
+expect "auto: unknown visibility not pushed" "$(GH_VIS=UNKNOWN D repos rescue --auto --yes --json | jq -r '.items[] | select(.name == "a8") | .state')" public
+echo '{"auto":true,"public":true}' > "$tmp/config2/rescue.json"
+expect "auto: public allowed by rescue.json" "$(GH_VIS=PUBLIC D repos rescue --auto --yes --json | jq -r '.items[] | select(.name == "a8") | .state')" rescued
+case "$(D repos rescue --auto)" in *"Automatic rescue:"*"Nothing was pushed"*) ok "auto: text output" ;; *) fail "auto: text output" "$(D repos rescue --auto)" ;; esac
+if command -v launchctl >/dev/null 2>&1 && command -v plutil >/dev/null 2>&1; then
+  ( export DEPLOYS_LAUNCH_DIR="$tmp/la"; launchctl() { [ "$1" != print ]; }; export -f launchctl
+    echo '{"perRun":2}' > "$tmp/config2/rescue.json"; D repos rescue schedule on >/dev/null 2>&1 || true )
+  plist="$tmp/la/com.deploycenter.rescue.plist"
+  expect "schedule on: hourly, --auto --yes" "$(grep -c '<integer>3600</integer>' "$plist"):$(grep -c '<string>--auto</string>' "$plist")" "1:1"
+  expect "schedule on: opt-in kept with the settings" "$(jq -c . "$tmp/config2/rescue.json")" '{"perRun":2,"auto":true}'
+  ( export DEPLOYS_LAUNCH_DIR="$tmp/la"; launchctl() { :; }; export -f launchctl; D repos rescue schedule off >/dev/null 2>&1 || true )
+  expect "schedule off" "$([ -f "$plist" ] && echo there || echo gone):$(jq -r .auto "$tmp/config2/rescue.json")" "gone:false"
+else ok "schedule: skipped (no launchd here)"; fi
 
 echo
 if [ "$fails" = 0 ]; then echo "all stranded tests passed"; else echo "$fails failed"; exit 1; fi

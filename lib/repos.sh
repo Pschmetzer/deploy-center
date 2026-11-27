@@ -266,12 +266,13 @@ repos_main() {
   case "$cmd" in
     schedule) repos_schedule "$@"; return ;;
     stranded|rescue) declare -F stranded_main >/dev/null || die "deploys repos $cmd needs lib/stranded.sh"
-      if [ "$cmd" = stranded ]; then stranded_main "$@"; else stranded_rescue "$@"; fi; return ;;
+      if [ "$cmd" = stranded ]; then stranded_main "$@"; return; fi
+      case "${1:-} $* " in "schedule "*) shift; stranded_schedule "$@" ;; *" --auto "*) stranded_auto "$@" ;; *) stranded_rescue "$@" ;; esac; return ;;
     status|sync) ;;
     last)
       [ -f "$CONFIG_DIR/repos-last.json" ] || { [ "${json:-0}" = 1 ] && echo '{"ranAt":null,"repos":[]}' || echo "No run yet: deploys repos status"; return 0; }
       cat "$CONFIG_DIR/repos-last.json"; return 0 ;;
-    *) die "Usage: deploys repos status [--no-fetch] [--json] | repos sync [--yes] [--json] | repos last | repos schedule on|off|status | repos stranded [--json] | repos rescue <folder> [--yes]" ;;
+    *) die "Usage: deploys repos status [--no-fetch] [--json] | repos sync [--yes] [--json] | repos last | repos schedule on|off|status | repos stranded [--json] | repos rescue <folder> [--yes] | repos rescue --auto [--yes] | repos rescue schedule on|off|status" ;;
   esac
   while [ $# -gt 0 ]; do
     case "$1" in

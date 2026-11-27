@@ -67,3 +67,9 @@ auf keinem Remote sind, zuerst die aus archivierten Sitzungen. `deploys repos re
 einen neuen Branch `rescue/<ordner>-<zeit>` und öffnet eine Entwurfs-PR; der Ordner selbst bleibt unverändert.
 Abgelehnt wird bei Geheimnissen (`.env`, Schlüssel, Tokens), Dateien über 5 MB, mehr als 300 Dateien oder einem
 verschachtelten Repo. In der Menüleiste: „Liegengebliebene Arbeit“, ein Klick fragt vorher.
+
+Automatisch: `deploys repos rescue schedule on` schaltet es ein (stündlich, ein LaunchAgent), `deploys repos rescue --auto`
+zeigt vorher, was passieren würde. Gerettet werden ohne Rückfrage nur Ordner aus archivierten Sitzungen oder solche, die
+24 Stunden unberührt sind; nie ein Ordner, in dem eine laufende Sitzung arbeitet (auch `claude agents --json`), nie ein
+öffentliches Repo (das hieße veröffentlichen: von Hand retten oder `"public": true`), höchstens 3 pro Lauf und 10 pro
+Tag. Einstellungen in `rescue.json`: `{"auto":true,"perRun":3,"perDay":10,"idleHours":24,"public":false}`.

@@ -82,6 +82,23 @@ the minutes a folder must be untouched). With `--json` a refusal is an answer (e
 in `problems`); without it the exit code is 1. Tests (`tests/stranded-tests.sh`) use `DEPLOYS_STRANDED_NOW` (the
 clock) and `DEPLOYS_STRANDED_NO_PERF=1` (no load check), temporary repos with a local bare origin and a stub `gh`.
 
+### Automatically
+
+```bash
+deploys repos rescue --auto              # what an automatic run would rescue (pushes nothing)
+deploys repos rescue --auto --yes        # do it (only after the opt-in below)
+deploys repos rescue schedule on         # the opt-in: every hour, a LaunchAgent; `off` and `status` too
+```
+
+The automatic mode takes the folders `stranded` lists and rescues, without asking, only those whose desktop session is
+archived or that were not touched for 24 hours. Every refusal above stays, and it adds its own: never a folder a running
+Claude Code session works in (the session files and `claude agents --json`), never a public repo or one whose
+visibility `gh` cannot tell (pushing there publishes the work: rescue those by hand, or set `"public": true`), at most
+3 rescues per run and 10 per day. A refusal is journaled once, not every hour; each run ends with one summary line in
+the journal and its result in `rescue-last.json`. Settings, all optional, in `rescue.json` in the config folder:
+`{"auto":true,"perRun":3,"perDay":10,"idleHours":24,"public":false}` (`schedule on` sets `auto`, `off` clears it).
+Without `"auto": true`, `--auto --yes` does nothing.
+
 In the menu bar, "Left-behind work: N folders" lists them (scanned once an hour, "Check now" for a fresh look). A click
 on one shows what would be pushed and asks; only then it pushes and opens the draft pull request. A folder from an
 archived session that is new in the list gets a notification; the first scan is silent.

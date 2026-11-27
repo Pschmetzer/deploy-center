@@ -16,10 +16,19 @@
 # It refuses when the changes hold a secret-like file name (.env, *.pem, *.key, id_rsa, credentials ...) or a token
 # (ghp_, github_pat_, sk-, AKIA, xox?-, a private key), a file over 5 MB, more than 300 files, or a nested repo. It says when
 # the repo is public: pushing there publishes the work. One rescue per state: the same changes twice are skipped.
+#
+#   deploys repos rescue --auto [--yes] [--json]    the unattended mode: rescues, without asking, the folders left over from
+#                                                   an archived Claude session or idle for 24 h (rescue.json "idleHours").
+#   deploys repos rescue schedule on|off|status     a LaunchAgent: `rescue --auto --yes` every hour; `on` is the opt-in.
+# The automatic mode keeps every refusal above and adds its own: never a folder a running session works in (also
+# `claude agents --json`), never a public repo or one whose visibility gh cannot tell (pushing publishes; "public": true
+# in rescue.json allows it), at most "perRun" (3) rescues per run and "perDay" (10) per day. Without --yes it only shows.
+# rescue.json in the config folder: {"auto":true,"perRun":3,"perDay":10,"idleHours":24,"public":false}.
 # Bash 3.2. Sourced by deploys; uses CONFIG_DIR, journal_add, repos_list and repos_git from lib/repos.sh.
 #
 # Tests: DEPLOYS_DESKTOP_SESSIONS_BASE and DEPLOYS_LOCAL_SESSIONS_DIR point at made-up session files,
-# DEPLOYS_STRANDED_NOW fixes the clock, DEPLOYS_STRANDED_NO_PERF=1 skips the load check, gh is a stub on PATH.
+# DEPLOYS_STRANDED_NOW fixes the clock, DEPLOYS_STRANDED_NO_PERF=1 skips the load check, gh and claude are stubs on PATH
+# (DEPLOYS_STRANDED_NO_AGENTS=1 skips `claude agents`).
 
 STRANDED_MAX_FILES="${DEPLOYS_STRANDED_MAX_FILES:-300}"
 STRANDED_MAX_KB="${DEPLOYS_STRANDED_MAX_KB:-5120}"
@@ -46,6 +55,13 @@ stranded_live_cwds() {
     case "$p" in ""|*[!0-9]*) continue ;; esac
     if [ -n "$c" ] && kill -0 "$p" 2>/dev/null; then echo "$c"; fi
   done
+  # Plus the sessions `claude agents --json` knows (background ones too). Read once per run: STRANDED_AGENTS.
+  [ -n "${STRANDED_AGENTS+x}" ] || STRANDED_AGENTS="$(stranded_agent_cwds)"
+  [ -z "$STRANDED_AGENTS" ] || printf '%s\n' "$STRANDED_AGENTS"
+}
+stranded_agent_cwds() {
+  [ "${DEPLOYS_STRANDED_NO_AGENTS:-}" != 1 ] && command -v claude >/dev/null 2>&1 || return 0
+  perl -e 'alarm 20; exec @ARGV' claude agents --json </dev/null 2>/dev/null | jq -r '.[]? | .cwd // empty' 2>/dev/null || true
 }
 
 STRANDED_PICK='select(type == "object" and (.cwd | type) == "string")
@@ -247,4 +263,120 @@ stranded_rescue() {
   journal_add cli repos live "rescued $(basename "$t") to $branch${pr:+ ($pr)}" 2>/dev/null || true
   local tail="; draft pull request: $pr"; [ -n "$pr" ] || tail=" (no pull request: gh failed; open one for $branch by hand)"
   say rescued "Pushed $what to $branch$tail" "$pr"
+}
+
+# ---- The automatic rescue ----------------------------------------------------------------------------------------
+RESCUE_LABEL="com.deploycenter.rescue"
+stranded_cfg() {  # stranded_cfg <jq path>: a value of rescue.json, empty without one
+  [ -f "$CONFIG_DIR/rescue.json" ] || return 0
+  jq -r "$1 // empty" "$CONFIG_DIR/rescue.json" 2>/dev/null || true
+}
+stranded_num() { case "$1" in ''|*[!0-9]*) echo "$2" ;; *) echo "$1" ;; esac; }
+
+# One rescue, its JSON on stdout. In a subshell: stranded_rescue ends with die on a folder that went away or a
+# session that started in the meantime, and that must cost this folder only, not the run.
+stranded_try() {  # stranded_try <folder> [--yes]
+  local e out; e="$(mktemp)"
+  out="$( ( stranded_rescue "$@" --json ) 2>"$e" | tail -n 1)"
+  if ! jq -e 'type == "object"' >/dev/null 2>&1 <<<"$out"; then
+    out="$(jq -nc --arg n "$(grep -v '^\s*$' "$e" | tail -n 1 | sed 's/^[^ ]*Error:[^ ]* //' | cut -c1-200)" '{state: "error", note: $n}')"
+  fi
+  rm -f "$e"; printf '%s\n' "$out"
+}
+
+stranded_auto() {
+  local yes=0 a
+  for a in "$@"; do case "$a" in --auto) ;; --yes) yes=1 ;; --json) json=1 ;; *) die "Usage: deploys repos rescue --auto [--yes] [--json]" ;; esac; done
+  if [ "$yes" = 1 ] && [ "$(stranded_cfg .auto)" != true ]; then
+    if [ "${json:-0}" = 1 ]; then echo '{"ranAt":null,"off":true,"items":[]}'
+    else echo "The automatic rescue is off. Turn it on: deploys repos rescue schedule on (deploys repos rescue --auto shows what it would do)."; fi
+    return 0
+  fi
+  local per_run per_day idle pub
+  per_run="$(stranded_num "$(stranded_cfg .perRun)" 3)"; per_day="$(stranded_num "$(stranded_cfg .perDay)" 10)"
+  idle="$(stranded_num "$(stranded_cfg .idleHours)" 24)"; pub="$(stranded_cfg .public)"
+  mkdir -p "$CONFIG_DIR/locks"
+  local lock="$CONFIG_DIR/locks/rescue.lock"
+  lock_clear_stale "$lock" 3600
+  if ! mkdir "$lock" 2>/dev/null; then echo "Another rescue run is going on." >&2; [ "${json:-0}" != 1 ] || echo '{"ranAt":null,"busy":true,"items":[]}'; return 0; fi
+  trap_add "rmdir '$lock' 2>/dev/null || true"
+  # The day's count: rescue-state.json {"day":"YYYY-MM-DD","count":n,"refused":{"<folder>":"<problems>"}}.
+  local st="$CONFIG_DIR/rescue-state.json" day count refused
+  day="$(date -u -r "$(stranded_now)" +%Y-%m-%d 2>/dev/null || date -u +%Y-%m-%d)"
+  count="$( [ -f "$st" ] && jq -r --arg d "$day" 'if .day == $d then .count // 0 else 0 end' "$st" 2>/dev/null || echo 0)"
+  refused="$( [ -f "$st" ] && jq -c '.refused // {}' "$st" 2>/dev/null || echo '{}')"; [ -n "$refused" ] || refused='{}'
+  STRANDED_AGENTS="$(stranded_agent_cwds)"; export STRANDED_AGENTS
+  local scan; scan="$(stranded_scan)"
+  if [ -n "$(jq -r '.skipped // empty' <<<"$scan")" ]; then
+    rmdir "$lock" 2>/dev/null || true; trap_pop
+    if [ "${json:-0}" = 1 ]; then jq -c '{ranAt: null, skipped, items: []}' <<<"$scan"; else echo "Not now: $(jq -r .skipped <<<"$scan")."; fi
+    return 0
+  fi
+  local rows; rows="$(mktemp)"
+  local item p plan state vis r done_now=0 note
+  while IFS= read -r item; do
+    [ -n "$item" ] || continue
+    p="$(jq -r .path <<<"$item")"; note=""
+    if [ "$done_now" -ge "$per_run" ] || [ "$count" -ge "$per_day" ]; then state=capped; note="the limit of this run or day is reached; next run"
+    else
+      plan="$(stranded_try "$p")"; state="$(jq -r '.state // "error"' <<<"$plan")"; vis="$(jq -r '.visibility // "UNKNOWN"' <<<"$plan")"
+      note="$(jq -r '.note // ""' <<<"$plan")"; r="$plan"
+      if [ "$state" = plan ] && [ "$vis" != PRIVATE ] && [ "$vis" != INTERNAL ] && [ "$pub" != true ]; then
+        state=public; note="the repo is $(printf '%s' "$vis" | tr '[:upper:]' '[:lower:]'): not pushed without asking. Rescue it by hand: deploys repos rescue $p --yes"
+      elif [ "$state" = plan ] && [ "$yes" = 1 ]; then
+        r="$(stranded_try "$p" --yes)"; state="$(jq -r '.state // "error"' <<<"$r")"; note="$(jq -r '.note // ""' <<<"$r")"
+        [ "$state" != rescued ] || { done_now=$((done_now+1)); count=$((count+1)); }
+      elif [ "$state" = plan ]; then state=would-rescue
+      fi
+      if [ "$state" = refused ] && [ "$yes" = 1 ]; then
+        local pr_s; pr_s="$(jq -r '.problems | join("; ")' <<<"$r")"
+        if [ "$(jq -r --arg p "$p" '.[$p] // ""' <<<"$refused")" != "$pr_s" ]; then
+          journal_add cli repos live "rescue of $(basename "$p") refused: $pr_s" 2>/dev/null || true
+          refused="$(jq -c --arg p "$p" --arg v "$pr_s" '. + {($p): $v}' <<<"$refused")"
+        fi
+      fi
+    fi
+    [ -n "${r:-}" ] || r='{}'
+    jq -c --arg state "$state" --arg note "$note" --argjson r "$r" \
+      '{path, name, repoName, branch, class, session, idleHours, changed, unpushed, state: $state, note: $note,
+        problems: ($r.problems // []), pr: ($r.pr // null), rescueBranch: ($r.branch // null), visibility: ($r.visibility // null)}' <<<"$item" >> "$rows"
+    r=""
+  done < <(jq -c --argjson h "$idle" '.items[] | select(.hasRemote) | select(.class == "archived" or .idleHours >= $h)' <<<"$scan")
+  local res
+  res="$(jq -sc --argjson applied "$yes" --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson perRun "$per_run" --argjson perDay "$per_day" --argjson today "$count" '
+    def n($s): [.[] | select(.state == $s)] | length;
+    {ranAt: $at, applied: ($applied == 1), items: .,
+     summary: {candidates: length, rescued: n("rescued"), wouldRescue: n("would-rescue"), public: n("public"),
+               refused: n("refused"), capped: n("capped"), errors: n("error"), today: $today, perRun: $perRun, perDay: $perDay}}' < "$rows")"
+  rm -f "$rows"
+  if [ "$yes" = 1 ]; then
+    jq -n --arg d "$day" --argjson c "$count" --argjson r "$refused" '{day: $d, count: $c, refused: $r}' > "$st.tmp" 2>/dev/null && mv -f "$st.tmp" "$st"
+    journal_add cli repos live "Automatic rescue: $(jq -r '.summary | "\(.rescued) rescued, \(.refused) refused, \(.public) public (left), \(.capped) for later"' <<<"$res")" 2>/dev/null || true
+  fi
+  printf '%s\n' "$res" > "$CONFIG_DIR/rescue-last.json.tmp" && mv -f "$CONFIG_DIR/rescue-last.json.tmp" "$CONFIG_DIR/rescue-last.json"
+  rmdir "$lock" 2>/dev/null || true; trap_pop
+  if [ "${json:-0}" = 1 ]; then printf '%s\n' "$res"; return 0; fi
+  jq -r '
+    (.items[] | "  \(.state | . + (" " * ([12 - length, 0] | max)))  \(.name) [\(.branch // "-")]  \(.changed) files, \(.unpushed) unpushed, \(.class), idle \(.idleHours) h\(if .pr then "  " + .pr elif .note != "" then "  (" + .note + ")" else "" end)"),
+    (.summary | "Automatic rescue: \(.candidates) folders left over, \(.rescued) rescued, \(.wouldRescue) would be, \(.public) in public repos (left), \(.refused) refused, \(.capped) for a later run."),
+    (if .applied then empty else "Nothing was pushed. To do it: deploys repos rescue --auto --yes" end)' <<<"$res"
+}
+
+stranded_schedule() {
+  case "${1:-status}" in
+    on)
+      mkdir -p "$CONFIG_DIR"
+      jq -n --argjson cur "$( [ -f "$CONFIG_DIR/rescue.json" ] && cat "$CONFIG_DIR/rescue.json" || echo '{}')" '$cur + {auto: true}' \
+        > "$CONFIG_DIR/rescue.json.tmp" && mv -f "$CONFIG_DIR/rescue.json.tmp" "$CONFIG_DIR/rescue.json"
+      job_on "$RESCUE_LABEL" 3600 deploys-rescue repos rescue --auto --yes
+      echo "Left-behind work is rescued to draft pull requests every hour (archived sessions, or idle for a day; public repos only by hand). Log: ~/Library/Logs/deploys-rescue.log" ;;
+    off)
+      job_off "$RESCUE_LABEL"
+      if [ -f "$CONFIG_DIR/rescue.json" ]; then jq '. + {auto: false}' "$CONFIG_DIR/rescue.json" > "$CONFIG_DIR/rescue.json.tmp" && mv -f "$CONFIG_DIR/rescue.json.tmp" "$CONFIG_DIR/rescue.json"; fi
+      echo "The automatic rescue is off." ;;
+    status)
+      if [ -f "$(job_plist "$RESCUE_LABEL")" ] && [ "$(stranded_cfg .auto)" = true ]; then echo "on (every hour)"; else echo "off"; fi
+      [ ! -f "$CONFIG_DIR/rescue-last.json" ] || jq -r '"last run \(.ranAt): \(.summary.rescued) rescued, \(.summary.public) public, \(.summary.refused) refused"' "$CONFIG_DIR/rescue-last.json" 2>/dev/null || true ;;
+    *) die "Usage: deploys repos rescue schedule on|off|status" ;;
+  esac
 }

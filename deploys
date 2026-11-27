@@ -71,7 +71,7 @@
 #   deploys streak [--days 90] [--project <p>]   deploys in a row without a failure, per project
 #   deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
 #   deploys clean [--root <dir>] [--worktrees] [--yes] | clean schedule on|off   free disk space in old worktrees (a report without --yes)
-#   deploys repos status|sync [--yes]|last|schedule on|off|stranded|rescue <dir>   checkouts on top of origin/main; rescue left-behind work (docs/REPOS.md)
+#   deploys repos status|sync [--yes]|last|schedule on|off|stranded|rescue <dir>|rescue --auto|clean [--yes]   checkouts on top of origin/main; rescue left-behind work (docs/REPOS.md)
 #   deploys when [--days 90] [--by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
 #   deploys health [--days 30] [--project <p>] [--no-ci]   0-100 per project from failures, recovery, age of the last deploy, CI
 #   deploys local-sessions [--json] | stop <pid> --yes | set <key> <n>   Claude Code sessions on this Mac; tasks started together, twins (docs/LOCAL-SESSIONS.md)
