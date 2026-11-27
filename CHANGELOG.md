@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Desktop sessions: a switch for keeping idle sessions going, `deploys desktop-sessions nudge on|off|status` and a toggle in the menu (`~/.config/deploys/nudge.json`); Deploy Center only stores it, whatever nudges idle sessions reads it
 - Performance guard: heavy checks wait from a load of 1 per core (was 2.5, now also over five minutes), and more than 3 GB swap in use makes the Mac yellow (`maxLoadPerCore`, `maxSwapUsedMB` in `perf.json`). New `deploys perf install --shed --yes`: under memory pressure the agent stops dev servers nobody uses any more (archived or done sessions, no client on their port for 30 min) and idle Docker stacks without a database, with a notification and a journal entry; `deploys perf clean` and `deploys perf shed` show what it would stop
 - Weekly cleanup: `deploys repos clean` removes worktrees whose branch is merged or gone (also under `.claude/worktrees`) and merged local branches, after rescuing left-behind work; dry run by default, `repos clean schedule on` runs it Sundays at 04:00
 - Left-behind work is rescued on its own: `deploys repos rescue schedule on` saves, every hour, the work of archived sessions and of folders idle for a day to draft pull requests (never a running session's folder, never a public repo, at most 3 per run and 10 per day; `rescue --auto` shows first)

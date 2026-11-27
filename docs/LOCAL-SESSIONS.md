@@ -118,6 +118,11 @@ Accounts are labelled "Account N (first 8 hex characters)", never by email. Your
 {"labels": {"<account folder id>": "Work"}, "idleHours": 24, "stoppedMin": 10}
 ```
 
+**Keep idle sessions going: a switch.** `deploys desktop-sessions nudge on|off|status` (and a toggle in the menu)
+stores `{"enabled": true|false}` in `~/.config/deploys/nudge.json`, on when the file is missing. Deploy Center only
+keeps the switch and nudges nothing itself: whatever you use to send "keep going" to idle sessions (for example a
+scheduled task in the Claude app) reads the file first and does nothing while it is off.
+
 **Archiving is the Claude app's job.** Turn on "Auto-archive sessions when their pull request closes" (Settings →
 Claude Code) once in each account; the app then archives a session when its pull request merges or closes, also
 while it keeps running. Deploy Center does not edit the app's session files: they are private app state and an edit

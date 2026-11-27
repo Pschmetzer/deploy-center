@@ -159,10 +159,32 @@ final class DesktopSessionsMonitor: ObservableObject {
     }
 }
 
+/// The switch for keeping idle sessions going: ~/.config/deploys/nudge.json {"enabled": …}, on when missing.
+/// Deploy Center only stores it; the user's own scheduled task that nudges idle sessions reads it.
+enum NudgeSetting {
+    static var url: URL {
+        let base = ProcessInfo.processInfo.environment["DEPLOYS_CONFIG"].map { URL(fileURLWithPath: $0) }
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/deploys")
+        return base.appendingPathComponent("nudge.json")
+    }
+    static var enabled: Bool {
+        get {
+            guard let d = try? Data(contentsOf: url),
+                  let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return true }
+            return (o["enabled"] as? Bool) ?? true
+        }
+        set {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? Data("{\"enabled\": \(newValue)}\n".utf8).write(to: url, options: .atomic)
+        }
+    }
+}
+
 /// The lines in the menu: one summary, and per account the done sessions with the archive hint.
 struct DesktopSessionsMenuSection: View {
     @ObservedObject var mon = DesktopSessionsMonitor.shared
     @AppStorage(DesktopSessionsMonitor.stoppedKey) private var stoppedNotify = false
+    @State private var nudge = NudgeSetting.enabled
 
     var body: some View {
         if let s = mon.snapshot, s.totals.accounts > 0 {
@@ -183,6 +205,9 @@ struct DesktopSessionsMenuSection: View {
                     Text(DesktopSessionsText.hint).font(.caption)
                 }
                 Divider()
+                Toggle(L("Keep idle sessions going automatically", "Untätige Sitzungen automatisch weiterlaufen lassen"), isOn: Binding(
+                    get: { nudge },
+                    set: { nudge = $0; NudgeSetting.enabled = $0 }))
                 Toggle(L("Notify when a session stopped (limit, error, cut off)", "Melden, wenn eine Sitzung stehen bleibt (Limit, Fehler, Abbruch)"), isOn: $stoppedNotify)
                 Text(L("Read-only: Deploy Center archives and resumes nothing.", "Nur lesend: Deploy Center archiviert nichts und setzt nichts fort."))
             }

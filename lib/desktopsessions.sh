@@ -36,6 +36,23 @@ dsess_base() { echo "${DEPLOYS_DESKTOP_SESSIONS_BASE:-$HOME/Library/Application 
 dsess_live_dir() { echo "${DEPLOYS_LOCAL_SESSIONS_DIR:-$HOME/.claude/sessions}"; }
 dsess_projects() { echo "${DEPLOYS_CLAUDE_PROJECTS:-$HOME/.claude/projects}"; }
 
+# Keep idle sessions going: ~/.config/deploys/nudge.json {"enabled": true|false}, default on when the file is missing.
+# Deploy Center only keeps the switch; whatever nudges idle sessions (a scheduled Claude task of the user, outside this
+# repo) reads it and does nothing while it is off.
+DSESS_NUDGE="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}/nudge.json"
+dsess_nudge() {
+  case "${1:-status}" in
+    on|off)
+      local v=true; [ "$1" = off ] && v=false
+      mkdir -p "$(dirname "$DSESS_NUDGE")" && printf '{"enabled": %s}\n' "$v" > "$DSESS_NUDGE" || return 1
+      echo "Keep idle sessions going: $1" ;;
+    status)
+      local v; v="$(jq -r 'if .enabled == false then "off" else "on" end' "$DSESS_NUDGE" 2>/dev/null)"
+      echo "Keep idle sessions going: ${v:-on}" ;;
+    *) echo "Usage: deploys desktop-sessions nudge on|off|status" >&2; return 2 ;;
+  esac
+}
+
 # Labels per account: {"labels": {"<account folder id>": "Work"}} in ~/.config/deploys/desktop-sessions.json.
 dsess_conf() {
   local f='{}'
@@ -284,7 +301,8 @@ desktopsessions_main() {
       local snap; snap="$(dsess_snapshot)" || return 1
       if [ "$json" = 1 ]; then echo "$snap"; else dsess_print <<<"$snap"; fi ;;
     config) dsess_conf ;;
-    *) echo "Usage: deploys desktop-sessions [--json] | config" >&2; return 2 ;;
+    nudge) dsess_nudge "${rest[1]:-status}" ;;
+    *) echo "Usage: deploys desktop-sessions [--json] | config | nudge on|off|status" >&2; return 2 ;;
   esac
 }
 

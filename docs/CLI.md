@@ -165,6 +165,7 @@ deploys perf install [--clean] [--docker] [--shed] --yes | uninstall | hook   # 
 deploys local-sessions [--json]         # Claude Code sessions on this Mac: tasks started together on one repo, twins, idle ones (LOCAL-SESSIONS.md)
 deploys local-sessions stop <pid> --yes # end one session (its transcript file stays); without --yes only what it would do
 deploys desktop-sessions [--json]       # the desktop app's Code sessions per account: done but not archived yet (LOCAL-SESSIONS.md)
+deploys desktop-sessions nudge on|off   # the switch for keeping idle sessions going, in nudge.json (LOCAL-SESSIONS.md)
 deploys local-sessions set max-local 30 | bundle-to 3 | burst-min 10 | idle-min 60   # yellow count, what counts as started together, idle
 deploys ai explain|notes|ship my-project   # ask Claude with your own key, see CLAUDE-IN-APP.md
 deploys scan start owner/repo           # Claude Code looks for bugs and opens one fix PR (SCAN.md)
