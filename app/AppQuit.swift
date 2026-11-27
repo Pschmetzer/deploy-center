@@ -89,6 +89,9 @@ enum QuitApps {
         let data = pipe.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
         // Without a readable launchd list nothing is stopped (fail closed).
         guard let jobs = launchdPids() else { return [] }
+        // The processes that own any window (all layers, also hidden ones). Without the list nothing is stopped.
+        guard let info = CGWindowListCopyWindowInfo([.optionAll], kCGNullWindowID) as? [[String: Any]] else { return [] }
+        let windowOwners = Set(info.compactMap { ($0[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value })
         var out: [pid_t] = []
         for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
             let s = line.trimmingCharacters(in: .whitespaces)
@@ -96,7 +99,9 @@ enum QuitApps {
             let exe = String(s[sp...]).trimmingCharacters(in: .whitespaces)
             guard exe.hasPrefix(path + "/"), !exe.contains("/Contents/Library/LoginItems/"), !exe.contains("/Contents/XPCServices/"),
                   !jobs.contains(pid), pid != getpid() else { continue }
-            // Windowless only: a process macOS counts as a regular app (Dock icon, windows) is quit with ⌘Q or not at all.
+            // Windowless only: a process that owns a window, on screen or not, or that macOS counts as a regular app,
+            // is quit with ⌘Q or not at all.
+            if windowOwners.contains(pid) { continue }
             if let ra = NSRunningApplication(processIdentifier: pid), ra.activationPolicy == .regular { continue }
             out.append(pid)
         }
