@@ -51,3 +51,8 @@ die Claude-App selbst: in jedem Konto „Auto-archive sessions when their pull r
 Stehen gebliebene Sitzungen (Nutzungslimit, API-Fehler, mitten im Schritt abgebrochen, seit `stoppedMin` Minuten
 untätig) zeigt der Befehl als `stopped` mit einem Link `claude://claude.ai/epitaxy/<id>`, der sie in der Claude-App
 öffnet. Selbst fortgesetzt wird nichts: von außen gibt es dafür keinen sauberen Weg (siehe englische Fassung).
+
+Schalter „Untätige Sitzungen weiterlaufen lassen“: `deploys desktop-sessions nudge on|off|status` (und ein Schalter im
+Menü) schreibt `{"enabled": true|false}` nach `~/.config/deploys/nudge.json`, an, wenn die Datei fehlt. Deploy Center
+stößt selbst nichts an; was untätige Sitzungen anstößt (etwa eine geplante Aufgabe in der Claude-App), liest die Datei
+und tut nichts, solange sie aus ist.
