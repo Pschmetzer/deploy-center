@@ -265,9 +265,14 @@ disk_run_step() {  # disk_run_step <id>
          *) # Yarn 2+: the global cache is a plain folder of downloaded archives (enableGlobalCache); `cache clean
             # --mirror` leaves it when mirrorCwd is unset. A project's own .yarn/cache is never touched.
             d="${YARN_GLOBAL_FOLDER:-$HOME/.yarn/berry}/cache"
-            case "$d" in "$HOME"/?*) ;; *) echo "Yarn global cache outside the home folder: left alone."; exit 0 ;; esac
             [ -d "$d" ] && [ ! -L "$d" ] || exit 0
-            rm -rf -- "$d" ;;
+            # The real path (no .., no linked parent) must be inside the home folder, not a project's .yarn/cache and
+            # not inside a git work tree (tracked archives, Zero-Installs).
+            local real hreal; real="$(cd "$d" 2>/dev/null && pwd -P)" || exit 0; hreal="$(cd "$HOME" && pwd -P)"
+            case "$real" in "$hreal"/?*) ;; *) echo "Yarn global cache outside the home folder: left alone."; exit 0 ;; esac
+            case "$real" in */.yarn/cache) echo "Yarn cache looks like a project's own: left alone."; exit 0 ;; esac
+            if git -C "$real" rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo "Yarn cache inside a git work tree: left alone."; exit 0; fi
+            rm -rf -- "$real" ;;
        esac) ;;
     brew) brew cleanup -s ;;
     xcode)
@@ -303,11 +308,15 @@ disk_free_main() {
   # A subshell owns the lock from the moment it takes it: its EXIT trap writes last-free and releases it, also when it
   # is stopped. This shell forwards a stop to it and waits, so the lock never outlives the run.
   (
-    own=0
+    own=0 stop=0
     trap '[ "$own" = 1 ] && { disk_now > "$DISK_DIR/last-free"; rmdir "$DISK_DIR/lock" 2>/dev/null; }' EXIT
-    trap 'exit 130' INT TERM HUP
+    # While the lock is taken a stop is only noted: between mkdir and own=1 it would leave the lock behind.
+    trap 'stop=1' INT TERM HUP
     mkdir "$DISK_DIR/lock" 2>/dev/null || { echo "disk free runs already (remove $DISK_DIR/lock if it does not)." >&2; exit 3; }
+    [ -z "${DEPLOYS_DISK_TEST_AFTER_LOCK:-}" ] || "$DEPLOYS_DISK_TEST_AFTER_LOCK"
     own=1
+    trap 'exit 130' INT TERM HUP
+    [ "$stop" = 0 ] || exit 130
     if [ "$auto" = 1 ] && ! disk_auto_due; then own=0; rmdir "$DISK_DIR/lock" 2>/dev/null; exit 4; fi
     while IFS=$'\t' read -r id _ _; do
       [ -n "$id" ] || continue

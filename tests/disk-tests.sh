@@ -85,7 +85,9 @@ expect "slow du: timedOut" "$(echo "$slow" | jq '[.categories[] | select(.id == 
 expect "slow du: done within the limit" "$([ $(( $(date +%s) - start )) -lt 20 ] && echo yes)" yes
 # Two timeouts in a row keep the last full count, also when the partial count equals it.
 full="$(cli disk --refresh --json | jq '.categories[] | select(.id == "npm") | .kb')"
-for _ in 1 2; do PATH="$tmp/slow:$PATH" DEPLOYS_DISK_TIMEOUT=1 cli disk --refresh --json >/dev/null; done
+# This du prints the full count and then hangs: the timed-out count equals the last full one.
+mkdir -p "$tmp/eq"; printf '#!/bin/bash\n/usr/bin/du "$@"\nexec sleep 30\n' > "$tmp/eq/du"; chmod +x "$tmp/eq/du"
+for _ in 1 2; do PATH="$tmp/eq:$PATH" DEPLOYS_DISK_TIMEOUT=1 cli disk --refresh --json >/dev/null; done
 again="$(cli disk --json | jq -c '.categories[] | select(.id == "npm") | {kb, stale}')"
 expect "two timeouts: last full count, stale" "$again" "{\"kb\":$full,\"stale\":true}"
 # The .cache remainder is never the raw total: an overlap that times out makes it unknown, never "all of .cache".
@@ -94,6 +96,14 @@ printf '#!/bin/bash\ncase "$*" in *huggingface*) exec sleep 30 ;; esac\nexec /us
 mkdir -p "$tmp/slow2"; mv "$tmp/slow2-du" "$tmp/slow2/du"; chmod +x "$tmp/slow2/du"
 dc="$(PATH="$tmp/slow2:$PATH" DEPLOYS_DISK_TIMEOUT=2 cli disk --refresh --json | jq -c '.categories[] | select(.id == "dotcache") | {kb, stale}')"
 expect "overlap timeout: last remainder, not the raw total" "$dc" "{\"kb\":$dc_full,\"stale\":true}"
+# The parent (.cache itself) times out: the last remainder, or unknown without one; never the overlap's own count.
+mkdir -p "$tmp/slow3"; printf '#!/bin/bash\ncase "$*" in *"/.cache") exec sleep 30 ;; esac\nexec /usr/bin/du "$@"\n' > "$tmp/slow3/du"; chmod +x "$tmp/slow3/du"
+cli disk --refresh --json >/dev/null
+dc="$(PATH="$tmp/slow3:$PATH" DEPLOYS_DISK_TIMEOUT=2 cli disk --refresh --json | jq -c '.categories[] | select(.id == "dotcache") | {kb, stale}')"
+expect "parent timeout: last remainder" "$dc" "{\"kb\":$dc_full,\"stale\":true}"
+rm -f "$DEPLOYS_CONFIG/disk/report.json"
+dc="$(PATH="$tmp/slow3:$PATH" DEPLOYS_DISK_TIMEOUT=2 cli disk --refresh --json | jq -c '.categories[] | select(.id == "dotcache") | {kb, timedOut}')"
+expect "parent timeout without an earlier count: unknown (0)" "$dc" '{"kb":0,"timedOut":true}'
 rm -f "$DEPLOYS_CONFIG/disk/report.json"
 dc="$(PATH="$tmp/slow2:$PATH" DEPLOYS_DISK_TIMEOUT=2 cli disk --refresh --json | jq -c '.categories[] | select(.id == "dotcache") | {kb, timedOut}')"
 expect "overlap timeout without an earlier count: unknown (0)" "$dc" '{"kb":0,"timedOut":true}'
@@ -131,7 +141,7 @@ expect "journal line" "$(grep -c '"disk"' "$tmp/journal.jsonl" 2>/dev/null)" 1
 
 # lsof failing: no temp file is deleted, and the step is reported as failed.
 fill "$TMPDIR/old2" 64; touch -t 202001010000 "$TMPDIR/old2/blob" "$TMPDIR/old2"
-printf '#!/bin/bash\nexit 1\n' > "$tmp/bin/lsof"; : > "$calls"
+printf '#!/bin/bash\necho p1\necho "n%s/other/x"\nexit 1\n' "$TMPDIR" > "$tmp/bin/lsof"; : > "$calls"
 lres="$(cli disk free --yes --json)"
 expect "lsof failed: tmp step failed" "$(echo "$lres" | jq -r '.steps[] | select(.id == "tmp") | .status')" failed
 expect "lsof failed: old temp entry stays" "$([ -d "$TMPDIR/old2" ] && echo yes)" yes
@@ -146,10 +156,21 @@ kill -TERM "$p"; wait "$p" 2>/dev/null
 expect "SIGTERM: lock released" "$([ -d "$DEPLOYS_CONFIG/disk/lock" ] || echo free)" free
 expect "SIGTERM: later steps do not run" "$(grep -c '^brew' "$calls")" 0
 printf '#!/bin/bash\necho "npm $*" >> "%s"\n' "$calls" > "$tmp/bin/npm"
+# Stopped between taking the lock and recording that it owns it: still released, no step runs.
+printf '#!/bin/bash\nkill -TERM "$PPID"\nsleep 0.2\n' > "$tmp/bin/stop-me"; chmod +x "$tmp/bin/stop-me"; : > "$calls"
+DEPLOYS_DISK_TEST_AFTER_LOCK="$tmp/bin/stop-me" cli disk free --yes --json >/dev/null 2>&1
+expect "SIGTERM while locking: lock released" "$([ -d "$DEPLOYS_CONFIG/disk/lock" ] || echo free)" free
+expect "SIGTERM while locking: no step ran" "$(grep -c '^npm\|^brew' "$calls")" 0
 # Yarn 2+: its global cache folder goes, a project's own .yarn/cache stays.
 fill "$HOME/.yarn/berry/cache" 64; fill "$tmp/proj/.yarn/cache" 64
 (cd "$tmp/proj" && FAKE_YARN=4.1.0 env DEPLOYS_JOURNAL="$tmp/journal.jsonl" bash "$OLDPWD/deploys" disk free --yes >/dev/null 2>&1)
 expect "yarn 2+: global cache gone" "$([ -d "$HOME/.yarn/berry/cache" ] || echo gone)" gone
+fill "$tmp/proj2/.yarn/cache" 64; git init -q "$tmp/proj2"
+mkdir -p "$HOME/ws"; ln -s "$tmp/proj2" "$HOME/ws/linked"
+for g in "$tmp/proj2/.yarn" "$HOME/ws/linked/.yarn" "$HOME/../$(basename "$tmp")/proj2/.yarn"; do
+  (cd "$tmp/proj" && YARN_GLOBAL_FOLDER="$g" FAKE_YARN=4.1.0 env DEPLOYS_JOURNAL="$tmp/journal.jsonl" bash "$OLDPWD/deploys" disk free --yes >/dev/null 2>&1)
+done
+expect "yarn 2+: a project's cache via YARN_GLOBAL_FOLDER, a link or .. stays" "$([ -f "$tmp/proj2/.yarn/cache/blob" ] && echo yes)" yes
 expect "yarn 2+: project cache stays" "$([ -f "$tmp/proj/.yarn/cache/blob" ] && echo yes)" yes
 
 # The schedule: opt-in, writes disk.json, the tick runs free below the minimum and not again within 6 hours.
