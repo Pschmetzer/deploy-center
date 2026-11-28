@@ -23,7 +23,8 @@ enum PerfHistory {
     static var file: URL { PerfMonitor.agentFile.deletingLastPathComponent().appendingPathComponent("history.jsonl") }
 
     /// The points of the last <minutes> minutes (the file's tail is enough: one line a minute).
-    static func load(minutes: Int = 60, file: URL = PerfHistory.file, now: Date = Date()) -> [PerfHistoryPoint] {
+    static func load(minutes: Int = 60, file: URL? = nil, now: Date = Date()) -> [PerfHistoryPoint] {
+        let file = file ?? PerfHistory.file
         guard let text = try? String(contentsOf: file, encoding: .utf8) else { return [] }
         let cut = Int(now.timeIntervalSince1970) - minutes * 60
         let dec = JSONDecoder()
