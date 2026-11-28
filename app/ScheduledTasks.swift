@@ -4,6 +4,7 @@
 // All the work is in lib/x-tasks.sh; this view reads `deploys tasks status --json` and writes the whole file through
 // `deploys tasks save`, which checks it first. (Not named `Task`: that is Swift's own `Task { … }`.)
 
+import AppKit
 import SwiftUI
 
 struct TaskBlock: Codable, Identifiable, Hashable {
@@ -83,6 +84,7 @@ struct TasksSettings: View {
     @State private var setupModel = "sonnet"
     @State private var routineId = ""
     @State private var token = ""
+    @State private var watching = ""
     @State private var repos: [String] = []
 
     static let models = ["sonnet", "haiku", "opus"]
@@ -229,6 +231,18 @@ struct TasksSettings: View {
                             Label("\(m.capitalized): \(r)", systemImage: a.tokens.contains(m) ? "checkmark.circle.fill" : "exclamationmark.triangle")
                                 .font(.caption.monospaced()).foregroundStyle(a.tokens.contains(m) ? Color.secondary : Color.orange)
                                 .help(a.tokens.contains(m) ? L("Token saved", "Token gespeichert") : L("No token for this routine", "Kein Token für diese Routine"))
+                            if !a.tokens.contains(m) {
+                                if watching == r {
+                                    Text(L("Waiting for the token: on the page, Trigger › + › API › Generate token, then copy it.",
+                                           "Warte auf den Schlüssel: auf der Seite Trigger › + › API › Generate token, dann kopieren."))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                } else {
+                                    Button(L("Get the token …", "Schlüssel holen …")) { Task { await fetchToken(routine: r) } }
+                                        .buttonStyle(.link).disabled(busy || !watching.isEmpty)
+                                        .help(L("Opens the routine in the browser. Copy the new token there: Deploy Center takes it from the clipboard into the keychain and clears the clipboard.",
+                                                "Öffnet die Routine im Browser. Kopiere dort den neuen Schlüssel: Deploy Center übernimmt ihn aus der Zwischenablage in den Schlüsselbund und leert die Zwischenablage."))
+                                }
+                            }
                         }
                     }
                 }
@@ -336,6 +350,42 @@ struct TasksSettings: View {
     private func deleteBlock(_ b: TaskBlock) async {
         guard let s = status else { return }
         await save(blocks: s.blocks.filter { $0.id != b.id }, tasks: s.tasks)
+    }
+
+    /// Opens the routine on claude.ai and watches the clipboard for up to 5 minutes. A newly copied text that looks
+    /// like a token (starts with "sk-ant-", one word) is stored for that routine and removed from the clipboard.
+    /// Nothing else on the clipboard is read further or kept.
+    private func fetchToken(routine: String) async {
+        guard let url = URL(string: "https://claude.ai/code/routines/\(routine)") else { return }
+        NSWorkspace.shared.open(url)
+        watching = routine; defer { watching = "" }
+        let pb = NSPasteboard.general
+        var seen = pb.changeCount
+        let deadline = Date().addingTimeInterval(300)   // wall clock: time asleep counts too
+        while Date() < deadline {
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard Date() < deadline else { break }
+            guard pb.changeCount != seen else { continue }
+            seen = pb.changeCount
+            guard let t = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  t.hasPrefix("sk-ant-"), t.count >= 20, !t.contains(where: \.isWhitespace) else { continue }
+            busy = true; defer { busy = false }
+            do {
+                _ = try await Tool.run(["tasks", "set-token", "--routine", routine], stdin: t, timeout: 20)
+                // Clear only while the clipboard still holds this token; something copied since then stays.
+                let stillToken = pb.changeCount == seen
+                    || pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) == t
+                if stillToken { pb.clearContents() }
+                message = stillToken
+                    ? L("Token saved in the keychain; the clipboard is cleared.", "Schlüssel im Schlüsselbund gespeichert, Zwischenablage geleert.")
+                    : L("Token saved in the keychain. The clipboard changed meanwhile and was left as it is.", "Schlüssel im Schlüsselbund gespeichert. Die Zwischenablage hat sich inzwischen geändert und bleibt, wie sie ist.")
+                failed = false
+            } catch { message = LogTools.maskSecrets(error.localizedDescription); failed = true }
+            await reload()
+            return
+        }
+        message = L("No token was copied within 5 minutes. Try again, or paste it in the field below.",
+                    "Innerhalb von 5 Minuten wurde kein Schlüssel kopiert. Nochmal versuchen oder unten ins Feld einfügen."); failed = true
     }
 
     private func saveRoutine() async {
