@@ -16,7 +16,7 @@
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
 <meta property="article:author" content="https://deploycenter.app/">
-<meta property="article:modified_time" content="2026-11-26">
+<meta property="article:modified_time" content="2026-11-27">
 <meta property="article:published_time" content="2026-11-26">
 <meta property="og:title" content="A build gate for Claude Code agents that hang your Mac · Deploy Center">
 <meta property="og:description" content="Why a dozen Claude Code sessions running tsc, vitest or next build freeze a Mac, and how a gate makes heavy commands wait for room.">
@@ -47,7 +47,7 @@
   "url": "https://deploycenter.app/guides/mac-hangs-when-agents-build-together/",
   "mainEntityOfPage": "https://deploycenter.app/guides/mac-hangs-when-agents-build-together/",
   "datePublished": "2026-11-26",
-  "dateModified": "2026-11-26",
+  "dateModified": "2026-11-27",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -172,7 +172,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>A build gate for Claude Code agents that hang your Mac</h1>
 <p class="answer">Put a gate in front of heavy commands. <code>deploys perf gate -- npm run verify</code> starts the command only when memory pressure, swapping and load leave room, and a Claude Code hook can do the same for every command an agent runs. Nothing is stopped; commands wait.</p>
-<p class="meta">Last updated <time datetime="2026-11-26">26 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-27">27 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>Running many Claude Code sessions on one Mac works until a dozen of them start <code>tsc</code>, <code>vitest</code> or <code>next build</code> at the same moment. Memory fills up, macOS starts swapping, and the whole Mac hangs, the sessions you are watching included. The cause is not one build but all of them at once.</p>
 <h2 id="status">1. See how full the Mac is</h2>

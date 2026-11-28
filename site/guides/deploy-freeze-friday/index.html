@@ -19,7 +19,7 @@
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
 <meta property="article:author" content="https://deploycenter.app/">
-<meta property="article:modified_time" content="2026-11-26">
+<meta property="article:modified_time" content="2026-11-27">
 <meta property="article:published_time" content="2026-11-20">
 <meta property="og:title" content="Set up a deploy freeze for Friday afternoon · Deploy Center">
 <meta property="og:description" content="Block production deploys on Friday afternoon, on weekends and on holidays with a deploy window, and let a hotfix through with a reason that is journaled.">
@@ -51,7 +51,7 @@
   "url": "https://deploycenter.app/guides/deploy-freeze-friday/",
   "mainEntityOfPage": "https://deploycenter.app/guides/deploy-freeze-friday/",
   "datePublished": "2026-11-20",
-  "dateModified": "2026-11-26",
+  "dateModified": "2026-11-27",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -188,7 +188,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Set up a deploy freeze for Friday afternoon</h1>
 <p class="answer">Create <code>~/.config/deploys/window.json</code> with a <code>deny</code> rule such as <code>{"days": ["fri"], "from": "15:00"}</code>. Inside that window <code>deploys deploy</code> and <code>deploy-changed --yes</code> refuse to start production deploys, unless you pass <code>--force "reason"</code>.</p>
-<p class="meta">Last updated <time datetime="2026-11-26">26 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-27">27 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 <p class="langnote"><a href="/de/anleitungen/deploy-freeze-freitag/" hreflang="de" lang="de">Deutsche Fassung</a></p>
 
 <h2 id="file">1. Write the window</h2>
