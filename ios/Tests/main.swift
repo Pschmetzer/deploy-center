@@ -223,7 +223,8 @@ check(oldSnap?.waitingProjects == 2 && oldSnap?.language == nil && oldSnap?.conn
 var later = DeploySnapshot.sample
 later = DeploySnapshot(at: Date().addingTimeInterval(60), demo: later.demo, waitingProjects: later.waitingProjects,
                        waitingCommits: later.waitingCommits, waitingPRs: later.waitingPRs, building: later.building,
-                       failed: later.failed, saving: later.saving, projects: later.projects, language: later.language)
+                       failed: later.failed, saving: later.saving, projects: later.projects, language: later.language,
+                       today: later.today)
 check(later.sameShown(as: DeploySnapshot.sample), "a snapshot that differs only in time shows the same")
 
 // The QR code: the Mac shows it for 60 s; a photo of it is good for 90 s, a code from the future for 30 s of clock difference.
