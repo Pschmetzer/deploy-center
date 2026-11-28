@@ -361,8 +361,10 @@ struct TasksSettings: View {
         watching = routine; defer { watching = "" }
         let pb = NSPasteboard.general
         var seen = pb.changeCount
-        for _ in 0..<300 {
+        let deadline = Date().addingTimeInterval(300)   // wall clock: time asleep counts too
+        while Date() < deadline {
             try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard Date() < deadline else { break }
             guard pb.changeCount != seen else { continue }
             seen = pb.changeCount
             guard let t = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -370,8 +372,14 @@ struct TasksSettings: View {
             busy = true; defer { busy = false }
             do {
                 _ = try await Tool.run(["tasks", "set-token", "--routine", routine], stdin: t, timeout: 20)
-                if pb.changeCount == seen { pb.clearContents() }
-                message = L("Token saved in the keychain; the clipboard is cleared.", "Schlüssel im Schlüsselbund gespeichert, Zwischenablage geleert."); failed = false
+                // Clear only while the clipboard still holds this token; something copied since then stays.
+                let stillToken = pb.changeCount == seen
+                    || pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) == t
+                if stillToken { pb.clearContents() }
+                message = stillToken
+                    ? L("Token saved in the keychain; the clipboard is cleared.", "Schlüssel im Schlüsselbund gespeichert, Zwischenablage geleert.")
+                    : L("Token saved in the keychain. The clipboard changed meanwhile and was left as it is.", "Schlüssel im Schlüsselbund gespeichert. Die Zwischenablage hat sich inzwischen geändert und bleibt, wie sie ist.")
+                failed = false
             } catch { message = LogTools.maskSecrets(error.localizedDescription); failed = true }
             await reload()
             return
