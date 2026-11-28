@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.16.0 - 2026-11-28
+
+### Highlights
+
+- The Mac keeps breathing: the performance guard holds heavy checks earlier, stops dev servers of finished work and idle Docker stacks, and can quit apps you pick when memory runs out
+- Left-behind work is rescued every hour to draft pull requests, and a weekly cleanup removes merged worktrees and branches
+- `deploys morning` sums up the night in one file and one notification; nightly deploys can skip projects whose newest build failed
+- `deploys perf mcp` shows which MCP servers run, what they cost and where they are never used
+- A switch for keeping idle Claude sessions going
+
 - New `deploys perf mcp`: the MCP servers Claude Code sessions run on this Mac, by name, with processes, memory, sessions and tool calls in the last 7 days (from the transcripts, read-only), and a suggestion where one could be off; also in the Mac app's performance panel. Nothing is changed in any Claude setting
 - Desktop sessions: a switch for keeping idle sessions going, `deploys desktop-sessions nudge on|off|status` and a toggle in the menu (`~/.config/deploys/nudge.json`); Deploy Center only stores it, whatever nudges idle sessions reads it
 - New `deploys perf install --stop-finished --yes`: dev servers whose Claude session is archived or done, or whose branch's pull request is merged or closed, are stopped after 10 minutes at any load, with a notification and a journal entry; `deploys perf finished` shows them first

@@ -16,7 +16,7 @@
 <meta property="og:site_name" content="Deploy Center">
 <meta property="og:locale" content="en_US">
 <meta property="article:author" content="https://deploycenter.app/">
-<meta property="article:modified_time" content="2026-11-26">
+<meta property="article:modified_time" content="2026-11-27">
 <meta property="article:published_time" content="2026-11-16">
 <meta property="og:title" content="Ignored Build Step or auto-deploy off: which one fits? · Deploy Center">
 <meta property="og:description" content="Compare Vercel&#x27;s Ignored Build Step with turning auto-deploy off: what each skips, what still creates a deployment, and when a script is the wrong tool.">
@@ -48,7 +48,7 @@
   "url": "https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/",
   "mainEntityOfPage": "https://deploycenter.app/guides/ignored-build-step-or-auto-deploy-off/",
   "datePublished": "2026-11-16",
-  "dateModified": "2026-11-26",
+  "dateModified": "2026-11-27",
   "inLanguage": "en",
   "image": "https://deploycenter.app/img/og.png",
   "author": {
@@ -147,7 +147,7 @@
 <p class="crumbs"><a href="/">Home</a> › <a href="/guides/">Guides</a></p>
 <h1>Ignored Build Step or auto-deploy off: which one fits?</h1>
 <p class="answer">Use an <b>Ignored Build Step</b> when most pushes should still build and you can describe the exceptions in a script. <b>Turn auto-deploy off</b> when you want to decide when production goes live: a push starts nothing, and you deploy what changed in one step.</p>
-<p class="meta">Last updated <time datetime="2026-11-26">26 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
+<p class="meta">Last updated <time datetime="2026-11-27">27 November 2026</time> · by Patrick Schmetzer, author of Deploy Center</p>
 
 <p>Both stop a push from costing a full build. They work in different places: the Ignored Build Step is a script Vercel runs before each Git build, and turning auto-deploy off in Deploy Center removes the project's Git connection, so a push starts nothing. This page lines them up. Script examples are in <a href="/guides/vercel-ignored-build-step/">Vercel Ignored Build Step: script examples and pitfalls</a>.</p>
 
