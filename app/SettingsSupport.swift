@@ -6,7 +6,7 @@ import Foundation
 /// The tabs of Settings. The raw value is stored under `settingsTab`; one the app no longer has
 /// (an older or newer build) opens General instead of an empty window.
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general, platforms, projects, deploy, costs, claude, daily, iphone, team, help
+    case general, platforms, projects, deploy, costs, claude, tasks, iphone, team, help
     var id: String { rawValue }
 
     static func resolve(_ raw: String?) -> SettingsTab { raw.flatMap(SettingsTab.init(rawValue:)) ?? .general }
@@ -19,7 +19,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .deploy: return L("Deploy", "Deploy")
         case .costs: return L("Costs", "Kosten")
         case .claude: return "Claude"
-        case .daily: return L("Daily tasks", "Daily-Aufgaben")
+        case .tasks: return L("Tasks", "Aufgaben")
         case .iphone: return "iPhone"
         case .team: return L("Team", "Team")
         case .help: return L("Help", "Hilfe")
@@ -33,7 +33,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         case .deploy: return "paperplane"
         case .costs: return "dollarsign.circle"
         case .claude: return "sparkles"
-        case .daily: return "calendar.badge.clock"
+        case .tasks: return "calendar.badge.clock"
         case .iphone: return "iphone"
         case .team: return "person.2"
         case .help: return "questionmark.circle"
@@ -48,7 +48,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
         switch self {
         case .help: return 460
         case .costs, .iphone, .projects: return 440
-        case .general, .platforms, .deploy, .team, .daily: return 600
+        case .general, .platforms, .deploy, .team, .tasks: return 600
         case .claude: return 760
         }
     }
@@ -63,7 +63,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
                                "summaryHour", "weeklySummary", "speakResults", "remindFailures", "resultSounds", LocalSessionsMonitor.key]
         case .deploy: return ["maxParallel", "undoSeconds", "staleDays", "watchMinutes"]
         case .costs: return ["monthlyBudget", "savingsDays"]
-        case .platforms, .projects, .claude, .daily, .iphone, .team, .help: return []
+        case .platforms, .projects, .claude, .tasks, .iphone, .team, .help: return []
         }
     }
 }

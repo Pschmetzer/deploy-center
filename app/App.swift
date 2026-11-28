@@ -110,7 +110,7 @@ struct SettingsView: View {
                 AutofixSettings(store: store).id("autofix")
                 NightlySettings(store: store).id("nightly")
             }
-            page(.daily) { _ in DailyTasksSettings() }
+            page(.tasks) { _ in TasksSettings() }
             page(.iphone) { _ in PhoneLinkSettings() }
             page(.team) { _ in TeamSettings(store: store) }
             page(.help) { _ in helpSection; shortcutsSection }
