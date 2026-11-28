@@ -77,4 +77,21 @@ expect "journal line" "$(grep -c '"clean"' "$tmp/journal.jsonl" 2>/dev/null)" 1
 out="$(cli clean --root "$tmp/root" --min-free 1 --json)"
 expect "enough free space: skipped" "$(echo "$out" | jq .skipped)" true
 
+# --docker: build cache and dangling images through a fake docker, never volumes or containers.
+mkdir -p "$tmp/dbin"; cat > "$tmp/dbin/docker" <<'D'
+#!/bin/bash
+echo "$*" >> "$DOCKER_CALLS"
+case "$1" in info) exit 0 ;; builder) echo "Total reclaimed space: 1.5GB" ;; image) echo "Total reclaimed space: 0B" ;; esac
+D
+chmod +x "$tmp/dbin/docker"; export DOCKER_CALLS="$tmp/docker.calls"; : > "$DOCKER_CALLS"
+out="$(DEPLOYS_DOCKER_BIN="$tmp/dbin/docker" cli clean --root "$tmp/root" --docker --yes 2>&1)"
+expect "docker: build cache pruned" "$(grep -c 'builder prune -f --filter until=72h' "$DOCKER_CALLS")" 1
+expect "docker: dangling images pruned" "$(grep -c '^image prune -f$' "$DOCKER_CALLS")" 1
+expect "docker: never volumes or system prune" "$(grep -cE 'volume|system' "$DOCKER_CALLS")" 0
+expect "docker: reported" "$(echo "$out" | grep -c 'Docker build cache: Total reclaimed space: 1.5GB')" 1
+: > "$DOCKER_CALLS"; DEPLOYS_DOCKER_BIN="$tmp/dbin/docker" cli clean --root "$tmp/root" --docker >/dev/null 2>&1
+expect "docker: nothing without --yes" "$(wc -l < "$DOCKER_CALLS" | tr -d ' ')" 0
+out="$(DEPLOYS_DOCKER_BIN="$tmp/nope" cli clean --root "$tmp/root" --docker --yes 2>&1)"
+expect "docker missing: left alone" "$(echo "$out" | grep -c 'Docker does not run')" 1
+
 echo; [ "$fails" = 0 ] && echo "All clean tests passed." || { echo "$fails failed."; exit 1; }

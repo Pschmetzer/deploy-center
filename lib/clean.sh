@@ -2,7 +2,9 @@
 # lib/clean.sh — `deploys clean`: free disk space that old git worktrees hold.
 #
 #   deploys clean [--root <dir>]... [--days 2] [--worktrees] [--min-free <GB>] [--yes] [--json]
-#   deploys clean schedule on|off|status [--min-free 60]   a daily LaunchAgent that runs `clean --yes` (build output only)
+#   deploys clean schedule on|off|status [--min-free 60]   a daily LaunchAgent that runs `clean --yes --docker`
+#   --docker       also Docker's build cache older than 3 days and dangling images (never containers, volumes or
+#                  tagged images); skipped when Docker does not run. Set "docker": false in clean.json to leave it.
 #
 # Without --yes nothing is deleted: the report says what would go and how much space it frees.
 # What it looks at: every git repo directly under a root (--root, or "roots" in clean.json) and its linked
@@ -65,7 +67,7 @@ clean_rm() {  # clean_rm <worktree> <relative dir>
 }
 
 clean_main() {
-  local roots=() days="" yes=0 wts=0 minfree="" r
+  local roots=() days="" yes=0 wts=0 dock=0 minfree="" r
   # Looking must not count as use: git status would otherwise rewrite the index and make a worktree "recent".
   local GIT_OPTIONAL_LOCKS=0; export GIT_OPTIONAL_LOCKS
   [ "${1:-}" != schedule ] || { shift; clean_schedule "$@"; return; }
@@ -75,9 +77,10 @@ clean_main() {
       --days) [[ "${2:-}" =~ ^[0-9]+$ ]] || die "--days needs a number"; days="$2"; shift 2 ;;
       --min-free) [[ "${2:-}" =~ ^[0-9]+$ ]] || die "--min-free needs a number of GB"; minfree="$2"; shift 2 ;;
       --worktrees) wts=1; shift ;;
+      --docker) dock=1; shift ;;
       --yes) yes=1; shift ;;
       --json) shift ;;
-      *) die "Unknown option $1. Usage: deploys clean [--root <dir>]... [--days 2] [--worktrees] [--min-free <GB>] [--yes] [--json]" ;;
+      *) die "Unknown option $1. Usage: deploys clean [--root <dir>]... [--days 2] [--worktrees] [--docker] [--min-free <GB>] [--yes] [--json]" ;;
     esac
   done
   if [ ${#roots[@]} -eq 0 ]; then
@@ -143,6 +146,7 @@ clean_main() {
       fi
     done < "$items"
     for r in "${roots[@]}"; do for repo in "$r"/*/; do [ -d "$repo/.git" ] && git -C "$repo" worktree prune 2>/dev/null; done; done
+    [ "$dock" = 1 ] && [ "$(clean_cfg .docker)" != false ] && clean_docker
     journal_add cli clean live "Freed $((done_kb / 1048576)) GB: $n_build build folders, $n_wt worktrees, $failed failed" 2>/dev/null || true
   fi
 
@@ -165,6 +169,15 @@ clean_main() {
   rm -f "$items"
 }
 
+# Docker's build cache (older than 3 days) and dangling images: both come back on the next build. Never containers,
+# volumes or tagged images, so a stopped database keeps its data. DEPLOYS_DOCKER_BIN lets tests use a fake.
+clean_docker() {
+  local d="${DEPLOYS_DOCKER_BIN:-docker}"
+  command -v "$d" >/dev/null 2>&1 && "$d" info >/dev/null 2>&1 || { echo "Docker does not run: its cache was left alone."; return 0; }
+  "$d" builder prune -f --filter until=72h 2>/dev/null | tail -n 1 | sed 's/^/Docker build cache: /'
+  "$d" image prune -f 2>/dev/null | tail -n 1 | sed 's/^/Docker dangling images: /'
+}
+
 CLEAN_LABEL="com.deploycenter.clean"
 clean_schedule() {
   local plist="$HOME/Library/LaunchAgents/$CLEAN_LABEL.plist" minfree me
@@ -180,7 +193,7 @@ clean_schedule() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$CLEAN_LABEL</string>
-  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$me</string><string>clean</string><string>--yes</string><string>--min-free</string><string>$minfree</string></array>
+  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$me</string><string>clean</string><string>--yes</string><string>--docker</string><string>--min-free</string><string>$minfree</string></array>
   <key>StartCalendarInterval</key><dict><key>Hour</key><integer>4</integer><key>Minute</key><integer>30</integer></dict>
   <key>StandardOutPath</key><string>$CONFIG_DIR/clean.log</string>
   <key>StandardErrorPath</key><string>$CONFIG_DIR/clean.log</string>
@@ -193,7 +206,7 @@ P
       launchctl bootout "gui/$(id -u)/$CLEAN_LABEL" 2>/dev/null || launchctl unload "$plist" 2>/dev/null || true
       rm -f "$plist"; echo "The daily cleanup is off." ;;
     status)
-      if [ -f "$plist" ]; then echo "on: $(grep -A1 -- '--min-free' "$plist" | grep -o '[0-9]\+' | tail -n 1) GB minimum, log $CONFIG_DIR/clean.log"; else echo "off"; fi ;;
+      if [ -f "$plist" ]; then echo "on: $(sed -n 's#.*<string>--min-free</string><string>\([0-9]*\)</string>.*#\1#p' "$plist" | head -n 1) GB minimum, log $CONFIG_DIR/clean.log"; else echo "off"; fi ;;
     *) die "Usage: deploys clean schedule on|off|status [--min-free 60]" ;;
   esac
 }

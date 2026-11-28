@@ -36,8 +36,8 @@ deploys sessions add|remove <owner/name> | repos | set prefix|wait|idle|hours <v
 deploys prs [--json] | run --yes [--dry-run] | schedule on|off | set <key> <value>   # your open PRs in every repo: resolve conflicts, merge green ones (docs/PRS.md)
 deploys weeks [--days 7] [--project <name>] [--json]   # the last --days days against the same number before: deploys, failure rate, typical recovery, open failures (from the journal; reads only)
 deploys export [--format csv|json] [--what journal|costs|all] [--days 30] [--project <name>] [--out <file>]   # journal and Vercel costs with a fixed schema (below); secrets in details masked, files 0600
-deploys clean [--root <dir>] [--days 2] [--worktrees] [--min-free <GB>] [--yes] [--json]   # free disk space in old git worktrees: ignored build output, with --worktrees merged worktrees without changes (a report without --yes)
-deploys clean schedule on|off|status [--min-free 60]   # daily at 04:30, build output only, when less than <GB> are free
+deploys clean [--root <dir>] [--days 2] [--worktrees] [--docker] [--min-free <GB>] [--yes] [--json]   # free disk space in old git worktrees: ignored build output, with --worktrees merged worktrees without changes, with --docker Docker's old build cache and dangling images (a report without --yes)
+deploys clean schedule on|off|status [--min-free 60]   # daily at 04:30, build output and Docker's old build cache, when less than <GB> are free
 deploys repos status [--no-fetch] [--json]   # local checkouts against origin/main: what a sync would do (changes nothing; docs/REPOS.md)
 deploys repos sync [--yes] [--json]           # fast-forward clean checkouts, back to main from merged branches; never one with changes
 deploys repos last [--json] | repos schedule on|off|status   # the last result; every 30 minutes and at login

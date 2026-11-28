@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `deploys clean --docker` also empties Docker's build cache older than 3 days and dangling images (never containers, volumes or tagged images); the daily `clean schedule` does it too. `clean schedule status` shows the right minimum again
 ## 0.16.0 - 2026-11-28
 
 ### Highlights
