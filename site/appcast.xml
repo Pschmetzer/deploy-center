@@ -6,6 +6,32 @@
     <description>Updates for Deploy Center</description>
     <language>en</language>
     <item>
+      <title>Version 0.16.0</title>
+      <pubDate>Sat, 28 Nov 2026 03:15:59 GMT</pubDate>
+      <sparkle:version>0.16.0</sparkle:version>
+      <sparkle:shortVersionString>0.16.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+      <sparkle:fullReleaseNotesLink>https://github.com/Pschmetzer/deploy-center/releases/tag/v0.16.0</sparkle:fullReleaseNotesLink>
+      <description sparkle:format="markdown">### Highlights
+
+- The Mac keeps breathing: the performance guard holds heavy checks earlier, stops dev servers of finished work and idle Docker stacks, and can quit apps you pick when memory runs out
+- Left-behind work is rescued every hour to draft pull requests, and a weekly cleanup removes merged worktrees and branches
+- `deploys morning` sums up the night in one file and one notification; nightly deploys can skip projects whose newest build failed
+- `deploys perf mcp` shows which MCP servers run, what they cost and where they are never used
+- A switch for keeping idle Claude sessions going
+
+- New `deploys perf mcp`: the MCP servers Claude Code sessions run on this Mac, by name, with processes, memory, sessions and tool calls in the last 7 days (from the transcripts, read-only), and a suggestion where one could be off; also in the Mac app's performance panel. Nothing is changed in any Claude setting
+- Desktop sessions: a switch for keeping idle sessions going, `deploys desktop-sessions nudge on|off|status` and a toggle in the menu (`~/.config/deploys/nudge.json`); Deploy Center only stores it, whatever nudges idle sessions reads it
+- New `deploys perf install --stop-finished --yes`: dev servers whose Claude session is archived or done, or whose branch's pull request is merged or closed, are stopped after 10 minutes at any load, with a notification and a journal entry; `deploys perf finished` shows them first
+- Mac app: Settings → General can quit apps you pick (with a one-click "not needed" suggestion and their memory) when the Mac is red with memory pressure for 5 minutes and shedding did not help: only apps in the background, unused for 30 min, biggest first, one at a time and only like ⌘Q; optionally their windowless helpers too. Never Claude, terminals, Xcode, the Simulator, Finder or Deploy Center. `deploys perf clean` shows what would be quit. `deploys perf gate` runs heavy commands at background priority (`taskpolicy -b`) while the Mac is busy (`"lowPriority"` in `perf.json`)
+- Performance guard: heavy checks wait from a load of 1 per core (was 2.5, now also over five minutes), and more than 3 GB swap in use makes the Mac yellow (`maxLoadPerCore`, `maxSwapUsedMB` in `perf.json`). New `deploys perf install --shed --yes`: under memory pressure the agent stops dev servers nobody uses any more (archived or done sessions, no client on their port for 30 min) and idle Docker stacks without a database, with a notification and a journal entry; `deploys perf clean` and `deploys perf shed` show what it would stop
+- Weekly cleanup: `deploys repos clean` removes worktrees whose branch is merged or gone (also under `.claude/worktrees`) and merged local branches, after rescuing left-behind work; dry run by default, `repos clean schedule on` runs it Sundays at 04:00
+- Left-behind work is rescued on its own: `deploys repos rescue schedule on` saves, every hour, the work of archived sessions and of folders idle for a day to draft pull requests (never a running session's folder, never a public repo, at most 3 per run and 10 per day; `rescue --auto` shows first)
+- New: `deploy-changed --skip-failed` (also on `plan` and `schedule daily`) leaves out a project whose newest build failed at the commit that would go out; a newer commit, such as a fix, still goes. `--between 03:00-05:00` makes a scheduled run that launchd starts late (the Mac slept) start nothing
+- New: `deploys morning` sums up the night: deployed, failed, merged pull requests, handed to autofix and still waiting, as a text file and one notification; `deploys morning schedule on 08:00` runs it every morning</description>
+      <enclosure url="https://github.com/Pschmetzer/deploy-center/releases/download/v0.16.0/DeployCenter-0.16.0-universal.zip" length="18843547" type="application/octet-stream" sparkle:edSignature="bWkxKicgUIklNF4WqJdN0jE0gu5/ze3rX2vBGwr/hHQ/yGXMA4e6Lo4pwfG0LVLWQdE+So0uHpXtmo5KQGJyBw==" />
+    </item>
+    <item>
       <title>Version 0.15.0</title>
       <pubDate>Fri, 27 Nov 2026 08:56:07 GMT</pubDate>
       <sparkle:version>0.15.0</sparkle:version>
