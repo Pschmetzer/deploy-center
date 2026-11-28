@@ -7,8 +7,10 @@ Claude Desktop
 DEMO
 Demo
 Deploy Center
+Haiku
 Live
 Mac
+Opus
 Render
 USD
 Vercel

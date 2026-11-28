@@ -152,6 +152,8 @@ reset
 rc=0; CODE=500 DEPLOYS_TASKS_CLOCK="2026-11-30 01:40 1" d tick --yes >/dev/null 2>&1 || rc=$?
 DEPLOYS_TASKS_CLOCK="2026-11-30 01:50 1" d tick --yes >/dev/null 2>&1
 expect "tick: an error is noted and not retried in that slot" "$rc:$(calls):$(st '.fires[0].status')" "1:2:failed"
+expect "tick: a failed send is not a failed deploy for the morning report" \
+  "$(morning_from "$(date +%s)" 24 '{}' '{"fires":[]}' null < "$DEPLOYS_JOURNAL" | jq -c '[(.failed | length), (.deployed | length)]')" "[0,0]"
 reset
 DEPLOYS_TASKS_ACCOUNT=nobody-0000 DEPLOYS_TASKS_CLOCK="2026-11-30 01:40 1" d tick --yes >/dev/null 2>&1
 DEPLOYS_TASKS_ACCOUNT=nobody-0000 DEPLOYS_TASKS_CLOCK="2026-11-30 01:50 1" d tick --yes >/dev/null 2>&1
