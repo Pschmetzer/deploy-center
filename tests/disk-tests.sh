@@ -19,7 +19,9 @@ calls="$tmp/calls.log"; : > "$calls"
 # Fakes: each logs its arguments. docker answers info and system df; no other docker call is allowed.
 # lsof: a process has a file open in the "busy" temp folder.
 printf '#!/bin/bash\necho p1\necho "n%s/busy/sock.log"\n' "$TMPDIR" > "$tmp/bin/lsof"
-for t in npm pnpm yarn brew xcrun; do
+printf '#!/bin/bash\necho "Snapshots for disk /:"\necho com.apple.os.update-ABC\necho com.apple.TimeMachine.2026-01-01-000000.local\n' > "$tmp/bin/tmutil"
+printf '#!/bin/bash\necho "yarn $*" >> "%s"\n[ "$1" = --version ] && echo "${FAKE_YARN:-1.22.19}"\nexit 0\n' "$calls" > "$tmp/bin/yarn"
+for t in npm pnpm brew xcrun; do
   printf '#!/bin/bash\necho "%s $*" >> "%s"\n' "$t" "$calls" > "$tmp/bin/$t"
 done
 cat > "$tmp/bin/docker" <<EOF
@@ -58,12 +60,14 @@ fill "$HOME/.cache/other" 128
 fill "$DEPLOYS_DISK_APPS/Some.app" 64
 
 out="$(cli disk --json)"
-expect "report has every category" "$(echo "$out" | jq '.categories | length')" 19
+expect "report has every category" "$(echo "$out" | jq '.categories | length')" 20
 kb() { echo "$out" | jq -r --arg i "$1" '.categories[] | select(.id == $i) | .kb'; }
 expect "npm measured" "$([ "$(kb npm)" -ge 2048 ] && echo yes)" yes
 expect "caches: Yarn is not counted twice" "$([ "$(kb caches)" -lt 1024 ] && [ "$(kb caches)" -ge 512 ] && echo yes)" yes
 expect ".cache without the models" "$([ "$(kb dotcache)" -ge 128 ] && [ "$(kb dotcache)" -lt 1024 ] && echo yes)" yes
 expect "/Applications shown, never freed" "$(echo "$out" | jq -r '.categories[] | select(.id == "applications") | .action')" never
+expect "snapshots listed, never freed" "$(echo "$out" | jq -r '.categories[] | select(.id == "snapshots") | "\(.action) \(.parts | length)"')" "never 2"
+expect "unassigned space reported" "$(echo "$out" | jq '.unassignedKB >= 0')" true
 expect "claude-app found" "$([ "$(kb claude-app)" -ge 300 ] && echo yes)" yes
 expect "docker parts parsed" "$(echo "$out" | jq -r '.categories[] | select(.id == "docker") | .parts | map(.name) | join(",")')" "Images,Local Volumes,Build Cache"
 expect "docker freeable is build cache + images, not volumes" "$(echo "$out" | jq '.categories[] | select(.id == "docker") | .freeableKB')" "$((1048576 + 1572864))"
@@ -110,6 +114,13 @@ expect "models untouched" "$([ -f "$HOME/.cache/huggingface/hub/blob" ] && echo 
 expect "Claude app folders untouched" "$([ -f "$HOME/Library/Application Support/Claude/vm_bundles/blob" ] && echo yes)" yes
 expect "lock released" "$([ -d "$DEPLOYS_CONFIG/disk/lock" ] || echo free)" free
 expect "journal line" "$(grep -c '"disk"' "$tmp/journal.jsonl" 2>/dev/null)" 1
+
+# Yarn Berry: only the global mirror, never a project's own cache. lsof failing: no temp file is deleted.
+fill "$TMPDIR/old2" 64; touch -t 202001010000 "$TMPDIR/old2/blob" "$TMPDIR/old2"
+printf '#!/bin/bash\nexit 1\n' > "$tmp/bin/lsof"; : > "$calls"
+FAKE_YARN=4.1.0 cli disk free --yes --json >/dev/null
+expect "yarn berry: cache clean --mirror" "$(grep -c '^yarn cache clean --mirror$' "$calls")" 1
+expect "lsof failed: old temp entry stays" "$([ -d "$TMPDIR/old2" ] && echo yes)" yes
 
 # The schedule: opt-in, writes disk.json, the tick runs free below the minimum and not again within 6 hours.
 expect "schedule on without --yes changes nothing" "$(cli disk schedule on >/dev/null; [ -f "$DEPLOYS_CONFIG/disk.json" ] || echo none)" none

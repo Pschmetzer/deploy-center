@@ -148,11 +148,13 @@ the lowest priority. A category that runs out of time shows the last full count,
 folders of old worktrees (`deploys clean`), Docker (images, build cache, volumes, containers), the npm, pnpm, Yarn,
 bun, pip and Homebrew caches, Xcode DerivedData, iOS simulators, the rest of `~/Library/Caches`, the Trash, Claude
 Code transcripts (`~/.claude/projects`), the Claude app's folders, temporary files (`$TMPDIR`), `~/.cache` (models in
-`~/.cache/huggingface` separately), `/Applications` and `/Library` (only shown).
+`~/.cache/huggingface` separately), `/Applications`, `/Library` and local APFS snapshots (`tmutil listlocalsnapshots`:
+installing or cancelling a pending macOS update frees an update snapshot; only shown). When the disk's used space is
+well above what was measured, the report names the rest as not assigned (other users, system data, snapshots).
 
 `deploys disk free --yes` runs only what comes back on the next install or build: `deploys clean --yes --docker`
 (build folders of old worktrees, Docker's build cache older than 3 days, dangling images), `npm cache clean --force`,
-`pnpm store prune`, `yarn cache clean`, `brew cleanup -s`, Xcode DerivedData older than 7 days (not while Xcode runs)
+`pnpm store prune`, `yarn cache clean` (Yarn 2+: `--mirror`, the global cache only, never a project's own), `brew cleanup -s`, Xcode DerivedData older than 7 days (not while Xcode runs)
 `xcrun simctl delete unavailable` and entries in your own `$TMPDIR` older than 3 days that no running process has
 open (`lsof`; never `com.apple.*`). It never touches the Trash, Docker volumes or containers, Claude Code's
 transcripts (Claude Code deletes them after 30 days; `cleanupPeriodDays` in `~/.claude/settings.json` sets fewer),
