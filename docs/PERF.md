@@ -244,3 +244,9 @@ number of Claude Code sessions and heavy checks, and whether a heavy check may s
 "Show how full the Mac is" turns it off. Under "Docker" each running stack has a Stop item and each stack the guard
 stopped has a Wake item; under "Processes" the hung, orphaned and unused trees come first, then the biggest others, each
 with class, run time, memory and a Stop item. Nothing happens without that click.
+
+The panel behind "Mac: …" in the main window shows four gauges (memory in use, load per core, swap, free disk),
+coloured by the guard's own limits (`maxLoadPerCore`, `redLoadPerCore`, `maxSwapUsedMB` in perf.json, `minFreeGB` in
+disk.json), the last 60 minutes as small charts with the limits as dashed lines, and the biggest consumers as bars.
+The history comes from the agent: one line a minute in `perf/history.jsonl` in the config folder, the last 24 hours
+kept (`DEPLOYS_PERF_HISTORY_SEC` sets another window, for tests).

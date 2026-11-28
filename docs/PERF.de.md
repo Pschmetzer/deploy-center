@@ -86,6 +86,13 @@ iTerm, Xcode, Simulator, Finder, Deploy Center. `deploys perf clean` zeigt, was 
 `deploys perf gate` startet schwere Befehle bei Gelb oder Rot mit niedriger Priorität (`taskpolicy -b`);
 `"lowPriority": false` in `perf.json` schaltet das ab.
 
+## Anzeigen und Verlauf
+
+Das Fenster hinter „Mac: …“ im Hauptfenster zeigt vier Anzeigen (Speicher, Last pro Kern, Swap, freie Platte) in den
+Farben der Grenzen des Wächters, die letzten 60 Minuten als kleine Verläufe mit den Grenzen als gestrichelte Linien
+und die größten Verbraucher als Balken. Der Verlauf kommt vom Agenten: eine Zeile pro Minute in
+`perf/history.jsonl`, die letzten 24 Stunden bleiben.
+
 ## Aufräumer
 
 `deploys perf clean` listet verwaiste Dev-Prozesse (alte Checks ohne Elternprozess, Prozesse in gelöschten

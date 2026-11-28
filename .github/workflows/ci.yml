@@ -151,6 +151,8 @@ jobs:
         run: bash tests/preview-tests.sh
       - name: Performance guard tests (perf status, gate, clean, the hook)
         run: bash tests/perf-guard-tests.sh
+      - name: Perf history tests (the charts' history)
+        run: bash tests/perf-history-tests.sh
       - name: Load shedding tests (perf shed, rule S, the sharper gate)
         run: bash tests/perf-shed-tests.sh
       - name: Finished-work tests (perf finished)
@@ -318,6 +320,8 @@ jobs:
         run: bash tests/preview-tests.sh
       - name: Performance guard tests
         run: bash tests/perf-guard-tests.sh
+      - name: Perf history tests (the charts' history)
+        run: bash tests/perf-history-tests.sh
       - name: Load shedding tests
         run: bash tests/perf-shed-tests.sh
       - name: Finished-work tests (perf finished)

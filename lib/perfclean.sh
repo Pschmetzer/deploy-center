@@ -270,6 +270,8 @@ perf_tick_main() {
   now="${raw%% *}"
   snap="$(perf_judge "$raw" "$procs" "$conf" "$(perf_prev_sample "$now" 30)")" || return 0
   perf_record "$now" "$(echo "$raw" | awk '{print $11}')"
+  snap="$(perf_with_limits "$snap" "$conf" 2>/dev/null || echo "$snap")"
+  perf_history_add "$snap"
   mkdir -p "$PERF_DIR"; echo "$snap" > "$PERF_DIR/status.json.$$" && mv -f "$PERF_DIR/status.json.$$" "$PERF_DIR/status.json"
   lvl="$(jq -r .level <<<"$snap")"
   if [ "$lvl" = red ]; then

@@ -110,6 +110,33 @@ perf_record() {  # perf_record <epoch> <swapouts>: append, keep the last 300 lin
   fi
 }
 
+# The last 24 hours for the app's charts: one JSON line a minute in perf/history.jsonl (time, level, load per core,
+# swap in use, free memory %, heavy checks, free disk GB). Older lines go when the file has more than a day and an hour.
+PERF_HISTORY_MAX_SEC="${DEPLOYS_PERF_HISTORY_SEC:-86400}"
+perf_history_add() {  # perf_history_add <status JSON>
+  local f="$PERF_DIR/history.jsonl" line n cut
+  mkdir -p "$PERF_DIR" 2>/dev/null || return 0
+  line="$(jq -c '{t:.time, lvl:.level, lpc:.load.perCore, swap:.swap.usedMB, free:(.memory.freePct // null),
+    checks:.checks.running, disk:(.disk.freeGB // null)}' <<<"$1" 2>/dev/null)" || return 0
+  printf '%s\n' "$line" >> "$f" 2>/dev/null || return 0
+  n="$(wc -l < "$f" | tr -d ' ')"
+  if [ "$n" -gt $(( PERF_HISTORY_MAX_SEC / 60 + 60 )) ]; then
+    cut=$(( $(jq -r .t <<<"$line") - PERF_HISTORY_MAX_SEC ))
+    jq -cR --argjson c "$cut" 'fromjson? | select(.t? and .t >= $c)' "$f" > "$f.$$" 2>/dev/null && mv -f "$f.$$" "$f" || rm -f "$f.$$"
+  fi
+  return 0
+}
+
+# What the app draws its gauges against: the limits of perf.json and the free disk (the minimum of disk.json, 100 GB).
+perf_with_limits() {  # perf_with_limits <status JSON> <conf JSON>: the status with .limits and .disk
+  local kb min
+  kb="$(df -k "$HOME" 2>/dev/null | awk 'NR==2{print $4+0}')"
+  min="$(jq -r '.minFreeGB // empty' "$(dirname "$PERF_DIR")/disk.json" 2>/dev/null)"
+  jq -c --argjson c "$2" --argjson kb "${kb:-0}" --argjson min "${min:-100}" \
+    '. + {limits:{maxLoadPerCore:$c.maxLoadPerCore, redLoadPerCore:$c.redLoadPerCore, maxSwapUsedMB:$c.maxSwapUsedMB, minFreeDiskGB:$min},
+          disk:{freeGB:($kb / 1048576 * 10 | round / 10)}}' <<<"$1"
+}
+
 # perf_judge <raw line> <procs JSON> <conf JSON> [<prev "epoch swapouts">]: the status JSON with level and admit.
 perf_judge() {
   local prev="${4:-}" t lvl free mem cpu l1 l5 l15 st su so pg
