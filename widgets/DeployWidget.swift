@@ -692,8 +692,9 @@ struct TodayContent: View {
 
     @ViewBuilder private var lines: some View {
         let s = today?.sessions, d = today?.deploys, p = today?.prs
+        let waiting = s?.waiting ?? 0
         TodayLine(icon: "terminal.fill", tint: .purple, value: num(s?.running), label: w("running", "laufen"),
-                  extra: (s?.waiting ?? 0) > 0 ? w("\(s!.waiting) wait", "\(s!.waiting) warten") : nil, warn: true)
+                  extra: waiting > 0 ? w("\(waiting) wait", "\(waiting) warten") : nil, warn: true)
         TodayLine(icon: "paperplane.fill", tint: .green, value: num(d?.live), label: w("live", "live"),
                   extra: (d?.failed ?? 0) > 0 ? w("\(d!.failed) failed", "\(d!.failed) fehlg.") : snap.building > 0 ? w("\(snap.building) building", "\(snap.building) baut") : nil,
                   bad: (d?.failed ?? 0) > 0)
@@ -706,14 +707,20 @@ struct TodayContent: View {
 
     // MARK: medium and large: four tiles
 
+    /// Medium has room for one line under each number; large shows the whole breakdown.
+    private var full: Bool { family == .systemLarge }
+
     private var sessionsTile: some View {
         let s = today?.sessions
         var parts: [(String, Color?)] = []
         if let s {
-            parts.append((w("\(s.waiting) wait on you", "\(s.waiting) warten auf dich"), s.waiting > 0 ? .orange : nil))
-            parts.append((w("\(s.done) done, open", "\(s.done) fertig, offen"), nil))
-            if s.stopped > 0 { parts.append((w("\(s.stopped) stopped", "\(s.stopped) stehen"), .red)) }
-            if let c = s.cloudOpen { parts.append((w("\(c) in the cloud", "\(c) in der Cloud") + ((s.cloudStuck ?? 0) > 0 ? w(", \(s.cloudStuck!) stuck", ", \(s.cloudStuck!) hängt") : ""), (s.cloudStuck ?? 0) > 0 ? .orange : nil)) }
+            if let n = s.waiting { parts.append((w("\(n) wait on you", "\(n) warten auf dich"), n > 0 ? .orange : nil)) }
+            if full, let n = s.done { parts.append((w("\(n) done, open", "\(n) fertig, offen"), nil)) }
+            if full, let n = s.stopped, n > 0 { parts.append((w("\(n) stopped", "\(n) stehen geblieben"), .red)) }
+            if full || s.waiting == nil, let c = s.cloudOpen, c > 0 {
+                let stuck = s.cloudStuck ?? 0
+                parts.append((w("\(c) in the cloud", "\(c) in der Cloud") + (stuck > 0 ? w(", \(stuck) stuck", ", \(stuck) hängt") : ""), stuck > 0 ? .orange : nil))
+            }
         }
         return TodayTile(title: w("Sessions", "Sessions"), icon: "terminal.fill", tint: .purple,
                          value: num(s?.running), unit: w("running", "laufen"), parts: parts)
@@ -722,8 +729,8 @@ struct TodayContent: View {
     private var deploysTile: some View {
         let d = today?.deploys
         var parts: [(String, Color?)] = []
-        if let d { parts.append((w("\(d.failed) failed", "\(d.failed) fehlgeschlagen"), d.failed > 0 ? .red : nil)) }
-        parts.append((w("\(snap.building) building now", "\(snap.building) bauen gerade"), snap.building > 0 ? .blue : nil))
+        if let d, full || d.failed > 0 { parts.append((w("\(d.failed) failed", "\(d.failed) fehlgeschlagen"), d.failed > 0 ? .red : nil)) }
+        if full || parts.isEmpty { parts.append((w("\(snap.building) building now", "\(snap.building) bauen gerade"), snap.building > 0 ? .blue : nil)) }
         return TodayTile(title: w("Deploys", "Deploys"), icon: "paperplane.fill", tint: .green,
                          value: num(d?.live), unit: w("live", "live"), parts: parts)
     }
@@ -765,7 +772,8 @@ struct TodayContent: View {
                 }
                 .accessibilityElement(children: .combine)
             }
-            if items.count > 5 { Text(w("+\(items.count - 5) more", "+\(items.count - 5) weitere")).font(.caption2).foregroundStyle(.secondary) }
+            let more = max(today?.attentionTotal ?? 0, items.count) - min(5, items.count)
+            if more > 0 { Text(w("+\(more) more", "+\(more) weitere")).font(.caption2).foregroundStyle(.secondary) }
         }
     }
 

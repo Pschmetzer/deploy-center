@@ -63,10 +63,11 @@ struct DeploySnapshot: Codable, Equatable {
     struct Today: Codable, Equatable {
         /// Claude Code sessions: the desktop app's (all accounts) and, when known, the cloud ones.
         struct Sessions: Codable, Equatable {
-            let running: Int
-            let waiting: Int          // waiting on you
-            let done: Int             // done but still open
-            let stopped: Int          // stopped (limit, error, cut off)
+            // The desktop app's counts; nil when only the cloud ones are known (never shown as 0 then).
+            var running: Int? = nil
+            var waiting: Int? = nil   // waiting on you
+            var done: Int? = nil      // done but still open
+            var stopped: Int? = nil   // stopped (limit, error, cut off)
             var cloudOpen: Int? = nil
             var cloudWaiting: Int? = nil
             var cloudStuck: Int? = nil
@@ -91,6 +92,8 @@ struct DeploySnapshot: Codable, Equatable {
         var mac: Mac? = nil
         /// What needs a look, most urgent first; at most eight.
         var attention: [Item] = []
+        /// How many items there were before the cut to eight, for "+N more".
+        var attentionTotal: Int = 0
 
         static let maxItems = 8
         /// Most urgent first: failed deploys, a red Mac, conflicts, sessions that wait on you, stopped, stuck.
@@ -245,5 +248,5 @@ struct DeploySnapshot: Codable, Equatable {
                         .init(kind: .conflict, title: "Atlas-214#42", detail: "New pricing page"),
                         .init(kind: .waiting, title: "Harbor-307", detail: "Account 2"),
                         .init(kind: .stopped, title: "Nova-820", detail: "usage limit"),
-                     ]))
+                     ], attentionTotal: 4))
 }

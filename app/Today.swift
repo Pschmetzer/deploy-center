@@ -48,7 +48,7 @@ enum TodaySummary {
             }
         }
         if let c = cloud {
-            if sessions == nil { sessions = .init(running: 0, waiting: 0, done: 0, stopped: 0) }
+            if sessions == nil { sessions = .init() }
             sessions?.cloudOpen = c.summary.open
             sessions?.cloudWaiting = c.summary.waiting
             sessions?.cloudStuck = c.summary.stuck
@@ -77,7 +77,7 @@ enum TodaySummary {
         }
 
         return .init(day: calendar.startOfDay(for: now), sessions: sessions, deploys: deploys(journal, now: now, calendar: calendar),
-                     prs: prRow, mac: mac, attention: DeploySnapshot.Today.sorted(items))
+                     prs: prRow, mac: mac, attention: DeploySnapshot.Today.sorted(items), attentionTotal: items.count)
     }
 }
 

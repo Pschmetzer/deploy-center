@@ -67,6 +67,10 @@ func suite_today() {
     let none = TodaySummary.make(now: noon, calendar: cal, desktop: nil, cloud: nil, prs: nil, level: "unknown", memory: nil,
                                  journal: [], failed: [], demo: false, mask: { $0 })
     expect("today: no sources, no sessions", none.sessions == nil, true)
+    let cloudOnly = TodaySummary.make(now: noon, calendar: cal, desktop: nil, cloud: cloud, prs: nil, level: nil, memory: nil,
+                                      journal: [], failed: [], demo: false, mask: { $0 })
+    expect("today: only cloud known, desktop counts unknown (not 0)", cloudOnly.sessions?.running == nil && cloudOnly.sessions?.waiting == nil, true)
+    expect("today: only cloud known, cloud counted", cloudOnly.sessions?.cloudOpen ?? -1, 5)
     expect("today: no sources, no PRs", none.prs == nil, true)
     expect("today: an unknown level is not shown", none.mac == nil, true)
     expect("today: an empty journal is zero deploys", "\(none.deploys?.live ?? -1)/\(none.deploys?.failed ?? -1)", "0/0")
@@ -84,6 +88,7 @@ func suite_today() {
     // At most eight items; and the numbers end at midnight.
     let many = (0..<12).map { DeploySnapshot.Today.Item(kind: .waiting, title: "s\($0)", detail: "") }
     expect("today: at most eight items", DeploySnapshot.Today.sorted(many).count, 8)
+    expect("today: the total before the cut", t.attentionTotal, 6)
     expect("today: today's numbers count today", t.current(at: noon, calendar: cal) != nil, true)
     expect("today: yesterday's numbers are unknown", t.current(at: noon.addingTimeInterval(86_400), calendar: cal) == nil, true)
     let midnight = WidgetRefresh.nextMidnight(after: noon, calendar: cal)
