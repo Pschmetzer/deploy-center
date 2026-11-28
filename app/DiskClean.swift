@@ -32,8 +32,10 @@ struct DiskCleanView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(L("Free disk space", "Speicher freigeben")).font(.title2.bold())
+        ScrollView { VStack(alignment: .leading, spacing: 12) {
+            DiskSpaceSection()
+            Divider()
+            Text(L("Old worktrees", "Alte Worktrees")).font(.title3.bold())
             Text(L("Build output (node_modules, .next, dist …) in git worktrees unchanged for 2 days, and worktrees whose work is merged into main and that have no changes. Code with changes is never touched; branches stay.",
                    "Build-Reste (node_modules, .next, dist …) in Git-Worktrees, die 2 Tage nicht geändert wurden, und Worktrees, deren Arbeit in main ist und die keine Änderungen haben. Code mit Änderungen bleibt immer, Branches bleiben."))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
@@ -65,8 +67,8 @@ struct DiskCleanView: View {
                     .disabled(busy || (report?.items.isEmpty ?? true))
             }
         }
-        .padding(20)
-        .frame(minWidth: 480, minHeight: 420)
+        .padding(20) }
+        .frame(minWidth: 520, minHeight: 640)
         .task { await load() }
         .alert(L("Delete for good?", "Endgültig löschen?"), isPresented: $confirming) {
             Button(L("Delete", "Löschen"), role: .destructive) { Task { await clean() } }

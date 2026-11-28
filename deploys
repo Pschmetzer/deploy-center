@@ -74,6 +74,7 @@
 #   deploys streak [--days 90] [--project <p>]   deploys in a row without a failure, per project
 #   deploys note <project> "text"             one line in the journal (shows in timeline); a text that looks like a secret is refused
 #   deploys clean [--root <dir>] [--worktrees] [--yes] | clean schedule on|off   free disk space in old worktrees (a report without --yes)
+#   deploys disk [--refresh] | disk free [--yes] | disk schedule on|off|status   where the disk space goes; free caches that come back (a report without --yes)
 #   deploys repos status|sync [--yes]|last|schedule on|off|stranded|rescue <dir>|rescue --auto|clean [--yes]   checkouts on top of origin/main; rescue left-behind work (docs/REPOS.md)
 #   deploys when [--days 90] [--by weekday|hour]   on which weekday or hour deploys fail more often (UTC)
 #   deploys health [--days 30] [--project <p>] [--no-ci]   0-100 per project from failures, recovery, age of the last deploy, CI
@@ -461,7 +462,7 @@ if [ -f "$LIB_DIR/http.sh" ]; then . "$LIB_DIR/http.sh"; fi
 declare -F parallel_limit >/dev/null || parallel_limit() { printf '%s' "$1"; }
 # The risk rules and hook_run, watch and verify, and the completion scripts live in lib/ (the script is kept under its
 # line ceiling, scripts/check-size.sh). A command whose file is missing says so; the rest works.
-for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker perfshed perffinished perfmcp sessions localsessions desktopsessions locks repos stranded prs prsfix schedule morning; do
+for _l in risk verify completion nightly selfupdate preview domains forecast envdiff groups prepare perf perfclean perfdocker perfshed perffinished perfmcp sessions localsessions desktopsessions locks repos stranded prs prsfix schedule morning disk; do
   # shellcheck source=/dev/null
   if [ -f "$LIB_DIR/$_l.sh" ]; then . "$LIB_DIR/$_l.sh"; fi
 done; unset _l
@@ -3895,7 +3896,7 @@ case "${1:-} ${2:-}" in
   "lock "*|"unlock "*)
     declare -F locks_main >/dev/null || die "$1 needs lib/locks.sh next to deploys."
     locks_main "$@" ;;
-  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*|"local-sessions "*|"desktop-sessions "*|"clean "*|"repos "*)
+  "preview "*|"domains "*|"forecast "*|"env-diff "*|"group "*|"prepare "*|"perf "*|"local-sessions "*|"desktop-sessions "*|"clean "*|"repos "*|"disk "*)
     case "$1" in env-diff) _f=envdiff_main ;; group) _f=groups_main ;; local-sessions) _f=localsessions_main ;; desktop-sessions) _f=desktopsessions_main ;; *) _f="${1}_main" ;; esac
     declare -F "$_f" >/dev/null || die "$1 needs its file in lib/ next to deploys."
     "$_f" "${@:2}" ;;
