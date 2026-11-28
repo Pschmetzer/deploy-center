@@ -83,6 +83,20 @@ start=$(date +%s)
 slow="$(PATH="$tmp/slow:$PATH" DEPLOYS_DISK_TIMEOUT=2 cli disk --refresh --json)"
 expect "slow du: timedOut" "$(echo "$slow" | jq '[.categories[] | select(.id == "npm") | .timedOut][0]')" true
 expect "slow du: done within the limit" "$([ $(( $(date +%s) - start )) -lt 20 ] && echo yes)" yes
+# Two timeouts in a row keep the last full count, also when the partial count equals it.
+full="$(cli disk --refresh --json | jq '.categories[] | select(.id == "npm") | .kb')"
+for _ in 1 2; do PATH="$tmp/slow:$PATH" DEPLOYS_DISK_TIMEOUT=1 cli disk --refresh --json >/dev/null; done
+again="$(cli disk --json | jq -c '.categories[] | select(.id == "npm") | {kb, stale}')"
+expect "two timeouts: last full count, stale" "$again" "{\"kb\":$full,\"stale\":true}"
+# The .cache remainder is never the raw total: an overlap that times out makes it unknown, never "all of .cache".
+dc_full="$(cli disk --refresh --json | jq '.categories[] | select(.id == "dotcache") | .kb')"
+printf '#!/bin/bash\ncase "$*" in *huggingface*) exec sleep 30 ;; esac\nexec /usr/bin/du "$@"\n' > "$tmp/slow2-du"
+mkdir -p "$tmp/slow2"; mv "$tmp/slow2-du" "$tmp/slow2/du"; chmod +x "$tmp/slow2/du"
+dc="$(PATH="$tmp/slow2:$PATH" DEPLOYS_DISK_TIMEOUT=2 cli disk --refresh --json | jq -c '.categories[] | select(.id == "dotcache") | {kb, stale}')"
+expect "overlap timeout: last remainder, not the raw total" "$dc" "{\"kb\":$dc_full,\"stale\":true}"
+rm -f "$DEPLOYS_CONFIG/disk/report.json"
+dc="$(PATH="$tmp/slow2:$PATH" DEPLOYS_DISK_TIMEOUT=2 cli disk --refresh --json | jq -c '.categories[] | select(.id == "dotcache") | {kb, timedOut}')"
+expect "overlap timeout without an earlier count: unknown (0)" "$dc" '{"kb":0,"timedOut":true}'
 cli disk --refresh --json >/dev/null   # a good cache again
 
 : > "$calls"
@@ -115,12 +129,28 @@ expect "Claude app folders untouched" "$([ -f "$HOME/Library/Application Support
 expect "lock released" "$([ -d "$DEPLOYS_CONFIG/disk/lock" ] || echo free)" free
 expect "journal line" "$(grep -c '"disk"' "$tmp/journal.jsonl" 2>/dev/null)" 1
 
-# Yarn Berry: only the global mirror, never a project's own cache. lsof failing: no temp file is deleted.
+# lsof failing: no temp file is deleted, and the step is reported as failed.
 fill "$TMPDIR/old2" 64; touch -t 202001010000 "$TMPDIR/old2/blob" "$TMPDIR/old2"
 printf '#!/bin/bash\nexit 1\n' > "$tmp/bin/lsof"; : > "$calls"
-FAKE_YARN=4.1.0 cli disk free --yes --json >/dev/null
-expect "yarn berry: cache clean --mirror" "$(grep -c '^yarn cache clean --mirror$' "$calls")" 1
+lres="$(cli disk free --yes --json)"
+expect "lsof failed: tmp step failed" "$(echo "$lres" | jq -r '.steps[] | select(.id == "tmp") | .status')" failed
 expect "lsof failed: old temp entry stays" "$([ -d "$TMPDIR/old2" ] && echo yes)" yes
+
+# Stopped with SIGTERM while a step runs: the step ends, nothing after it runs, the lock is released.
+printf '#!/bin/bash\necho "lsof ok"\n' > "$tmp/bin/lsof"
+printf '#!/bin/bash\necho "npm $*" >> "%s"\nsleep 3\n' "$calls" > "$tmp/bin/npm"; : > "$calls"
+env DEPLOYS_JOURNAL="$tmp/journal.jsonl" bash ./deploys disk free --yes --json > /dev/null 2>&1 &
+p=$!
+for _ in $(seq 1 50); do grep -q '^npm cache clean' "$calls" && break; sleep 0.1; done
+kill -TERM "$p"; wait "$p" 2>/dev/null
+expect "SIGTERM: lock released" "$([ -d "$DEPLOYS_CONFIG/disk/lock" ] || echo free)" free
+expect "SIGTERM: later steps do not run" "$(grep -c '^brew' "$calls")" 0
+printf '#!/bin/bash\necho "npm $*" >> "%s"\n' "$calls" > "$tmp/bin/npm"
+# Yarn 2+: its global cache folder goes, a project's own .yarn/cache stays.
+fill "$HOME/.yarn/berry/cache" 64; fill "$tmp/proj/.yarn/cache" 64
+(cd "$tmp/proj" && FAKE_YARN=4.1.0 env DEPLOYS_JOURNAL="$tmp/journal.jsonl" bash "$OLDPWD/deploys" disk free --yes >/dev/null 2>&1)
+expect "yarn 2+: global cache gone" "$([ -d "$HOME/.yarn/berry/cache" ] || echo gone)" gone
+expect "yarn 2+: project cache stays" "$([ -f "$tmp/proj/.yarn/cache/blob" ] && echo yes)" yes
 
 # The schedule: opt-in, writes disk.json, the tick runs free below the minimum and not again within 6 hours.
 expect "schedule on without --yes changes nothing" "$(cli disk schedule on >/dev/null; [ -f "$DEPLOYS_CONFIG/disk.json" ] || echo none)" none

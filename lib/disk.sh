@@ -95,7 +95,7 @@ disk_tmp_old() {
   t="$(disk_tmpdir)"; [ -n "$t" ] || return 0
   case "$t" in /?*/?*) ;; *) return 0 ;; esac
   # No list of open files, no deletion: without lsof every entry would look unused.
-  used="$(lsof -nP -u "$(id -u)" -Fn 2>/dev/null)" || [ -n "$used" ] || { echo "lsof failed: temporary files left alone." >&2; return 1; }
+  used="$(lsof -nP -u "$(id -u)" -Fn 2>/dev/null)" || { echo "lsof failed: temporary files left alone." >&2; return 1; }
   used="$(printf '%s\n' "$used" | sed -n "s#^n$t/\([^/]*\).*#\1#p" | sort -u)"
   find "$t" -mindepth 1 -maxdepth 1 -mtime +3 -user "$(id -u)" ! -name 'com.apple.*' ! -type s 2>/dev/null | while IFS= read -r e; do
     [ -z "$(find "$e" -mtime -3 -print -quit 2>/dev/null)" ] || continue
@@ -146,9 +146,10 @@ disk_measure_one() {  # disk_measure_one <id> <seconds> <dir>
       if [ ${#paths[@]} -gt 0 ]; then r="$(disk_du "$t" "${paths[@]}")"; kb="${r% *}"; to="${r#* }"; fi
       local ov=() o
       while IFS= read -r p; do [ -n "$p" ] && ov+=("$p"); done < <(disk_overlap "$id")
-      if [ ${#ov[@]} -gt 0 ] && [ "$to" = 0 ]; then
-        o="$(disk_du "$t" "${ov[@]}")"
-        if [ "${o#* }" = 0 ]; then kb=$(( kb - ${o% *} )); [ "$kb" -ge 0 ] || kb=0; else to=1; fi
+      if [ ${#ov[@]} -gt 0 ]; then
+        # A remainder needs both counts whole: on a timeout of either it is unknown (0, the last full count is used).
+        if [ "$to" = 0 ]; then o="$(disk_du "$t" "${ov[@]}")"; [ "${o#* }" = 0 ] || to=1; fi
+        if [ "$to" = 0 ]; then kb=$(( kb - ${o% *} )); [ "$kb" -ge 0 ] || kb=0; else kb=0; fi
       fi ;;
   esac
   jq -nc --arg id "$id" --argjson kb "${kb:-0}" --argjson to "${to:-0}" --argjson parts "$parts" \
@@ -191,7 +192,7 @@ disk_measure() {
   # A category that ran out of time keeps the number of the last report that had one (marked stale).
   local prev='{}'; [ ! -f "$DISK_DIR/report.json" ] || prev="$(jq -c '[.categories[]? | select((.timedOut | not) or .stale) | {key:.id, value:.kb}] | from_entries' "$DISK_DIR/report.json" 2>/dev/null || echo '{}')"
   printf '%s' "$cats" | jq -sc --argjson time "$(disk_now)" --arg df "$df_line" --argjson prev "$prev" '
-    map(if .timedOut and ($prev[.id] // 0) > .kb then .kb = $prev[.id] | .stale = true else . end) |
+    map(if .timedOut and ($prev[.id] != null) then .kb = $prev[.id] | .stale = true else . end) |
     map(.freeableKB = (if .action != "auto" then 0
       elif .id == "docker" then ([.parts[] | select(.name == "Build Cache" or .name == "Images") | .reclaimableKB] | add // 0)
       elif .id == "simulators" or .id == "tmp" then 0 else .kb end)) |
@@ -240,8 +241,11 @@ disk_steps() {  # disk_steps <report json>
     old="$(find "$dd" -mindepth 1 -maxdepth 1 -type d -mtime +7 2>/dev/null)"
     [ -z "$old" ] || printf 'xcode\t%s\t%s\n' "$(printf '%s\n' "$old" | tr '\n' '\0' | xargs -0 du -sk 2>/dev/null | awk '{s+=$1} END{print s+0}')" "Xcode DerivedData older than 7 days ($(printf '%s\n' "$old" | wc -l | tr -d ' ') folders)"
   fi
-  local tmpold; tmpold="$(disk_tmp_old 2>/dev/null)" || tmpold=""
-  [ -z "$tmpold" ] || printf 'tmp\t%s\t%s\n' "$(printf '%s\n' "$tmpold" | tr '\n' '\0' | xargs -0 du -sk 2>/dev/null | awk '{s+=$1} END{print s+0}')" "temporary files older than 3 days, not in use ($(printf '%s\n' "$tmpold" | wc -l | tr -d ' ') entries)"
+  local tmpold
+  if ! tmpold="$(disk_tmp_old 2>/dev/null)"; then
+    printf 'tmp\t0\t%s\n' "temporary files: lsof failed, so they are left alone"
+  elif [ -n "$tmpold" ]; then printf 'tmp\t%s\t%s\n' "$(printf '%s\n' "$tmpold" | tr '\n' '\0' | xargs -0 du -sk 2>/dev/null | awk '{s+=$1} END{print s+0}')" "temporary files older than 3 days, not in use ($(printf '%s\n' "$tmpold" | wc -l | tr -d ' ') entries)"
+  fi
   command -v xcrun >/dev/null 2>&1 && printf 'simulators\t0\t%s\n' "xcrun simctl delete unavailable"
   return 0
 }
@@ -255,7 +259,15 @@ disk_run_step() {  # disk_run_step <id>
     pnpm) pnpm store prune ;;
     yarn)  # only the global cache, from the home folder: a project's own cache (Zero-Installs, in git) stays
       (cd "$HOME" || exit 1
-       case "$(yarn --version 2>/dev/null)" in 0.*|1.*) yarn cache clean ;; *) yarn cache clean --mirror ;; esac) ;;
+       case "$(yarn --version 2>/dev/null)" in
+         0.*|1.*) yarn cache clean ;;
+         *) # Yarn 2+: the global cache is a plain folder of downloaded archives (enableGlobalCache); `cache clean
+            # --mirror` leaves it when mirrorCwd is unset. A project's own .yarn/cache is never touched.
+            d="${YARN_GLOBAL_FOLDER:-$HOME/.yarn/berry}/cache"
+            case "$d" in "$HOME"/?*) ;; *) echo "Yarn global cache outside the home folder: left alone."; exit 0 ;; esac
+            [ -d "$d" ] && [ ! -L "$d" ] || exit 0
+            rm -rf -- "$d" ;;
+       esac) ;;
     brew) brew cleanup -s ;;
     xcode)
       if declare -F perf_xcode_up >/dev/null && perf_xcode_up; then echo "Xcode runs: DerivedData left alone."; return 0; fi
@@ -285,25 +297,39 @@ disk_free_main() {
     return 0
   fi
   mkdir -p "$DISK_DIR"
-  mkdir "$DISK_DIR/lock" 2>/dev/null || { echo "disk free runs already (remove $DISK_DIR/lock if it does not)." >&2; return 1; }
-  if [ "$auto" = 1 ] && ! disk_auto_due; then
-    rmdir "$DISK_DIR/lock" 2>/dev/null; echo "disk free --auto: not needed any more (enough free, or run recently)."; return 0
-  fi
-  local before after failed results
+  local before after failed results out="$DISK_DIR/free.$$" pid
   before="$(disk_free_kb)"
-  # The steps run in a subshell that owns the lock: stopped (Ctrl-C, kill), it still releases it.
-  results="$(
-    trap 'rmdir "$DISK_DIR/lock" 2>/dev/null' EXIT; trap 'exit 130' INT TERM HUP
+  # A subshell owns the lock from the moment it takes it: its EXIT trap writes last-free and releases it, also when it
+  # is stopped. This shell forwards a stop to it and waits, so the lock never outlives the run.
+  (
+    own=0
+    trap '[ "$own" = 1 ] && { disk_now > "$DISK_DIR/last-free"; rmdir "$DISK_DIR/lock" 2>/dev/null; }' EXIT
+    trap 'exit 130' INT TERM HUP
+    mkdir "$DISK_DIR/lock" 2>/dev/null || { echo "disk free runs already (remove $DISK_DIR/lock if it does not)." >&2; exit 3; }
+    own=1
+    if [ "$auto" = 1 ] && ! disk_auto_due; then own=0; rmdir "$DISK_DIR/lock" 2>/dev/null; exit 4; fi
     while IFS=$'\t' read -r id _ _; do
       [ -n "$id" ] || continue
       if disk_run_step "$id" </dev/null >> "$DISK_DIR/free.log" 2>&1; then echo "$id ok"; else echo "$id failed"; fi
     done <<<"$steps"
-  )
-"
+  ) > "$out" &
+  pid=$!
+  trap 'kill -TERM "$pid" 2>/dev/null' INT TERM HUP
+  local rc=0; wait "$pid" || rc=$?
+  # A signal interrupts wait: wait again until the subshell has really ended (and released the lock).
+  while kill -0 "$pid" 2>/dev/null; do wait "$pid" || rc=$?; done
+  trap - INT TERM HUP
+  results="$(cat "$out" 2>/dev/null)
+"; rm -f "$out"
+  case "$rc" in
+    3) return 1 ;;
+    4) echo "disk free --auto: not needed any more (enough free, or run recently)."; return 0 ;;
+    0) ;;
+    *) echo "disk free was stopped." >&2; return "$rc" ;;
+  esac
   failed="$(printf '%s' "$results" | grep -c ' failed$' || true)"
   after="$(disk_free_kb)"
   local freed=$(( ${after:-0} - ${before:-0} )); [ "$freed" -ge 0 ] || freed=0
-  disk_now > "$DISK_DIR/last-free"
   rm -f "$DISK_DIR/report.json"
   journal_add cli disk live "Freed $(disk_gb "$freed") GB$([ "$auto" = 1 ] && echo " (automatic)"), $failed steps failed" 2>/dev/null || true
   if [ "$auto" = 1 ] && declare -F perf_notify >/dev/null; then
