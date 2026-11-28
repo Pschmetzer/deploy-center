@@ -121,6 +121,7 @@ disk_unit_kb() {
 
 # One category as a JSON line into <dir>/<id>.json.
 disk_measure_one() {  # disk_measure_one <id> <seconds> <dir>
+  set +e  # a background job: a failing du or jq must not end it before it writes its line
   local id="$1" t="$2" dir="$3" kb=0 to=0 r paths=() p parts='[]' d line typ sz rec
   case "$id" in
     worktrees)
@@ -176,7 +177,7 @@ disk_measure() {
   for c in $pids; do
     id="${c%%:*}"
     [ -f "$tmp/$id.json" ] && continue
-    pkill -P "${c#*:}" 2>/dev/null; kill "${c#*:}" 2>/dev/null
+    pkill -P "${c#*:}" 2>/dev/null || true; kill "${c#*:}" 2>/dev/null || true
     jq -nc --arg id "$id" '{id:$id, kb:0, timedOut:true, paths:[], parts:[]}' > "$tmp/$id.json"
   done
   wait 2>/dev/null
