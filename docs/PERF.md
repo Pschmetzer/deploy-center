@@ -163,7 +163,7 @@ the Claude app's own folders, downloaded models in `~/.cache/huggingface`, bun a
 `deploys disk schedule on --yes` writes `"auto": true` to `disk.json` in the config folder. The perf agent then looks
 every 10 minutes; below `minFreeGB` (100) free it runs `disk free --yes` in the background, at most every `everyHours`
 (6) hours, with a notification of the GB freed and a journal entry. Once a day it measures the report again for the
-app (`DEPLOYS_DISK_TICK_TIMEOUT`, 900 seconds). It needs the perf agent (`deploys perf install --yes`).
+app (`DEPLOYS_DISK_TICK_TIMEOUT`, 2400 seconds: a big `~/.cache` takes 20 minutes). It needs the perf agent (`deploys perf install --yes`).
 `DEPLOYS_DISK_NOW` fixes the clock in tests and `DEPLOYS_DISK_TEST_AFTER_LOCK` runs a command right after the lock is taken (tests only); `DEPLOYS_DISK_APPS` and `DEPLOYS_DISK_LIBRARY` point the two shown-only
 system folders elsewhere.
 

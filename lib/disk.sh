@@ -414,7 +414,7 @@ disk_tick() {
     return 0
   fi
   if [ $(( now - $(jq -r '.time // 0' "$DISK_DIR/report.json" 2>/dev/null || echo 0) )) -ge 86400 ]; then
-    DEPLOYS_DISK_TIMEOUT="${DEPLOYS_DISK_TICK_TIMEOUT:-900}" disk_detach /dev/null disk --refresh
+    DEPLOYS_DISK_TIMEOUT="${DEPLOYS_DISK_TICK_TIMEOUT:-2400}" disk_detach /dev/null disk --refresh
   fi
   return 0
 }
