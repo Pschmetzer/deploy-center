@@ -181,5 +181,14 @@ echo "{\"oauthAccount\":{\"accountUuid\":\"$A2\",\"emailAddress\":\"someone@exam
 expect "active by account uuid" "$(d --json | jq -c '[[.accounts[].active], .activeAmbiguous]')" '[[false,true,false,false],false]'
 case "$(d --json)" in *example.invalid*) fail "no email from claude.json" "found" ;; *) ok "no email from claude.json" ;; esac
 
+# The nudge switch: on when missing, off and on again, nothing else in the file.
+expect "nudge: on when missing" "$(d nudge status)" "Keep idle sessions going: on"
+d nudge off >/dev/null
+expect "nudge: off" "$(d nudge status)" "Keep idle sessions going: off"
+expect "nudge: file" "$(jq -c . "$DEPLOYS_CONFIG/nudge.json")" '{"enabled":false}'
+d nudge on >/dev/null
+expect "nudge: on again" "$(jq -r .enabled "$DEPLOYS_CONFIG/nudge.json")" true
+d nudge maybe >/dev/null 2>&1; expect "nudge: bad value is a usage error" "$?" 2
+
 echo
 [ "$fails" = 0 ] && echo "all desktop-sessions tests passed" || { echo "$fails failed"; exit 1; }

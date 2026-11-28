@@ -99,6 +99,12 @@ tests/perf-guard-tests.sh providers/*
 tests/perf-guard-tests.sh tests/fixtures/*
 tests/perf-guard-tests.sh tests/cli/*
 tests/perf-guard-tests.sh tests/providers/*
+tests/perf-shed-tests.sh deploys
+tests/perf-shed-tests.sh lib/*
+tests/perf-shed-tests.sh providers/*
+tests/perf-shed-tests.sh tests/fixtures/*
+tests/perf-shed-tests.sh tests/cli/*
+tests/perf-shed-tests.sh tests/providers/*
 tests/perf-tests.sh deploys
 tests/perf-tests.sh lib/*
 tests/perf-tests.sh providers/*
