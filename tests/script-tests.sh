@@ -13,6 +13,7 @@ expect() { [ "$2" = "$3" ] && ok "$1" || fail "$1" "expected [$3], got [$2]"; }
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 export DEPLOYS_CONFIG="$tmp/config" DEPLOYS_LIB=1 DEPLOYS_TESTING=1
+unset DEPLOYS_AUTOFIX_PER_PROJECT DEPLOYS_AUTOFIX_PER_DAY   # a cap set in the caller's environment must not leak into the tests
 # A stand-in for gh: commits, a comparison, open PRs, the rate limit.
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/gh" <<'GH'
