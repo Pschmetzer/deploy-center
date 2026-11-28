@@ -173,6 +173,20 @@ done
 expect "yarn 2+: a project's cache via YARN_GLOBAL_FOLDER, a link or .. stays" "$([ -f "$tmp/proj2/.yarn/cache/blob" ] && echo yes)" yes
 expect "yarn 2+: project cache stays" "$([ -f "$tmp/proj/.yarn/cache/blob" ] && echo yes)" yes
 
+# An automatic run that is not due any more: lock released, last-free not written.
+rm -f "$DEPLOYS_CONFIG/disk/last-free"; echo '{"auto":false}' > "$DEPLOYS_CONFIG/disk.json"; : > "$calls"
+cli disk free --yes --auto >/dev/null 2>&1
+expect "auto not due: lock released" "$([ -d "$DEPLOYS_CONFIG/disk/lock" ] || echo free)" free
+expect "auto not due: last-free not written, no step" "$([ -f "$DEPLOYS_CONFIG/disk/last-free" ] && echo written || echo none) $(grep -c '^npm' "$calls")" "none 0"
+rm -f "$DEPLOYS_CONFIG/disk.json"
+# A TMPDIR with pattern characters in its name: the open file is still matched, its folder stays.
+weird="$tmp/we[ir]d*#"; mkdir -p "$weird"; fill "$weird/held" 8; fill "$weird/loose" 8
+touch -t 202001010000 "$weird/held/blob" "$weird/held" "$weird/loose/blob" "$weird/loose"
+printf '#!/bin/bash\necho p1\necho "n%s/held/f"\n' "$weird" > "$tmp/bin/lsof"
+TMPDIR="$weird" cli disk free --yes >/dev/null 2>&1
+expect "TMPDIR with [ * #: held entry stays, loose one goes" "$(ls "$weird" | tr '\n' ' ')" "held "
+printf '#!/bin/bash\necho "lsof ok"\n' > "$tmp/bin/lsof"
+
 # The schedule: opt-in, writes disk.json, the tick runs free below the minimum and not again within 6 hours.
 expect "schedule on without --yes changes nothing" "$(cli disk schedule on >/dev/null; [ -f "$DEPLOYS_CONFIG/disk.json" ] || echo none)" none
 cli disk schedule on --min-free 100 --yes >/dev/null

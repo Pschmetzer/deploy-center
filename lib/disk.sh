@@ -96,7 +96,8 @@ disk_tmp_old() {
   case "$t" in /?*/?*) ;; *) return 0 ;; esac
   # No list of open files, no deletion: without lsof every entry would look unused.
   used="$(lsof -nP -u "$(id -u)" -Fn 2>/dev/null)" || { echo "lsof failed: temporary files left alone." >&2; return 1; }
-  used="$(printf '%s\n' "$used" | sed -n "s#^n$t/\([^/]*\).*#\1#p" | sort -u)"
+  # The folder is matched as plain text (a path with [ * # would break a pattern and make every entry look unused).
+  used="$(printf '%s\n' "$used" | awk -v p="n$t/" 'index($0, p) == 1 { r = substr($0, length(p) + 1); sub(/\/.*/, "", r); if (r != "") print r }' | sort -u)"
   find "$t" -mindepth 1 -maxdepth 1 -mtime +3 -user "$(id -u)" ! -name 'com.apple.*' ! -type s 2>/dev/null | while IFS= read -r e; do
     [ -z "$(find "$e" -mtime -3 -print -quit 2>/dev/null)" ] || continue
     printf '%s\n' "$used" | grep -qxF "$(basename "$e")" && continue
@@ -280,7 +281,9 @@ disk_run_step() {  # disk_run_step <id>
       find "$HOME/Library/Developer/Xcode/DerivedData" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf -- {} + ;;
     simulators) xcrun simctl delete unavailable ;;
     tmp) local old; old="$(disk_tmp_old)" || return 1
-         [ -z "$old" ] || printf '%s\n' "$old" | while IFS= read -r e; do rm -rf -- "$e"; done ;;
+         local rc=0
+         if [ -n "$old" ]; then while IFS= read -r e; do rm -rf -- "$e" || rc=1; done <<<"$old"; fi
+         return "$rc" ;;
   esac
 }
 
@@ -308,8 +311,8 @@ disk_free_main() {
   # A subshell owns the lock from the moment it takes it: its EXIT trap writes last-free and releases it, also when it
   # is stopped. This shell forwards a stop to it and waits, so the lock never outlives the run.
   (
-    own=0 stop=0
-    trap '[ "$own" = 1 ] && { disk_now > "$DISK_DIR/last-free"; rmdir "$DISK_DIR/lock" 2>/dev/null; }' EXIT
+    own=0 stop=0 skip=0
+    trap '[ "$own" = 1 ] && { [ "$skip" = 1 ] || disk_now > "$DISK_DIR/last-free"; rmdir "$DISK_DIR/lock" 2>/dev/null; }' EXIT
     # While the lock is taken a stop is only noted: between mkdir and own=1 it would leave the lock behind.
     trap 'stop=1' INT TERM HUP
     mkdir "$DISK_DIR/lock" 2>/dev/null || { echo "disk free runs already (remove $DISK_DIR/lock if it does not)." >&2; exit 3; }
@@ -317,7 +320,8 @@ disk_free_main() {
     own=1
     trap 'exit 130' INT TERM HUP
     [ "$stop" = 0 ] || exit 130
-    if [ "$auto" = 1 ] && ! disk_auto_due; then own=0; rmdir "$DISK_DIR/lock" 2>/dev/null; exit 4; fi
+    # Not due any more: the EXIT trap still releases the lock (also on a stop right now), without writing last-free.
+    if [ "$auto" = 1 ] && ! disk_auto_due; then skip=1; exit 4; fi
     while IFS=$'\t' read -r id _ _; do
       [ -n "$id" ] || continue
       if disk_run_step "$id" </dev/null >> "$DISK_DIR/free.log" 2>&1; then echo "$id ok"; else echo "$id failed"; fi
