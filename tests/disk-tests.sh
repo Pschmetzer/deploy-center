@@ -171,6 +171,18 @@ for g in "$tmp/proj2/.yarn" "$HOME/ws/linked/.yarn" "$HOME/../$(basename "$tmp")
   (cd "$tmp/proj" && YARN_GLOBAL_FOLDER="$g" FAKE_YARN=4.1.0 env DEPLOYS_JOURNAL="$tmp/journal.jsonl" bash "$OLDPWD/deploys" disk free --yes >/dev/null 2>&1)
 done
 expect "yarn 2+: a project's cache via YARN_GLOBAL_FOLDER, a link or .. stays" "$([ -f "$tmp/proj2/.yarn/cache/blob" ] && echo yes)" yes
+# An in-home project (package.json) whose cache sits at cache/: left alone, and also when git is missing.
+fill "$HOME/proj3/cache" 32; echo '{}' > "$HOME/proj3/package.json"
+(cd "$tmp/proj" && YARN_GLOBAL_FOLDER="$HOME/proj3" FAKE_YARN=4.1.0 env DEPLOYS_JOURNAL="$tmp/journal.jsonl" bash "$OLDPWD/deploys" disk free --yes >/dev/null 2>&1)
+expect "yarn 2+: an in-home project's cache/ stays" "$([ -f "$HOME/proj3/cache/blob" ] && echo yes)" yes
+fill "$HOME/.yarn/berry/cache" 16; mkdir -p "$tmp/nogit"
+for b in bash jq awk sed perl find du df rm mkdir rmdir cat grep sort tr wc date id head tail mv basename dirname nice xargs touch ls printf env uname cut seq mktemp chmod stat ps; do
+  [ -x "/usr/bin/$b" ] && ln -sf "/usr/bin/$b" "$tmp/nogit/$b"; [ -x "/bin/$b" ] && ln -sf "/bin/$b" "$tmp/nogit/$b"; command -v "$b" >/dev/null && [ ! -e "$tmp/nogit/$b" ] && ln -sf "$(command -v "$b")" "$tmp/nogit/$b"
+done
+for b in yarn lsof npm pnpm brew xcrun docker tmutil; do ln -sf "$tmp/bin/$b" "$tmp/nogit/$b"; done
+(cd "$tmp/proj" && PATH="$tmp/nogit" FAKE_YARN=4.1.0 DEPLOYS_JOURNAL="$tmp/journal.jsonl" "$tmp/nogit/bash" "$OLDPWD/deploys" disk free --yes >/dev/null 2>&1)
+grep -q "No git to check" "$DEPLOYS_CONFIG/disk/free.log" && ok "without git: the step said so" || fail "without git" "no log line"
+expect "yarn 2+: without git the cache stays" "$([ -f "$HOME/.yarn/berry/cache/blob" ] && echo yes)" yes
 expect "yarn 2+: project cache stays" "$([ -f "$tmp/proj/.yarn/cache/blob" ] && echo yes)" yes
 
 # An automatic run that is not due any more: lock released, last-free not written.
@@ -185,6 +197,12 @@ touch -t 202001010000 "$weird/held/blob" "$weird/held" "$weird/loose/blob" "$wei
 printf '#!/bin/bash\necho p1\necho "n%s/held/f"\n' "$weird" > "$tmp/bin/lsof"
 TMPDIR="$weird" cli disk free --yes >/dev/null 2>&1
 expect "TMPDIR with [ * #: held entry stays, loose one goes" "$(ls "$weird" | tr '\n' ' ')" "held "
+# A TMPDIR with a backslash: lsof would escape it, so nothing there is deleted and the step fails.
+bs="$tmp/back\\tslash"; mkdir -p "$bs"; fill "$bs/loose" 8; touch -t 202001010000 "$bs/loose/blob" "$bs/loose"
+printf '#!/bin/bash\necho p1\n' > "$tmp/bin/lsof"
+bres="$(TMPDIR="$bs" cli disk free --yes --json)"
+expect "TMPDIR with a backslash: entry stays" "$([ -d "$bs/loose" ] && echo yes)" yes
+expect "TMPDIR with a backslash: tmp step failed" "$(echo "$bres" | jq -r '[.steps[] | select(.id == "tmp") | .status][0]')" failed
 printf '#!/bin/bash\necho "lsof ok"\n' > "$tmp/bin/lsof"
 
 # The schedule: opt-in, writes disk.json, the tick runs free below the minimum and not again within 6 hours.

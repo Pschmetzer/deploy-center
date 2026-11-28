@@ -97,7 +97,9 @@ disk_tmp_old() {
   # No list of open files, no deletion: without lsof every entry would look unused.
   used="$(lsof -nP -u "$(id -u)" -Fn 2>/dev/null)" || { echo "lsof failed: temporary files left alone." >&2; return 1; }
   # The folder is matched as plain text (a path with [ * # would break a pattern and make every entry look unused).
-  used="$(printf '%s\n' "$used" | awk -v p="n$t/" 'index($0, p) == 1 { r = substr($0, length(p) + 1); sub(/\/.*/, "", r); if (r != "") print r }' | sort -u)"
+  # lsof writes some characters escaped (\t, \x..): a folder with a backslash or a control character is left alone.
+  case "$t" in *\\*|*[[:cntrl:]]*) echo "TMPDIR has a backslash or control character: temporary files left alone." >&2; return 1 ;; esac
+  used="$(printf '%s\n' "$used" | DISK_P="n$t/" awk 'BEGIN { p = ENVIRON["DISK_P"] } index($0, p) == 1 { r = substr($0, length(p) + 1); sub(/\/.*/, "", r); if (r != "") print r }' | sort -u)"
   find "$t" -mindepth 1 -maxdepth 1 -mtime +3 -user "$(id -u)" ! -name 'com.apple.*' ! -type s 2>/dev/null | while IFS= read -r e; do
     [ -z "$(find "$e" -mtime -3 -print -quit 2>/dev/null)" ] || continue
     printf '%s\n' "$used" | grep -qxF "$(basename "$e")" && continue
@@ -272,7 +274,15 @@ disk_run_step() {  # disk_run_step <id>
             local real hreal; real="$(cd "$d" 2>/dev/null && pwd -P)" || exit 0; hreal="$(cd "$HOME" && pwd -P)"
             case "$real" in "$hreal"/?*) ;; *) echo "Yarn global cache outside the home folder: left alone."; exit 0 ;; esac
             case "$real" in */.yarn/cache) echo "Yarn cache looks like a project's own: left alone."; exit 0 ;; esac
+            # Without git it cannot be told whether the folder is tracked: left alone. A package.json, .yarnrc.yml or
+            # .git in a folder above it (up to the home folder) marks a project: left alone too.
+            command -v git >/dev/null 2>&1 || { echo "No git to check the Yarn cache: left alone."; exit 0; }
             if git -C "$real" rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo "Yarn cache inside a git work tree: left alone."; exit 0; fi
+            local up="${real%/*}"
+            while [ "${#up}" -gt "${#hreal}" ]; do
+              if [ -e "$up/package.json" ] || [ -e "$up/.yarnrc.yml" ] || [ -e "$up/.git" ]; then echo "Yarn cache inside a project: left alone."; exit 0; fi
+              up="${up%/*}"
+            done
             rm -rf -- "$real" ;;
        esac) ;;
     brew) brew cleanup -s ;;
