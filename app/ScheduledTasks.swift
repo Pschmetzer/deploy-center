@@ -119,8 +119,8 @@ struct TasksSettings: View {
                     if on, !(await OwnerCheck.confirm(L("let the tasks that are switched on go to Claude by themselves", "die eingeschalteten Aufgaben selbst an Claude senden lassen"))) { return }
                     await run(["tasks", "schedule", on ? "on" : "off"]) } }))
                 .disabled(busy || status == nil)
-            Text(L("Checked every 10 minutes while this Mac is awake; each time a task is meant to run goes out once. A Mac that sleeps at the time sends it when it wakes (hourly tasks up to 50 minutes late, the others up to 6 hours).",
-                   "Wird alle 10 Minuten geprüft, solange der Mac wach ist; jeder vorgesehene Termin geht einmal raus. Schläft der Mac, geht er beim Aufwachen raus (stündliche Aufgaben bis 50 Minuten später, die anderen bis 6 Stunden)."))
+            Text(L("Checked every 10 minutes while this Mac is awake; each time a task is meant to run goes out once. A Mac that sleeps at the time sends it when it wakes, on the same day (hourly tasks up to 50 minutes late, the others up to 6 hours).",
+                   "Wird alle 10 Minuten geprüft, solange der Mac wach ist; jeder vorgesehene Termin geht einmal raus. Schläft der Mac, geht er beim Aufwachen am selben Tag raus (stündliche Aufgaben bis 50 Minuten später, die anderen bis 6 Stunden)."))
                 .font(.caption).foregroundStyle(.secondary)
             if let s = status {
                 if s.tasks.isEmpty {

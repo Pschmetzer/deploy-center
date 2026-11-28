@@ -251,7 +251,8 @@ tasks_send() {
     429) echo "$st" | tasks_mark "$1" "$2" '{"status":"ratelimited"}' | tasks_state_save
         echo "tasks: rate limited; \"$name\" is tried again on the next run."; return 0 ;;
     *)  echo "$st" | tasks_mark "$1" "$2" "$(jq -nc --arg e "HTTP $code: $resp" '{status:"failed", error:$e}')" | tasks_state_save
-        journal_add claude "$repo" failed "Task \"$name\" could not be sent (HTTP $code)" 2>/dev/null || true
+        # "other", not "failed": a send is not a deploy, and the digest, streak and morning report count failed lines as deploys.
+        journal_add claude "$repo" other "Task \"$name\" could not be sent (HTTP $code)" 2>/dev/null || true
         af_notify "Tasks: could not send \"$name\" for $repo (HTTP $code)."; return 1 ;;
   esac
 }
@@ -347,10 +348,10 @@ tasks_accounts_json() {
 # Everything the app shows: the file, the last send of each task, the schedule, the accounts, what needs setting up.
 tasks_status_json() {
   local sched acc; sched="$(json=1 tasks_schedule status | jq .scheduled)"; acc="$(tasks_accounts_json)"
-  tasks_conf | jq --argjson st "$(tasks_state)" --argjson acc "$acc" --argjson sched "$sched" \
+  tasks_conf | jq --argjson st "$(tasks_state)" --argjson acc "$acc" --argjson sched "$sched" --argjson now "$(date +%s)" \
     --argjson cap "$(tasks_cap "${DEPLOYS_TASKS_PER_DAY:-}" perDay 30)" '
     . + {scheduled:$sched, perDay:$cap, active:$acc.active, accounts:$acc.accounts,
-         needsSetup:([$st.fires[] | select(.status == "needs-setup") | .account // "none"] | unique),
+         needsSetup:([$st.fires[] | select(.status == "needs-setup" and (.at // 0) > ($now - 86400)) | .account // "none"] | unique),
          tasks:[.tasks[] | .id as $id | . + {last:([$st.fires[] | select(.task == $id)] | sort_by(.at) | last // null)}]}'
 }
 
