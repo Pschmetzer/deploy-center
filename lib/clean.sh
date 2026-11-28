@@ -155,7 +155,7 @@ clean_main() {
       [inputs | split("\t") | {kind:.[0], kb:(.[1]|tonumber), repo:.[2], path:.[3], what:.[4]}] as $i |
       {deleted:($yes==1), freeGB:$free, totalKB:($i|map(.kb)|add // 0), freedKB:$freed, failed:$failed,
        keptRecent:$kept, items:$i}' < "$items"
-    rm -f "$items"; return 0
+    rm -f "$items"; [ "$failed" -eq 0 ]; return
   fi
   printf '%s GB free now. Worktrees left alone because they changed in the last %s days: %s\n' "${free:-?}" "$days" "$n_kept"
   awk -F'\t' '{s[$3]+=$2; n[$3]++} END{for (k in s) printf "  %7.1f GB  %3d  %s\n", s[k]/1048576, n[k], k}' "$items" | sort -rn | head -n 20
@@ -167,6 +167,7 @@ clean_main() {
     [ "$wts" = 1 ] || echo "Whole worktrees that are merged and unchanged too: add --worktrees"
   fi
   rm -f "$items"
+  [ "$failed" -eq 0 ]  # a folder that could not be removed makes the run fail (disk free counts it)
 }
 
 # Docker's build cache (older than 3 days) and dangling images: both come back on the next build. Never containers,

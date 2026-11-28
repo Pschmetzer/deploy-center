@@ -1,0 +1,445 @@
+# shellcheck shell=bash
+# lib/disk.sh — `deploys disk`: where the Mac's disk space goes, and freeing what comes back by itself.
+#
+#   deploys disk [--refresh] [--json]          a report per category (cached for 6 hours; --refresh measures again)
+#   deploys disk free [--yes] [--json]         what can go; without --yes nothing is deleted
+#   deploys disk schedule on|off|status [--min-free 100] [--yes]   the perf agent runs `disk free --yes` when less is free
+#
+# Measuring: every category at once in the background, each `du` with a time limit (DEPLOYS_DISK_TIMEOUT, 120 s), at
+# the lowest priority. A category that runs out of time is marked timedOut and counts what it measured so far.
+#
+# `disk free --yes` only touches what comes back on the next build or install:
+#   deploys clean --yes --docker (build folders of old worktrees, Docker's build cache older than 3 days, dangling
+#   images), npm cache clean --force, pnpm store prune, yarn cache clean, brew cleanup -s, Xcode DerivedData older
+#   than 7 days (not while Xcode runs), xcrun simctl delete unavailable, entries in this user's TMPDIR older than
+#   3 days that no running process uses (lsof).
+# Never, only shown: the Trash, Docker volumes and containers, ~/.claude/projects (Claude Code's own setting
+# cleanupPeriodDays keeps them shorter), the Claude app's own folders, ~/.cache (huggingface never), bun and pip
+# caches, /Applications and /Library.
+#
+# disk.json in the config folder (optional): {"auto":true,"minFreeGB":100,"everyHours":6}
+# Sourced by deploys; uses die, journal_add, CONFIG_DIR and, when there, clean_main, clean_docker, perf_notify.
+
+DISK_DIR="${CONFIG_DIR:-${DEPLOYS_CONFIG:-$HOME/.config/deploys}}/disk"
+
+disk_cfg() {  # disk_cfg <jq path>: a value of disk.json, empty without one
+  [ -f "$CONFIG_DIR/disk.json" ] || return 0
+  jq -r "$1 // empty" "$CONFIG_DIR/disk.json" 2>/dev/null || true
+}
+disk_now() { if [ -n "${DEPLOYS_DISK_NOW:-}" ]; then echo "$DEPLOYS_DISK_NOW"; else date +%s; fi; }
+disk_free_kb() { df -k "$HOME" 2>/dev/null | awk 'NR==2{print $4+0}'; }
+disk_gb() { awk -v k="${1:-0}" 'BEGIN{printf "%.1f", k/1048576}'; }
+
+# What each category is, for the text output (the app has its own texts per id) and the rule that decides it.
+#   auto: `disk free --yes` frees it   manual: you decide (a hint says how)   never: left alone, only shown
+DISK_CATS="worktrees:auto docker:auto npm:auto pnpm:auto yarn:auto brew:auto xcode:auto simulators:auto tmp:auto bun:manual pip:manual caches:manual trash:manual claude-projects:manual claude-app:never huggingface:never dotcache:manual applications:never library:never snapshots:never"
+disk_label() {
+  case "$1" in
+    worktrees) echo "Build folders in old worktrees" ;; docker) echo "Docker" ;; npm) echo "npm cache" ;;
+    pnpm) echo "pnpm store" ;; yarn) echo "Yarn cache" ;; brew) echo "Homebrew cache" ;; bun) echo "bun cache" ;;
+    pip) echo "pip cache" ;; xcode) echo "Xcode DerivedData" ;; simulators) echo "iOS simulators" ;;
+    caches) echo "Library/Caches (the rest)" ;; trash) echo "Trash" ;; claude-projects) echo "Claude Code transcripts" ;;
+    claude-app) echo "Claude app folders" ;; huggingface) echo "Hugging Face models" ;;
+    tmp) echo "Temporary files (TMPDIR)" ;; dotcache) echo ".cache (the rest)" ;; applications) echo "/Applications" ;; library) echo "/Library" ;; snapshots) echo "Local APFS snapshots" ;; *) echo "$1" ;;
+  esac
+}
+disk_hint() {
+  case "$1" in
+    bun) echo "bun pm cache rm" ;; pip) echo "pip cache purge" ;; caches) echo "app caches; quit the app and delete its folder if you must" ;;
+    trash) echo "empty it in Finder" ;; claude-projects) echo "Claude Code keeps 30 days; set cleanupPeriodDays in ~/.claude/settings.json for fewer" ;;
+    claude-app) echo "the Claude app's own state; it cleans it itself" ;; huggingface) echo "downloaded models (Whisper); they would be downloaded again" ;;
+    docker) echo "build cache and dangling images go; volumes and containers stay" ;; xcode) echo "folders older than 7 days" ;;
+    simulators) echo "only simulators of runtimes that are gone" ;;
+    tmp) echo "entries older than 3 days that no process uses" ;; dotcache) echo "other tools' caches; delete one you no longer use" ;;
+    applications|library) echo "apps and system files; only shown" ;;
+    snapshots) echo "macOS keeps them (updates, Time Machine); installing or cancelling the pending macOS update frees an update snapshot. Size unknown without admin" ;; *) echo "" ;;
+  esac
+}
+
+# The paths of a category, one per line (only those that exist).
+disk_paths() {
+  local p h="$HOME"
+  case "$1" in
+    claude-app) find "$h/Library/Application Support/Claude" -maxdepth 3 -type d \( -name scratch-workspaces -o -name vm_bundles \) -prune -print 2>/dev/null; return 0 ;;
+    tmp) p="$(disk_tmpdir)"; [ -z "$p" ] || echo "$p"; return 0 ;;
+  esac
+  case "$1" in
+    npm) printf '%s\n' "$h/.npm" ;; pnpm) printf '%s\n' "$h/Library/pnpm/store" "$h/Library/Caches/pnpm" ;;
+    yarn) printf '%s\n' "$h/Library/Caches/Yarn" "$h/.yarn/berry/cache" ;; bun) printf '%s\n' "$h/.bun/install/cache" ;;
+    pip) printf '%s\n' "$h/Library/Caches/pip" "$h/.cache/pip" ;; brew) printf '%s\n' "$h/Library/Caches/Homebrew" ;;
+    xcode) printf '%s\n' "$h/Library/Developer/Xcode/DerivedData" ;; simulators) printf '%s\n' "$h/Library/Developer/CoreSimulator/Devices" ;;
+    caches) printf '%s\n' "$h/Library/Caches" ;; trash) printf '%s\n' "$h/.Trash" ;; claude-projects) printf '%s\n' "$h/.claude/projects" ;;
+    huggingface) printf '%s\n' "$h/.cache/huggingface" ;; dotcache) printf '%s\n' "$h/.cache" ;;
+    applications) printf '%s\n' "${DEPLOYS_DISK_APPS:-/Applications}" ;; library) printf '%s\n' "${DEPLOYS_DISK_LIBRARY:-/Library}" ;;
+  esac | while IFS= read -r p; do [ -e "$p" ] && printf '%s\n' "$p"; done
+  return 0
+}
+
+# The folders inside a category that other categories count already: measured with it and subtracted, so the
+# remainder is right on its own (and a restored remainder is never subtracted twice).
+disk_overlap() {
+  local p
+  case "$1" in
+    caches) for p in Yarn pip Homebrew pnpm; do [ -d "$HOME/Library/Caches/$p" ] && printf '%s\n' "$HOME/Library/Caches/$p"; done ;;
+    dotcache) for p in huggingface pip; do [ -d "$HOME/.cache/$p" ] && printf '%s\n' "$HOME/.cache/$p"; done ;;
+  esac
+  return 0
+}
+
+disk_tmpdir() { local t="${TMPDIR:-}"; [ -n "$t" ] && [ -d "$t" ] || t=""; printf '%s' "${t%/}"; }
+
+# The entries directly in this user's TMPDIR that are older than 3 days, have nothing inside changed in that time,
+# and no running process has open or as its folder (lsof). Not Apple's own (com.apple.*). One per line.
+disk_tmp_old() {
+  local t e used
+  t="$(disk_tmpdir)"; [ -n "$t" ] || return 0
+  case "$t" in /?*/?*) ;; *) return 0 ;; esac
+  # No list of open files, no deletion: without lsof every entry would look unused.
+  used="$(lsof -nP -u "$(id -u)" -Fn 2>/dev/null)" || { echo "lsof failed: temporary files left alone." >&2; return 1; }
+  # The folder is matched as plain text (a path with [ * # would break a pattern and make every entry look unused).
+  # lsof writes some characters escaped (\t, \x..): a folder with a backslash or a control character is left alone.
+  case "$t" in *\\*|*[[:cntrl:]]*) echo "TMPDIR has a backslash or control character: temporary files left alone." >&2; return 1 ;; esac
+  used="$(printf '%s\n' "$used" | DISK_P="n$t/" awk 'BEGIN { p = ENVIRON["DISK_P"] } index($0, p) == 1 { r = substr($0, length(p) + 1); sub(/\/.*/, "", r); if (r != "") print r }' | sort -u)"
+  find "$t" -mindepth 1 -maxdepth 1 -mtime +3 -user "$(id -u)" ! -name 'com.apple.*' ! -type s 2>/dev/null | while IFS= read -r e; do
+    [ -z "$(find "$e" -mtime -3 -print -quit 2>/dev/null)" ] || continue
+    printf '%s\n' "$used" | grep -qxF "$(basename "$e")" && continue
+    printf '%s\n' "$e"
+  done
+}
+
+# disk_du <seconds> <path>...: "<kb> <timedOut 0|1>" — what du finished in time.
+disk_du() {
+  local t="$1" out rc; shift
+  [ $# -gt 0 ] || { echo "0 0"; return 0; }
+  out="$(perl -e 'alarm shift; exec @ARGV' "$t" nice -n 19 du -sk "$@" 2>/dev/null)"; rc=$?
+  printf '%s %s\n' "$(printf '%s\n' "$out" | awk '{s+=$1} END{print s+0}')" "$([ "$rc" -ge 128 ] && echo 1 || echo 0)"
+}
+
+# "1.2GB" / "512.3MB" / "0B" (docker system df) -> kb
+disk_unit_kb() {
+  echo "$1" | awk '{ v=$1; sub(/ .*/, "", v); n=v+0; u=v; gsub(/[0-9.]/, "", u); u=toupper(u)
+    m=1/1024; if (u=="KB") m=1; else if (u=="MB") m=1024; else if (u=="GB") m=1048576; else if (u=="TB") m=1073741824
+    printf "%d\n", n*m }'
+}
+
+# One category as a JSON line into <dir>/<id>.json.
+disk_measure_one() {  # disk_measure_one <id> <seconds> <dir>
+  set +e  # a background job: a failing du or jq must not end it before it writes its line
+  local id="$1" t="$2" dir="$3" kb=0 to=0 r paths=() p parts='[]' d line typ sz rec
+  case "$id" in
+    worktrees)
+      if declare -F clean_main >/dev/null && [ -n "$(clean_cfg '.roots[]?' 2>/dev/null)" ]; then
+        kb="$( (json=1 clean_main --json 2>/dev/null) | jq -r '.totalKB // 0' 2>/dev/null)"; kb="${kb:-0}"
+      fi ;;
+    snapshots)
+      command -v tmutil >/dev/null 2>&1 && parts="$(perl -e 'alarm shift; exec @ARGV' 20 tmutil listlocalsnapshots / 2>/dev/null | grep '^com\.apple\.' | jq -Rsc 'split("\n") | map(select(length > 0) | {name:., kb:0})')"
+      [ -n "$parts" ] || parts='[]' ;;
+    docker)
+      d="${DEPLOYS_DOCKER_BIN:-docker}"
+      if command -v "$d" >/dev/null 2>&1 && perl -e 'alarm shift; exec @ARGV' 15 "$d" info >/dev/null 2>&1; then
+        parts="$(perl -e 'alarm shift; exec @ARGV' "$t" "$d" system df --format '{{json .}}' 2>/dev/null | while IFS= read -r line; do
+          typ="$(jq -r '.Type // empty' <<<"$line" 2>/dev/null)"; [ -n "$typ" ] || continue
+          sz="$(disk_unit_kb "$(jq -r '.Size // "0B"' <<<"$line")")"; rec="$(disk_unit_kb "$(jq -r '.Reclaimable // "0B"' <<<"$line")")"
+          jq -nc --arg n "$typ" --argjson kb "$sz" --argjson r "$rec" '{name:$n, kb:$kb, reclaimableKB:$r}'
+        done | jq -sc '.')"
+        [ -n "$parts" ] || parts='[]'
+        kb="$(jq '[.[].kb] | add // 0' <<<"$parts")"
+      fi ;;
+    *)
+      while IFS= read -r p; do [ -n "$p" ] && paths+=("$p"); done < <(disk_paths "$id")
+      if [ ${#paths[@]} -gt 0 ]; then r="$(disk_du "$t" "${paths[@]}")"; kb="${r% *}"; to="${r#* }"; fi
+      local ov=() o
+      while IFS= read -r p; do [ -n "$p" ] && ov+=("$p"); done < <(disk_overlap "$id")
+      if [ ${#ov[@]} -gt 0 ]; then
+        # A remainder needs both counts whole: on a timeout of either it is unknown (0, the last full count is used).
+        if [ "$to" = 0 ]; then o="$(disk_du "$t" "${ov[@]}")"; [ "${o#* }" = 0 ] || to=1; fi
+        if [ "$to" = 0 ]; then kb=$(( kb - ${o% *} )); [ "$kb" -ge 0 ] || kb=0; else kb=0; fi
+      fi ;;
+  esac
+  jq -nc --arg id "$id" --argjson kb "${kb:-0}" --argjson to "${to:-0}" --argjson parts "$parts" \
+    --argjson paths "$(printf '%s\n' "${paths[@]+"${paths[@]}"}" | sed "s#^$HOME#~#" | jq -Rsc 'split("\n") | map(select(length > 0))')" \
+    '{id:$id, kb:$kb, timedOut:($to == 1), paths:$paths, parts:$parts}' > "$dir/$id.json.tmp" && mv -f "$dir/$id.json.tmp" "$dir/$id.json"
+}
+
+# Measures every category at once; writes and prints the report.
+disk_measure() {
+  local t="${DEPLOYS_DISK_TIMEOUT:-120}" tmp c id pids="" left start now
+  tmp="$(mktemp -d)"
+  for c in $DISK_CATS; do
+    id="${c%%:*}"
+    disk_measure_one "$id" "$t" "$tmp" </dev/null >/dev/null 2>&1 &
+    pids="$pids $id:$!"
+  done
+  start="$(date +%s)"
+  while :; do
+    left=0; for c in $pids; do [ -f "$tmp/${c%%:*}.json" ] || left=1; done
+    [ "$left" = 1 ] || break
+    now="$(date +%s)"; [ $(( now - start )) -le $(( t + 5 )) ] || break
+    sleep 1
+  done
+  for c in $pids; do
+    id="${c%%:*}"
+    [ -f "$tmp/$id.json" ] && continue
+    pkill -P "${c#*:}" 2>/dev/null || true; kill "${c#*:}" 2>/dev/null || true
+    jq -nc --arg id "$id" '{id:$id, kb:0, timedOut:true, paths:[], parts:[]}' > "$tmp/$id.json"
+  done
+  wait 2>/dev/null
+  local cats="" act
+  for c in $DISK_CATS; do
+    id="${c%%:*}"; act="${c#*:}"
+    cats="$cats$(jq -c --arg a "$act" --arg l "$(disk_label "$id")" --arg h "$(disk_hint "$id")" '. + {action:$a, label:$l, hint:$h}' "$tmp/$id.json")
+"
+  done
+  rm -rf "$tmp"
+  local df_line; df_line="$(df -k "$HOME" 2>/dev/null | awk 'NR==2{print $2+0, $3+0, $4+0}')"
+  mkdir -p "$DISK_DIR"
+  # A category that ran out of time keeps the number of the last report that had one (marked stale).
+  local prev='{}'; [ ! -f "$DISK_DIR/report.json" ] || prev="$(jq -c '[.categories[]? | select((.timedOut | not) or .stale) | {key:.id, value:.kb}] | from_entries' "$DISK_DIR/report.json" 2>/dev/null || echo '{}')"
+  printf '%s' "$cats" | jq -sc --argjson time "$(disk_now)" --arg df "$df_line" --argjson prev "$prev" '
+    map(if .timedOut and ($prev[.id] != null) then .kb = $prev[.id] | .stale = true else . end) |
+    map(.freeableKB = (if .action != "auto" then 0
+      elif .id == "docker" then ([.parts[] | select(.name == "Build Cache" or .name == "Images") | .reclaimableKB] | add // 0)
+      elif .id == "simulators" or .id == "tmp" then 0 else .kb end)) |
+    ($df | split(" ") | map(tonumber? // 0)) as $d |
+    {time:$time, diskKB:($d[0] // 0), usedKB:($d[1] // 0), freeKB:($d[2] // 0), measuredKB:(map(.kb) | add // 0),
+     autoKB:(map(.freeableKB) | add // 0), categories:.} |
+    .unassignedKB = ([.usedKB - .measuredKB, 0] | max)' > "$DISK_DIR/report.json.$$" \
+    && mv -f "$DISK_DIR/report.json.$$" "$DISK_DIR/report.json"
+  cat "$DISK_DIR/report.json"
+}
+
+# The report: from the cache when it is younger than 6 hours (or --refresh), else measured now.
+disk_report() {  # disk_report [refresh 0|1]
+  local f="$DISK_DIR/report.json" age
+  if [ "${1:-0}" != 1 ] && [ -f "$f" ]; then
+    age=$(( $(disk_now) - $(jq -r '.time // 0' "$f" 2>/dev/null || echo 0) ))
+    if [ "$age" -lt 21600 ]; then jq -c --argjson a "$age" --argjson f "$(disk_free_kb)" '. + {cached:true, ageSec:$a, freeKB:$f}' "$f"; return 0; fi
+  fi
+  disk_measure | jq -c '. + {cached:false, ageSec:0}'
+}
+
+disk_print() {  # the text report from JSON on stdin
+  jq -r '
+    def gb: . / 1048576 * 10 | round / 10 | tostring + " GB";
+    "Disk: \(.usedKB | gb) used, \(.freeKB | gb) free of \(.diskKB | gb)" + (if .cached then "  (measured \(.ageSec / 60 | floor) min ago; --refresh measures again)" else "" end),
+    "",
+    (.categories | sort_by(-.kb)[] | "  \(.kb | gb | (" " * (9 - length)) + .)  \({auto:"frees  ",manual:"by you ",never:"stays  "}[.action])  \(.label)\(if .stale then " (time ran out: the last full count)" elif .timedOut then " (time ran out: at least this)" else "" end)\(if .hint != "" then "  – " + .hint else "" end)"),
+    "",
+    (if .unassignedKB > .usedKB / 10 then "Not assigned: \(.unassignedKB | gb) (other users, system data, snapshots, folders not measured here)" else empty end),
+    (.categories[] | select(.id == "snapshots" and (.parts | length) > 0) | "Local snapshots: \(.parts | length) (\(.parts | map(.name) | join(", ")))"),
+    "Measured: \(.measuredKB | gb). `deploys disk free` frees up to about \(.autoKB | gb) of it (only what comes back by itself)."'
+}
+
+# The steps of `disk free`: "<id>\t<estimate kb>\t<what>" for each tool that is there.
+disk_steps() {  # disk_steps <report json>
+  local rep="$1"
+  disk_k() { jq -r --arg i "$1" '[.categories[] | select(.id == $i) | .kb][0] // 0' <<<"$rep"; }
+  local dk; dk="$(jq -r '[.categories[] | select(.id == "docker") | .parts[] | select(.name == "Build Cache") | .reclaimableKB][0] // 0' <<<"$rep")"
+  printf 'clean\t%s\t%s\n' "$(( $(disk_k worktrees) + dk ))" "deploys clean --yes --docker (build folders of old worktrees, Docker build cache > 3 days, dangling images)"
+  command -v npm >/dev/null 2>&1 && printf 'npm\t%s\t%s\n' "$(disk_k npm)" "npm cache clean --force"
+  command -v pnpm >/dev/null 2>&1 && printf 'pnpm\t%s\t%s\n' "$(disk_k pnpm)" "pnpm store prune (up to)"
+  command -v yarn >/dev/null 2>&1 && printf 'yarn\t%s\t%s\n' "$(disk_k yarn)" "yarn cache clean"
+  command -v brew >/dev/null 2>&1 && printf 'brew\t%s\t%s\n' "$(disk_k brew)" "brew cleanup -s"
+  local dd="$HOME/Library/Developer/Xcode/DerivedData" old
+  if [ -d "$dd" ]; then
+    old="$(find "$dd" -mindepth 1 -maxdepth 1 -type d -mtime +7 2>/dev/null)"
+    [ -z "$old" ] || printf 'xcode\t%s\t%s\n' "$(printf '%s\n' "$old" | tr '\n' '\0' | xargs -0 du -sk 2>/dev/null | awk '{s+=$1} END{print s+0}')" "Xcode DerivedData older than 7 days ($(printf '%s\n' "$old" | wc -l | tr -d ' ') folders)"
+  fi
+  local tmpold
+  if ! tmpold="$(disk_tmp_old 2>/dev/null)"; then
+    printf 'tmp\t0\t%s\n' "temporary files: lsof failed, so they are left alone"
+  elif [ -n "$tmpold" ]; then printf 'tmp\t%s\t%s\n' "$(printf '%s\n' "$tmpold" | tr '\n' '\0' | xargs -0 du -sk 2>/dev/null | awk '{s+=$1} END{print s+0}')" "temporary files older than 3 days, not in use ($(printf '%s\n' "$tmpold" | wc -l | tr -d ' ') entries)"
+  fi
+  command -v xcrun >/dev/null 2>&1 && printf 'simulators\t0\t%s\n' "xcrun simctl delete unavailable"
+  return 0
+}
+
+disk_run_step() {  # disk_run_step <id>
+  case "$1" in
+    clean)
+      if declare -F clean_main >/dev/null && [ -n "$(clean_cfg '.roots[]?' 2>/dev/null)" ]; then (json=0 clean_main --yes --docker)
+      elif declare -F clean_docker >/dev/null; then clean_docker; fi ;;
+    npm) npm cache clean --force ;;
+    pnpm) pnpm store prune ;;
+    yarn)  # only the global cache, from the home folder: a project's own cache (Zero-Installs, in git) stays
+      (cd "$HOME" || exit 1
+       case "$(yarn --version 2>/dev/null)" in
+         0.*|1.*) yarn cache clean ;;
+         *) # Yarn 2+: the global cache is a plain folder of downloaded archives (enableGlobalCache); `cache clean
+            # --mirror` leaves it when mirrorCwd is unset. A project's own .yarn/cache is never touched.
+            d="${YARN_GLOBAL_FOLDER:-$HOME/.yarn/berry}/cache"
+            [ -d "$d" ] && [ ! -L "$d" ] || exit 0
+            # The real path (no .., no linked parent) must be inside the home folder, not a project's .yarn/cache and
+            # not inside a git work tree (tracked archives, Zero-Installs).
+            local real hreal; real="$(cd "$d" 2>/dev/null && pwd -P)" || exit 0; hreal="$(cd "$HOME" && pwd -P)"
+            case "$real" in "$hreal"/?*) ;; *) echo "Yarn global cache outside the home folder: left alone."; exit 0 ;; esac
+            case "$real" in */.yarn/cache) echo "Yarn cache looks like a project's own: left alone."; exit 0 ;; esac
+            # Without git it cannot be told whether the folder is tracked: left alone. A package.json, .yarnrc.yml or
+            # .git in a folder above it (up to the home folder) marks a project: left alone too.
+            command -v git >/dev/null 2>&1 || { echo "No git to check the Yarn cache: left alone."; exit 0; }
+            if git -C "$real" rev-parse --is-inside-work-tree >/dev/null 2>&1; then echo "Yarn cache inside a git work tree: left alone."; exit 0; fi
+            local up="${real%/*}"
+            while [ "${#up}" -gt "${#hreal}" ]; do
+              if [ -e "$up/package.json" ] || [ -e "$up/.yarnrc.yml" ] || [ -e "$up/.git" ]; then echo "Yarn cache inside a project: left alone."; exit 0; fi
+              up="${up%/*}"
+            done
+            rm -rf -- "$real" ;;
+       esac) ;;
+    brew) brew cleanup -s ;;
+    xcode)
+      if declare -F perf_xcode_up >/dev/null && perf_xcode_up; then echo "Xcode runs: DerivedData left alone."; return 0; fi
+      find "$HOME/Library/Developer/Xcode/DerivedData" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf -- {} + ;;
+    simulators) xcrun simctl delete unavailable ;;
+    tmp) local old; old="$(disk_tmp_old)" || return 1
+         local rc=0
+         if [ -n "$old" ]; then while IFS= read -r e; do rm -rf -- "$e" || rc=1; done <<<"$old"; fi
+         return "$rc" ;;
+  esac
+}
+
+disk_free_main() {
+  local yes=0 auto=0 a rep steps
+  for a in "$@"; do case "$a" in --yes) yes=1 ;; --auto) auto=1 ;; --json) ;; *) die "Usage: deploys disk free [--yes] [--json]" ;; esac; done
+  rep="$(disk_report 0)"; steps="$(disk_steps "$rep")"
+  local keep; keep="$(jq -c '[.categories[] | select(.action != "auto") | {id, label, kb, action, hint}]' <<<"$rep")"
+  if [ "$yes" != 1 ]; then
+    if [ "${json:-0}" = 1 ]; then
+      printf '%s\n' "$steps" | jq -Rsc --argjson keep "$keep" --argjson f "$(disk_free_kb)" '
+        (split("\n") | map(select(length > 0) | split("\t") | {id:.[0], kb:(.[1] | tonumber), what:.[2]})) as $s |
+        {deleted:false, freeKB:$f, estimateKB:($s | map(.kb) | add // 0), steps:$s, untouched:$keep}'
+    else
+      echo "Would free (nothing was deleted; add --yes):"
+      printf '%s\n' "$steps" | awk -F'\t' 'NF{printf "  %7.1f GB  %s\n", $2/1048576, $3}'
+      echo "Left alone (only you decide):"
+      jq -r '.[] | select(.kb > 0) | "  \(.kb / 1048576 * 10 | round / 10) GB  \(.label)\(if .hint != "" then "  – " + .hint else "" end)"' <<<"$keep"
+    fi
+    return 0
+  fi
+  mkdir -p "$DISK_DIR"
+  local before after failed results out="$DISK_DIR/free.$$" pid
+  before="$(disk_free_kb)"
+  # A subshell owns the lock from the moment it takes it: its EXIT trap writes last-free and releases it, also when it
+  # is stopped. This shell forwards a stop to it and waits, so the lock never outlives the run.
+  (
+    own=0 stop=0 skip=0
+    trap '[ "$own" = 1 ] && { [ "$skip" = 1 ] || disk_now > "$DISK_DIR/last-free"; rmdir "$DISK_DIR/lock" 2>/dev/null; }' EXIT
+    # While the lock is taken a stop is only noted: between mkdir and own=1 it would leave the lock behind.
+    trap 'stop=1' INT TERM HUP
+    mkdir "$DISK_DIR/lock" 2>/dev/null || { echo "disk free runs already (remove $DISK_DIR/lock if it does not)." >&2; exit 3; }
+    [ -z "${DEPLOYS_DISK_TEST_AFTER_LOCK:-}" ] || "$DEPLOYS_DISK_TEST_AFTER_LOCK"
+    own=1
+    trap 'exit 130' INT TERM HUP
+    [ "$stop" = 0 ] || exit 130
+    # Not due any more: the EXIT trap still releases the lock (also on a stop right now), without writing last-free.
+    if [ "$auto" = 1 ] && ! disk_auto_due; then skip=1; exit 4; fi
+    while IFS=$'\t' read -r id _ _; do
+      [ -n "$id" ] || continue
+      if disk_run_step "$id" </dev/null >> "$DISK_DIR/free.log" 2>&1; then echo "$id ok"; else echo "$id failed"; fi
+    done <<<"$steps"
+  ) > "$out" &
+  pid=$!
+  trap 'kill -TERM "$pid" 2>/dev/null' INT TERM HUP
+  local rc=0; wait "$pid" || rc=$?
+  # A signal interrupts wait: wait again until the subshell has really ended (and released the lock).
+  while kill -0 "$pid" 2>/dev/null; do wait "$pid" || rc=$?; done
+  trap - INT TERM HUP
+  results="$(cat "$out" 2>/dev/null)
+"; rm -f "$out"
+  case "$rc" in
+    3) return 1 ;;
+    4) echo "disk free --auto: not needed any more (enough free, or run recently)."; return 0 ;;
+    0) ;;
+    *) echo "disk free was stopped." >&2; return "$rc" ;;
+  esac
+  failed="$(printf '%s' "$results" | grep -c ' failed$' || true)"
+  after="$(disk_free_kb)"
+  local freed=$(( ${after:-0} - ${before:-0} )); [ "$freed" -ge 0 ] || freed=0
+  rm -f "$DISK_DIR/report.json"
+  journal_add cli disk live "Freed $(disk_gb "$freed") GB$([ "$auto" = 1 ] && echo " (automatic)"), $failed steps failed" 2>/dev/null || true
+  if [ "$auto" = 1 ] && declare -F perf_notify >/dev/null; then
+    perf_notify "Disk space freed" "$(disk_gb "$freed") GB freed, $(disk_gb "$after") GB free now."
+  fi
+  if [ "${json:-0}" = 1 ]; then
+    printf '%s' "$results" | jq -Rsc --argjson b "$before" --argjson a "$after" --argjson fd "$freed" --argjson fl "$failed" \
+      '{deleted:true, freeBeforeKB:$b, freeKB:$a, freedKB:$fd, failed:$fl, steps:(split("\n") | map(select(length > 0) | split(" ") | {id:.[0], status:.[1]}))}'
+  else
+    printf '%s' "$results" | sed 's/^/  /'
+    echo "Freed $(disk_gb "$freed") GB, $(disk_gb "$after") GB free now. Steps failed: $failed (log: $DISK_DIR/free.log)"
+  fi
+}
+
+disk_schedule() {
+  local sub="${1:-status}" yes=0 min="" a; shift || true
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --yes) yes=1; shift ;;
+      --min-free) [[ "${2:-}" =~ ^[0-9]+$ ]] || die "--min-free needs a number of GB"; min="$2"; shift 2 ;;
+      *) die "Usage: deploys disk schedule on|off|status [--min-free 100] [--yes]" ;;
+    esac
+  done
+  [ -n "$min" ] || min="$(disk_cfg .minFreeGB)"; [ -n "$min" ] || min=100
+  local f="$CONFIG_DIR/disk.json" agent="no"
+  [ -f "$(job_plist "${PERF_LABEL:-app.deploycenter.perf}" 2>/dev/null)" ] && agent="yes"
+  case "$sub" in
+    on)
+      [ "$yes" = 1 ] || { echo "disk schedule on lets the perf agent run \`deploys disk free --yes\` when less than $min GB are free (at most every 6 hours). Add --yes."; return 0; }
+      mkdir -p "$CONFIG_DIR"; [ -f "$f" ] || echo '{}' > "$f"
+      jq --argjson m "$min" '.auto = true | .minFreeGB = $m' "$f" > "$f.new" && mv -f "$f.new" "$f"
+      echo "On: when less than $min GB are free, the perf agent frees what comes back by itself (checked every 10 minutes, at most every 6 hours)."
+      [ "$agent" = yes ] || echo "The perf agent is not installed, so nothing runs yet: deploys perf install --yes" ;;
+    off)
+      [ ! -f "$f" ] || { jq '.auto = false' "$f" > "$f.new" && mv -f "$f.new" "$f"; }
+      echo "Off: disk space is freed only by hand (deploys disk free --yes)." ;;
+    status)
+      if [ "$(disk_cfg .auto)" = true ]; then
+        echo "on: below $min GB free, perf agent $([ "$agent" = yes ] && echo installed || echo "NOT installed (deploys perf install --yes)")$([ -f "$DISK_DIR/last-free" ] && echo ", last run $(date -r "$(cat "$DISK_DIR/last-free")" '+%Y-%m-%d %H:%M' 2>/dev/null)")"
+      else echo "off"; fi ;;
+    *) die "Usage: deploys disk schedule on|off|status [--min-free 100] [--yes]" ;;
+  esac
+}
+
+# Whether the automatic run is due: on, below minFreeGB free, and the last run at least everyHours ago.
+disk_auto_due() {
+  local min every
+  [ "$(disk_cfg .auto)" = true ] || return 1
+  min="$(disk_cfg .minFreeGB)"; [ -n "$min" ] || min=100
+  every="$(disk_cfg .everyHours)"; [ -n "$every" ] || every=6
+  [ "$(disk_free_kb)" -lt $(( min * 1048576 )) ] || return 1
+  [ $(( $(disk_now) - $(cat "$DISK_DIR/last-free" 2>/dev/null || echo 0) )) -ge $(( every * 3600 )) ]
+}
+
+# Starts deploys in its own session, so launchd does not stop it when the perf agent's tick (its job) ends: launchd
+# ends the rest of a job's process group with the job.
+disk_detach() {  # disk_detach <log> <deploys args>...
+  local log="$1"; shift
+  perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' /bin/bash "${SELF:?}" "$@" </dev/null >> "$log" 2>&1 &
+}
+
+# One run of the perf agent (every minute): every 10 minutes a look at the free space; below minFreeGB (and at most
+# every everyHours) `disk free --yes --auto` in the background. Once a day a fresh report for the app, at low priority.
+disk_tick() {
+  local now last
+  now="$(disk_now)"
+  last="$(cat "$DISK_DIR/last-check" 2>/dev/null || echo 0)"
+  [ $(( now - last )) -ge 600 ] || return 0
+  mkdir -p "$DISK_DIR"; echo "$now" > "$DISK_DIR/last-check"
+  if [ ! -d "$DISK_DIR/lock" ] && disk_auto_due; then
+    disk_detach "$DISK_DIR/free.log" disk free --yes --auto
+    return 0
+  fi
+  if [ $(( now - $(jq -r '.time // 0' "$DISK_DIR/report.json" 2>/dev/null || echo 0) )) -ge 86400 ]; then
+    DEPLOYS_DISK_TIMEOUT="${DEPLOYS_DISK_TICK_TIMEOUT:-2400}" disk_detach /dev/null disk --refresh
+  fi
+  return 0
+}
+
+disk_main() {
+  local refresh=0 a
+  case "${1:-}" in
+    free) shift; disk_free_main "$@"; return ;;
+    schedule) shift; disk_schedule "$@"; return ;;
+    tick) disk_tick; return ;;
+  esac
+  for a in "$@"; do case "$a" in --refresh) refresh=1 ;; --json) ;; *) die "Usage: deploys disk [--refresh] [--json] | disk free [--yes] | disk schedule on|off|status" ;; esac; done
+  if [ "${json:-0}" = 1 ]; then disk_report "$refresh"; else disk_report "$refresh" | disk_print; fi
+}

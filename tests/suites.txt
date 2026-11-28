@@ -39,6 +39,7 @@ tests/desktopsessions-tests.sh
 tests/stranded-tests.sh
 tests/prs-tests.sh
 tests/clean-tests.sh
+tests/disk-tests.sh
 tests/x-tests.sh
 tests/repos-tests.sh
 tests/repos-cleanup-tests.sh
