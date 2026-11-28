@@ -22,6 +22,7 @@ tests/nightly-tests.sh
 tests/bughunt-tests.sh
 tests/preview-tests.sh
 tests/perf-guard-tests.sh
+tests/perf-history-tests.sh
 tests/perf-shed-tests.sh
 tests/perf-finished-tests.sh
 tests/perf-mcp-tests.sh
