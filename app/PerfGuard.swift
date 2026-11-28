@@ -9,7 +9,12 @@ import SwiftUI
 struct PerfStatus: Decodable, Equatable {
     struct Group: Decodable, Equatable { let key: String; let label: String; let count: Int; let mb: Int }
     struct Load: Decodable, Equatable { let one: Double; let cores: Int; let perCore: Double }
-    struct Swap: Decodable, Equatable { let usedMB: Int; let freeMB: Int?; let swapoutMBPerMin: Double? }
+    struct Swap: Decodable, Equatable { let usedMB: Int; let freeMB: Int?; let swapoutMBPerMin: Double?; var totalMB: Int? = nil }
+    struct Memory: Decodable, Equatable { let freePct: Double? }
+    struct Pressure: Decodable, Equatable { let level: Int? }
+    /// The limits the gauges are coloured by and the free disk (lib/perf.sh perf_with_limits; only from the agent).
+    struct Limits: Decodable, Equatable { let maxLoadPerCore: Double?; let redLoadPerCore: Double?; let maxSwapUsedMB: Int?; let minFreeDiskGB: Int? }
+    struct Disk: Decodable, Equatable { let freeGB: Double? }
     struct Checks: Decodable, Equatable { let running: Int; let cap: Int }
     let time: Int
     let level: String
@@ -22,6 +27,10 @@ struct PerfStatus: Decodable, Equatable {
     let groups: [Group]
     /// Pressure at warn, swapping, little memory or swap free (lib/perf.sh); missing from older agents.
     var memoryTight: Bool? = nil
+    var memory: Memory? = nil
+    var pressure: Pressure? = nil
+    var limits: Limits? = nil
+    var disk: Disk? = nil
 }
 
 /// A Docker stack from `deploys perf docker --json` (lib/perfdocker.sh).
@@ -296,13 +305,16 @@ struct PerfPanel: View {
                     Text(lvl.text).font(.headline)
                 }
                 if !s.reasons.isEmpty { Text(s.reasons.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary) }
+                PerfGauges(s: s)
                 Text(L("Load \(String(format: "%.1f", s.load.one)) on \(s.load.cores) cores · swap \(PerfText.gb(s.swap.usedMB)) · \(s.claudeSessions) Claude Code sessions · \(s.checks.running) heavy checks (cap \(s.checks.cap))",
                        "Last \(String(format: "%.1f", s.load.one)) auf \(s.load.cores) Kernen · Swap \(PerfText.gb(s.swap.usedMB)) · \(s.claudeSessions) Claude-Code-Sitzungen · \(s.checks.running) schwere Checks (Grenze \(s.checks.cap))"))
                     .font(.caption).foregroundStyle(.secondary)
                 Text(PerfText.admit(s)).font(.caption)
                 Divider()
+                PerfHistoryCharts(s: s)
+                Divider()
                 Text(L("Biggest consumers", "Größte Verbraucher")).font(.subheadline.weight(.semibold))
-                ForEach(PerfText.top(s, 5), id: \.self) { Text($0).font(.callout) }
+                PerfConsumerBars(s: s)
             } else {
                 Text(L("No figures yet.", "Noch keine Werte.")).foregroundStyle(.secondary)
             }
