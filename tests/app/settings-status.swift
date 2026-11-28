@@ -148,7 +148,8 @@ import AppKit
         st.toggleHidden(h)
         let later = DeploySnapshot(at: snap.at.addingTimeInterval(60), demo: snap.demo, waitingProjects: snap.waitingProjects,
                                    waitingCommits: snap.waitingCommits, waitingPRs: snap.waitingPRs, building: snap.building,
-                                   failed: snap.failed, byPlatform: snap.byPlatform, saving: snap.saving, projects: snap.projects, language: snap.language)
+                                   failed: snap.failed, byPlatform: snap.byPlatform, saving: snap.saving, projects: snap.projects, language: snap.language,
+                                   nextScheduled: snap.nextScheduled, today: snap.today)
         expect("snapshot: only the time differs, same content", later.sameContent(as: snap), true)
         var other = later; other.language = snap.language == "de" ? "en" : "de"
         expect("snapshot: a new language is new content", other.sameContent(as: snap), false)

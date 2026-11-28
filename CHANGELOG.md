@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A new desktop widget "Today" (Mac, small, medium, large): open Claude Code sessions, today's deploys, merged and conflicting pull requests, and the Mac's load with free memory; the large size lists what needs you. Add it with right-click on the desktop › Edit Widgets › Deploy Center › Today
 - New `deploys disk`: where the disk space goes (worktree build folders, Docker, package caches, Xcode, `~/Library/Caches`, Trash, Claude folders), measured in parallel with a time limit. `deploys disk free --yes` frees only what comes back by itself (also temporary files older than 3 days that no process uses); local APFS snapshots and unassigned space are shown; `deploys disk schedule on --yes` lets the perf agent do it when less than 100 GB are free. Mac app: Free Disk Space shows the categories and a "Free space" button with a confirmation and a notification. `deploys clean --yes` now exits with an error when a folder could not be removed
 - Mac app: the performance panel shows gauges for memory, load per core, swap and free disk in the guard's colours, the last 60 minutes as charts with the limits as dashed lines, and the biggest consumers as bars. The perf agent keeps one line a minute for 24 hours in `perf/history.jsonl`
 - `deploys clean --docker` also empties Docker's build cache older than 3 days and dangling images (never containers, volumes or tagged images); the daily `clean schedule` does it too. `clean schedule status` shows the right minimum again

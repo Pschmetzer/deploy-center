@@ -18,13 +18,17 @@ extension Store {
                 DispatchQueue.main.async { MainActor.assumeIsolated { self?.writeSnapshot() } }
             }
         }
+        watchToday()
         let snap = makeSnapshot()
         if let last = Self.lastSnapshot, last.sameContent(as: snap) { return }
+        // Only the "Today" part changed (a session, the free memory): reload only that widget.
+        let onlyToday = Self.lastSnapshot.map { var a = $0; a.today = snap.today; return a.sameContent(as: snap) } ?? false
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try DeploySnapshot.encoder.encode(snap).write(to: url, options: .atomic)
             Self.lastSnapshot = snap
-            WidgetCenter.shared.reloadAllTimelines()
+            if onlyToday { WidgetCenter.shared.reloadTimelines(ofKind: DeploySnapshot.todayKind) }
+            else { WidgetCenter.shared.reloadAllTimelines() }
         } catch {
             Log.write("snapshot: \(error.localizedDescription)")
         }
@@ -56,7 +60,8 @@ extension Store {
                               waitingPRs: w.prs, building: rows.filter { $0.status == .building }.count,
                               failed: rows.filter { $0.status == .failed }.count, byPlatform: Self.counts(rows), saving: snapshotSaving,
                               projects: Array(rows.prefix(10)), language: isGerman ? "de" : "en",
-                              nextScheduled: Self.nextScheduled(german: isGerman))
+                              nextScheduled: Self.nextScheduled(german: isGerman),
+                              today: makeToday(failed: rows.filter { $0.status == .failed }))
     }
 
     /// The daily deploy (`deploys schedule daily`): its file and its launchd job. Read only; this starts nothing.
@@ -99,14 +104,8 @@ extension Store {
 
 extension DeploySnapshot {
     /// Everything but `at`: a new language or platform split must reach the widgets too.
-    func sameContent(as o: DeploySnapshot) -> Bool { o.dated(at) == self }
-    private func dated(_ d: Date) -> DeploySnapshot {
-        var c = DeploySnapshot(at: d, demo: demo, waitingProjects: waitingProjects, waitingCommits: waitingCommits,
-                               waitingPRs: waitingPRs, building: building, failed: failed, byPlatform: byPlatform,
-                               saving: saving, projects: projects, language: language, nextScheduled: nextScheduled)
-        c.version = version
-        return c
-    }
+    /// A copy of every field (the "Today" part too), so a new field cannot be forgotten here.
+    func sameContent(as o: DeploySnapshot) -> Bool { var c = o; c.at = at; return c == self }
 }
 
 extension UserDefaults {
