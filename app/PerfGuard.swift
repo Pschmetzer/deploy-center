@@ -338,6 +338,7 @@ struct PerfPanel: View {
                     }
                 }
             }
+            PerfMCPSection()
             if let m = perf.message { Text(m).font(.caption).foregroundStyle(.secondary) }
             Divider()
             Text(L("Stopping keeps data. Hung and orphaned checks are stopped on their own every 5 minutes (deploys perf install).",

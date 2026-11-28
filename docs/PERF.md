@@ -175,13 +175,27 @@ that is archived or done (and to no open one), or, without a session, whose bran
 (`gh`, at most 5 look-ups a pass, cached for an hour), is stopped once it stayed so for `stopFinished.graceMin` (10)
 minutes. TERM, KILL after 10 s, a notification and a journal entry; one that comes back is left alone for 24 hours.
 
+### MCP servers
+
+```bash
+deploys perf mcp [--days 7] [--json]
+```
+
+Every Claude Code session starts its own MCP servers, so 20 sessions run 20 copies of each. This groups them by name
+(processes, memory, in how many sessions), counts their tool calls in the last days in the session transcripts
+(`~/.claude/projects/*/*.jsonl`, read-only, cached per file in `perf/mcp-usage.tsv`) per project (a worktree counts
+as its repo) and reads only the server names in `~/.claude.json` (global or per project, never a command or env
+value). The suggestion: off where it had no call at all, off in the projects that never used it, or only in the
+projects that use it instead of everywhere. Nothing is changed: turning a server off is yours (`claude mcp remove`,
+the plugin or connector settings, a project's `.mcp.json`). The Mac app shows the same in the performance panel.
+
 ### Quitting apps
 
 Settings → General → "Quit apps I picked when the Mac is overloaded" (off by default) lists the running apps with
 their memory and a "Not needed?" suggestion (everything running except Chrome and the never list) to pick with one
 click; the list is `"quitApps": {"enabled", "apps": [bundle ids], "idleMin": 30, "helpers": false}` in `perf.json`.
-Deploy Center itself does it, so it has to run: only when the Mac is red with memory pressure for 5 minutes and a
-shedding pass had 90 s to work, one app at a time (at most one every 2 minutes), biggest first, only apps in the
+Deploy Center itself does it, so it has to run, and it needs shedding on (`--shed`): only when the Mac is red with
+memory pressure for 5 minutes and a shedding pass in that time had 90 s to work, one app at a time (at most one every 2 minutes), biggest first, only apps in the
 background that were not active for `idleMin` minutes. Only like ⌘Q (`terminate`), never forced: an app with unsaved
 documents asks and stays open, and is left alone until the pressure is over. With `helpers`, windowless helper
 processes inside the quit app's bundle get a TERM (never login items, XPC services, launchd jobs or system services,

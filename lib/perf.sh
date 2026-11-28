@@ -290,6 +290,9 @@ perf_main() {
     docker|consumers|stop|wake)
       declare -F perfdocker_main >/dev/null || { echo "perf $sub needs lib/perfdocker.sh next to perf.sh" >&2; return 1; }
       perfdocker_main "$sub" ${rest[@]+"${rest[@]}"} ;;
+    mcp)
+      declare -F perf_mcp_main >/dev/null || { echo "perf mcp needs lib/perfmcp.sh next to perf.sh" >&2; return 1; }
+      perf_mcp_main ${rest[@]+"${rest[@]}"} ;;
     finished)
       declare -F perf_finished_main >/dev/null || { echo "perf finished needs lib/perffinished.sh next to perf.sh" >&2; return 1; }
       perf_finished_main ${rest[@]+"${rest[@]}"} ;;
@@ -299,7 +302,7 @@ perf_main() {
     clean|reap|tick|install|uninstall|hook)
       declare -F perfclean_main >/dev/null || { echo "perf $sub needs lib/perfclean.sh next to perf.sh" >&2; return 1; }
       perfclean_main "$sub" ${rest[@]+"${rest[@]}"} ;;
-    *) echo "Usage: deploys perf status|wait|gate|clean|reap|shed|finished|consumers|docker|stop|wake|install|uninstall|hook [--json]" >&2; return 2 ;;
+    *) echo "Usage: deploys perf status|wait|gate|clean|reap|shed|finished|mcp|consumers|docker|stop|wake|install|uninstall|hook [--json]" >&2; return 2 ;;
   esac
 }
 
@@ -313,6 +316,8 @@ if [ "${BASH_SOURCE[0]}" = "$0" ]; then
   [ -f "$_pd/perfdocker.sh" ] && . "$_pd/perfdocker.sh"
   # shellcheck source=lib/perfshed.sh
   [ -f "$_pd/perfshed.sh" ] && . "$_pd/perfshed.sh"
+  # shellcheck source=lib/perfmcp.sh
+  [ -f "$_pd/perfmcp.sh" ] && . "$_pd/perfmcp.sh"
   # shellcheck source=lib/perffinished.sh
   [ -f "$_pd/perffinished.sh" ] && . "$_pd/perffinished.sh"
   # shellcheck source=lib/desktopsessions.sh

@@ -66,11 +66,18 @@ Cloud.
 Claude-Sitzung archiviert oder fertig ist oder deren Branch-PR gemergt oder geschlossen ist, nach 10 Minuten Karenz,
 mit Mitteilung und Protokolleintrag. `deploys perf finished` zeigt sie vorher.
 
+## MCP-Server
+
+`deploys perf mcp` zeigt die MCP-Server aller Claude-Code-Sitzungen nach Name: Prozesse, Speicher, in wie vielen
+Sitzungen, und wie oft ihre Tools in den letzten 7 Tagen aufgerufen wurden (aus den Sitzungsverläufen, nur lesend).
+Dazu ein Vorschlag, wo ein Server aus sein könnte. Geändert wird nichts; Abschalten entscheidest du. Die Mac-App zeigt
+dasselbe im Leistungs-Panel.
+
 ## Apps beenden
 
 Einstellungen → Allgemein → „Ausgewählte Apps beenden, wenn der Mac überlastet ist“ (Standard: aus) zeigt die
 laufenden Apps mit ihrem Speicher und einen Vorschlag „Nicht benötigt?“ zum Übernehmen mit einem Klick. Deploy Center
-muss laufen. Beendet wird nur bei Rot mit Speicherdruck seit 5 Minuten, nachdem das Entlasten oben seine Chance hatte,
+muss laufen, und Entlasten (`--shed`) muss an sein. Beendet wird nur bei Rot mit Speicherdruck seit 5 Minuten, nachdem das Entlasten oben seine Chance hatte,
 eine App nach der anderen, die größte zuerst, nur im Hintergrund und mindestens 30 Minuten unbenutzt, und nur wie ⌘Q:
 Mit ungesicherten Dokumenten bleibt die App offen. Optional auch ihre fensterlosen Helfer (nur TERM, nie Systemdienste
 oder launchd-Jobs). Jede App kommt als Mitteilung mit Name und Speicher und ins Protokoll. Nie: Claude, Terminal,

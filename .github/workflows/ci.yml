@@ -155,6 +155,8 @@ jobs:
         run: bash tests/perf-shed-tests.sh
       - name: Finished-work tests (perf finished)
         run: bash tests/perf-finished-tests.sh
+      - name: MCP report tests (perf mcp)
+        run: bash tests/perf-mcp-tests.sh
       - name: Speed tests (the list is printed as before the speed changes)
         run: bash tests/perf-tests.sh
       - name: Benchmark, 200 projects (reports only, never fails the build)
@@ -320,6 +322,8 @@ jobs:
         run: bash tests/perf-shed-tests.sh
       - name: Finished-work tests (perf finished)
         run: bash tests/perf-finished-tests.sh
+      - name: MCP report tests (perf mcp)
+        run: bash tests/perf-mcp-tests.sh
       - name: Speed tests
         run: bash tests/perf-tests.sh
 

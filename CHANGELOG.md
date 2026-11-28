@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- New `deploys perf mcp`: the MCP servers Claude Code sessions run on this Mac, by name, with processes, memory, sessions and tool calls in the last 7 days (from the transcripts, read-only), and a suggestion where one could be off; also in the Mac app's performance panel. Nothing is changed in any Claude setting
 - Desktop sessions: a switch for keeping idle sessions going, `deploys desktop-sessions nudge on|off|status` and a toggle in the menu (`~/.config/deploys/nudge.json`); Deploy Center only stores it, whatever nudges idle sessions reads it
 - New `deploys perf install --stop-finished --yes`: dev servers whose Claude session is archived or done, or whose branch's pull request is merged or closed, are stopped after 10 minutes at any load, with a notification and a journal entry; `deploys perf finished` shows them first
 - Mac app: Settings → General can quit apps you pick (with a one-click "not needed" suggestion and their memory) when the Mac is red with memory pressure for 5 minutes and shedding did not help: only apps in the background, unused for 30 min, biggest first, one at a time and only like ⌘Q; optionally their windowless helpers too. Never Claude, terminals, Xcode, the Simulator, Finder or Deploy Center. `deploys perf clean` shows what would be quit. `deploys perf gate` runs heavy commands at background priority (`taskpolicy -b`) while the Mac is busy (`"lowPriority"` in `perf.json`)
