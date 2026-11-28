@@ -385,6 +385,13 @@ disk_auto_due() {
   [ $(( $(disk_now) - $(cat "$DISK_DIR/last-free" 2>/dev/null || echo 0) )) -ge $(( every * 3600 )) ]
 }
 
+# Starts deploys in its own session, so launchd does not stop it when the perf agent's tick (its job) ends: launchd
+# ends the rest of a job's process group with the job.
+disk_detach() {  # disk_detach <log> <deploys args>...
+  local log="$1"; shift
+  perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' /bin/bash "${SELF:?}" "$@" </dev/null >> "$log" 2>&1 &
+}
+
 # One run of the perf agent (every minute): every 10 minutes a look at the free space; below minFreeGB (and at most
 # every everyHours) `disk free --yes --auto` in the background. Once a day a fresh report for the app, at low priority.
 disk_tick() {
@@ -394,11 +401,11 @@ disk_tick() {
   [ $(( now - last )) -ge 600 ] || return 0
   mkdir -p "$DISK_DIR"; echo "$now" > "$DISK_DIR/last-check"
   if [ ! -d "$DISK_DIR/lock" ] && disk_auto_due; then
-    ( json=0 disk_free_main --yes --auto ) </dev/null >> "$DISK_DIR/free.log" 2>&1 &
+    disk_detach "$DISK_DIR/free.log" disk free --yes --auto
     return 0
   fi
   if [ $(( now - $(jq -r '.time // 0' "$DISK_DIR/report.json" 2>/dev/null || echo 0) )) -ge 86400 ]; then
-    DEPLOYS_DISK_TIMEOUT="${DEPLOYS_DISK_TICK_TIMEOUT:-900}" disk_measure </dev/null >/dev/null 2>&1 &
+    DEPLOYS_DISK_TIMEOUT="${DEPLOYS_DISK_TICK_TIMEOUT:-900}" disk_detach /dev/null disk --refresh
   fi
   return 0
 }
