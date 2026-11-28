@@ -49,6 +49,18 @@ wird nur mit `docker stop`: Container, Volumes und Daten bleiben. Automatisches 
 (bei Gelb 1 Stunde, bei Rot 30 Minuten) ist aus und wird mit `deploys perf install --docker --yes` eingeschaltet;
 Stacks unter `"docker": {"always": [...]}` in `~/.config/deploys/perf.json` bleiben immer an.
 
+## Speicherplatz
+
+`deploys disk` zeigt, wohin der Platz geht: Build-Ordner alter Worktrees, Docker, Paket-Caches (npm, pnpm, Yarn,
+bun, pip, Homebrew), Xcode, `~/Library/Caches`, Papierkorb, Claude-Code-Verläufe und die Ordner der Claude-App.
+Gemessen wird parallel und mit Zeitlimit, das Ergebnis bleibt 6 Stunden gespeichert. `deploys disk free --yes`
+räumt nur, was von selbst wiederkommt (`deploys clean --docker`, npm-, pnpm-, Yarn- und Homebrew-Cache, Xcode
+DerivedData älter als 7 Tage, nicht mehr verfügbare Simulatoren); ohne `--yes` wird nichts gelöscht. Papierkorb,
+Docker-Volumes und -Container, Claude-Verläufe (dafür `cleanupPeriodDays` in `~/.claude/settings.json`), die Ordner
+der Claude-App und `~/.cache/huggingface` werden nur angezeigt. `deploys disk schedule on --yes` lässt den
+Lastwächter das automatisch tun, wenn weniger als 100 GB frei sind (`minFreeGB` in `~/.config/deploys/disk.json`).
+In der Mac-App: Deploy → Speicher freigeben.
+
 ## Entlasten bei Speicherdruck
 
 `deploys perf install --clean --shed --yes` schaltet es ein (Standard: aus), `deploys perf shed` zeigt, was gerade

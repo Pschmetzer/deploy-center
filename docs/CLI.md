@@ -38,6 +38,9 @@ deploys weeks [--days 7] [--project <name>] [--json]   # the last --days days ag
 deploys export [--format csv|json] [--what journal|costs|all] [--days 30] [--project <name>] [--out <file>]   # journal and Vercel costs with a fixed schema (below); secrets in details masked, files 0600
 deploys clean [--root <dir>] [--days 2] [--worktrees] [--docker] [--min-free <GB>] [--yes] [--json]   # free disk space in old git worktrees: ignored build output, with --worktrees merged worktrees without changes, with --docker Docker's old build cache and dangling images (a report without --yes)
 deploys clean schedule on|off|status [--min-free 60]   # daily at 04:30, build output and Docker's old build cache, when less than <GB> are free
+deploys disk [--refresh] [--json]   # where the disk space goes: worktree build folders, Docker, package caches, Xcode, ~/Library/Caches, Trash, Claude folders (measured in parallel with a time limit, cached 6 hours)
+deploys disk free [--yes] [--json]   # free only what comes back (clean --docker, npm/pnpm/yarn/brew caches, old DerivedData, unavailable simulators); a report without --yes
+deploys disk schedule on|off|status [--min-free 100] [--yes]   # the perf agent runs `disk free --yes` when less than <GB> are free (docs/PERF.md)
 deploys repos status [--no-fetch] [--json]   # local checkouts against origin/main: what a sync would do (changes nothing; docs/REPOS.md)
 deploys repos sync [--yes] [--json]           # fast-forward clean checkouts, back to main from merged branches; never one with changes
 deploys repos last [--json] | repos schedule on|off|status   # the last result; every 30 minutes and at login

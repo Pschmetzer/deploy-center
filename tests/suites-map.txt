@@ -152,6 +152,12 @@ tests/clean-tests.sh providers/*
 tests/clean-tests.sh tests/fixtures/*
 tests/clean-tests.sh tests/cli/*
 tests/clean-tests.sh tests/providers/*
+tests/disk-tests.sh deploys
+tests/disk-tests.sh lib/*
+tests/disk-tests.sh providers/*
+tests/disk-tests.sh tests/fixtures/*
+tests/disk-tests.sh tests/cli/*
+tests/disk-tests.sh tests/providers/*
 tests/release-tests.sh deploys
 tests/welle10-tests.sh deploys
 tests/release-tests.sh lib/*

@@ -292,6 +292,7 @@ perf_tick_main() {
   fi
   ! declare -F perf_shed_tick >/dev/null || perf_shed_tick "$snap" || true
   ! declare -F perf_finished_tick >/dev/null || perf_finished_tick || true
+  ! declare -F disk_tick >/dev/null || disk_tick || true
   declare -F perf_caches >/dev/null && perf_caches measure >/dev/null 2>&1 &
   lastc="$(cat "$PERF_DIR/last-clean" 2>/dev/null || echo 0)"
   if [ $(( now - lastc )) -ge 600 ]; then

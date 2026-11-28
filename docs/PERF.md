@@ -133,7 +133,37 @@ stopped. Note: the Docker VM gives freed memory back to macOS slowly, so Docker 
 stops the VM when no container runs) and a lower memory limit in Docker's settings often help more.
 
 Caches (npm, Playwright browsers, Xcode DerivedData, simulator caches, `~/.cache`) are measured once a day with low
-priority and only reported, never deleted.
+priority and only reported, never deleted. To free disk space, see the next section.
+
+## Disk space
+
+```bash
+deploys disk [--refresh] [--json]       # where the space goes, per category (cached 6 hours)
+deploys disk free [--yes] [--json]      # what comes back by itself; without --yes nothing is deleted
+deploys disk schedule on|off|status [--min-free 100] [--yes]   # the perf agent frees space below <GB>
+```
+
+`deploys disk` measures every category at once, each `du` with a time limit (`DEPLOYS_DISK_TIMEOUT`, 120 seconds) at
+the lowest priority. A category that runs out of time shows the last full count, marked as such. Categories: build
+folders of old worktrees (`deploys clean`), Docker (images, build cache, volumes, containers), the npm, pnpm, Yarn,
+bun, pip and Homebrew caches, Xcode DerivedData, iOS simulators, the rest of `~/Library/Caches`, the Trash, Claude
+Code transcripts (`~/.claude/projects`), the Claude app's folders, temporary files (`$TMPDIR`), `~/.cache` (models in
+`~/.cache/huggingface` separately), `/Applications` and `/Library` (only shown).
+
+`deploys disk free --yes` runs only what comes back on the next install or build: `deploys clean --yes --docker`
+(build folders of old worktrees, Docker's build cache older than 3 days, dangling images), `npm cache clean --force`,
+`pnpm store prune`, `yarn cache clean`, `brew cleanup -s`, Xcode DerivedData older than 7 days (not while Xcode runs)
+`xcrun simctl delete unavailable` and entries in your own `$TMPDIR` older than 3 days that no running process has
+open (`lsof`; never `com.apple.*`). It never touches the Trash, Docker volumes or containers, Claude Code's
+transcripts (Claude Code deletes them after 30 days; `cleanupPeriodDays` in `~/.claude/settings.json` sets fewer),
+the Claude app's own folders, downloaded models in `~/.cache/huggingface`, bun and pip caches, or anything git tracks.
+
+`deploys disk schedule on --yes` writes `"auto": true` to `disk.json` in the config folder. The perf agent then looks
+every 10 minutes; below `minFreeGB` (100) free it runs `disk free --yes` in the background, at most every `everyHours`
+(6) hours, with a notification of the GB freed and a journal entry. Once a day it measures the report again for the
+app (`DEPLOYS_DISK_TICK_TIMEOUT`, 900 seconds). It needs the perf agent (`deploys perf install --yes`).
+`DEPLOYS_DISK_NOW` fixes the clock in tests; `DEPLOYS_DISK_APPS` and `DEPLOYS_DISK_LIBRARY` point the two shown-only
+system folders elsewhere.
 
 ## Shedding load under memory pressure
 
