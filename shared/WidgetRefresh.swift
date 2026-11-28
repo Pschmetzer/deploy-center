@@ -22,6 +22,12 @@ enum WidgetRefresh {
         now.addingTimeInterval(interval(snapshotAt: snapshotAt, building: building, now: now))
     }
 
+    /// The next midnight after `now`: the "Today" widget's numbers end there, so it gets an entry of its own.
+    static func nextMidnight(after now: Date, calendar: Calendar = .current) -> Date {
+        calendar.nextDate(after: now, matching: DateComponents(hour: 0, minute: 0, second: 0), matchingPolicy: .nextTime)
+            ?? calendar.startOfDay(for: now.addingTimeInterval(86_400))
+    }
+
     /// The moment "out of date" should show without the app: a second entry in the timeline, only while that moment is ahead.
     static func staleEntryDate(snapshotAt: Date?, now: Date) -> Date? {
         guard let at = snapshotAt else { return nil }

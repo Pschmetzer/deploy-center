@@ -55,6 +55,58 @@ struct DeploySnapshot: Codable, Equatable {
     /// older app that does not write it. The widget only shows it; nothing here starts a deploy.
     var nextScheduled: NextRun? = nil
 
+    /// The day at a glance for the "Today" widget (Mac only). Nil from older apps and the iPhone.
+    /// Last and optional, so older snapshots still decode. Every part is optional too: a source that is
+    /// switched off or did not answer is unknown ("–"), never 0.
+    var today: Today? = nil
+
+    struct Today: Codable, Equatable {
+        /// Claude Code sessions: the desktop app's (all accounts) and, when known, the cloud ones.
+        struct Sessions: Codable, Equatable {
+            let running: Int
+            let waiting: Int          // waiting on you
+            let done: Int             // done but still open
+            let stopped: Int          // stopped (limit, error, cut off)
+            var cloudOpen: Int? = nil
+            var cloudWaiting: Int? = nil
+            var cloudStuck: Int? = nil
+        }
+        /// Deploys that ended today (the journal); the running ones are `building` of the snapshot.
+        struct Deploys: Codable, Equatable { let live: Int; let failed: Int }
+        struct PRs: Codable, Equatable { let mergedToday: Int; let conflicts: Int }
+        /// The load guard: "green", "yellow" or "red", and the free memory in whole GB.
+        struct Mac: Codable, Equatable { let level: String; let freeGB: Int? }
+        struct Item: Codable, Equatable, Identifiable {
+            enum Kind: String, Codable { case failed, conflict, waiting, stopped, stuck, mac }
+            let kind: Kind
+            let title: String         // already masked when the Mac app was in demo mode
+            let detail: String
+            var id: String { kind.rawValue + "/" + title + "/" + detail }
+        }
+        /// The start of the day the numbers belong to: on another day the widget shows them as unknown.
+        let day: Date
+        var sessions: Sessions? = nil
+        var deploys: Deploys? = nil
+        var prs: PRs? = nil
+        var mac: Mac? = nil
+        /// What needs a look, most urgent first; at most eight.
+        var attention: [Item] = []
+
+        static let maxItems = 8
+        /// Most urgent first: failed deploys, a red Mac, conflicts, sessions that wait on you, stopped, stuck.
+        static func sorted(_ items: [Item]) -> [Item] {
+            let order: [Item.Kind: Int] = [.failed: 0, .mac: 1, .conflict: 2, .waiting: 3, .stopped: 4, .stuck: 5]
+            return Array(items.enumerated().sorted { a, b in
+                let oa = order[a.element.kind] ?? 9, ob = order[b.element.kind] ?? 9
+                return oa != ob ? oa < ob : a.offset < b.offset
+            }.map(\.element).prefix(maxItems))
+        }
+        /// These numbers, only when they are of the day `date` falls in.
+        func current(at date: Date, calendar: Calendar = .current) -> Today? {
+            calendar.isDate(day, inSameDayAs: date) ? self : nil
+        }
+    }
+
     struct NextRun: Codable, Equatable {
         let name: String          // already masked when the Mac app was in demo mode
         let platform: String      // empty for a schedule that covers every platform
@@ -126,6 +178,8 @@ struct DeploySnapshot: Codable, Equatable {
     static let fileName = "snapshot.json"
     /// The widget's kind, for a reload of just this widget.
     static let widgetKind = "DeployCenterWaiting"
+    /// The "Today" widget's kind: the app reloads only it when only the day's numbers changed.
+    static let todayKind = "DeployCenterToday"
     /// The App Group shared by the Mac app and its widget. It is set at build time
     /// (`DCAppGroup` in Info.plist) so no team id lives in the source.
     static var appGroup: String? {
@@ -182,5 +236,14 @@ struct DeploySnapshot: Codable, Equatable {
             Project(name: "Harbor-307", platform: "Vercel", status: .waiting, commits: 5, prs: 3, since: Date().addingTimeInterval(-86400 * 2), message: "New pricing page"),
             Project(name: "Nova-820", platform: "Vercel", status: .waiting, commits: 3, prs: 2, since: Date().addingTimeInterval(-7200), message: "Dark mode for the docs"),
             Project(name: "Quartz-145", platform: "Render", status: .waiting, commits: 1, prs: 0, since: Date().addingTimeInterval(-600), message: "Log less on start"),
-        ])
+        ],
+        today: Today(day: Calendar.current.startOfDay(for: Date()),
+                     sessions: .init(running: 4, waiting: 2, done: 3, stopped: 1, cloudOpen: 5, cloudWaiting: 1, cloudStuck: 0),
+                     deploys: .init(live: 6, failed: 1), prs: .init(mergedToday: 7, conflicts: 1), mac: .init(level: "green", freeGB: 21),
+                     attention: [
+                        .init(kind: .failed, title: "Cedar-551", detail: "Render"),
+                        .init(kind: .conflict, title: "Atlas-214#42", detail: "New pricing page"),
+                        .init(kind: .waiting, title: "Harbor-307", detail: "Account 2"),
+                        .init(kind: .stopped, title: "Nova-820", detail: "usage limit"),
+                     ]))
 }

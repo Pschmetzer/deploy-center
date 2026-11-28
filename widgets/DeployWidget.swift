@@ -609,6 +609,249 @@ struct NextDeployContent: View {
     }
 }
 
+#if os(macOS)
+/// The day at a glance (Mac only): Claude Code sessions, today's deploys, pull requests and the Mac's load.
+/// A tap opens the app; the large size lists what needs a look. Only reads the snapshot.
+struct TodayWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: DeploySnapshot.todayKind, provider: TodayProvider()) { TodayWidgetView(entry: $0) }
+            .configurationDisplayName(Words(DeploySnapshot.read())("Today", "Heute"))
+            .description(Words(DeploySnapshot.read())("Sessions, deploys, pull requests and the Mac's load today.",
+                                                      "Sessions, Deploys, Pull Requests und die Mac-Last von heute."))
+            .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+/// As Provider, plus an entry at midnight: yesterday's numbers then show as unknown until the app writes new ones.
+struct TodayProvider: TimelineProvider {
+    func placeholder(in context: Context) -> Entry { Entry(date: Date(), snap: .sample) }
+    func getSnapshot(in context: Context, completion: @escaping (Entry) -> Void) {
+        let r = DeploySnapshot.readOutcome()
+        completion(Entry(date: Date(), snap: r.snapshot?.today == nil && context.isPreview ? .sample : r.snapshot, problem: r.problem))
+    }
+    func getTimeline(in context: Context, completion: @escaping (Timeline<Entry>) -> Void) {
+        let r = DeploySnapshot.readOutcome(), now = Date()
+        let midnight = WidgetRefresh.nextMidnight(after: now)
+        var entries = [Entry(date: now, snap: r.snapshot, problem: r.problem)]
+        if let s = r.snapshot { entries.append(Entry(date: midnight, snap: s)) }
+        let next = WidgetRefresh.nextReload(snapshotAt: r.snapshot?.at, building: r.snapshot?.building ?? 0, now: now)
+        completion(Timeline(entries: entries, policy: .after(min(next, midnight.addingTimeInterval(60)))))
+    }
+}
+
+struct TodayWidgetView: View {
+    @Environment(\.widgetFamily) var family
+    let entry: Entry
+    var body: some View {
+        Group {
+            if let s = entry.snap, s.connected != false {
+                TodayContent(snap: s, today: s.today?.current(at: entry.date), family: family)
+            } else {
+                NoSnapshotView(notConnected: entry.snap?.connected == false, problem: entry.problem)
+            }
+        }
+        .environment(\.words, Words(entry.snap))
+        .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(URL(string: "deploycenter://"))
+    }
+}
+
+/// "–" for a number nobody knows (a source switched off, not answered, or yesterday's).
+private func num(_ n: Int?) -> String { n.map(String.init) ?? "–" }
+
+struct TodayContent: View {
+    let snap: DeploySnapshot
+    let today: DeploySnapshot.Today?
+    let family: WidgetFamily
+    @Environment(\.words) private var w
+    var body: some View {
+        VStack(alignment: .leading, spacing: family == .systemSmall ? 5 : 8) {
+            HStack(spacing: 4) {
+                Image(systemName: "calendar").accessibilityHidden(true)
+                Text(w("Today", "Heute")).lineLimit(1)
+                if snap.demo { Text("Demo").padding(.horizontal, 4).background(.quaternary, in: Capsule()) }
+                Spacer(minLength: 2)
+            }
+            .font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+            if family == .systemSmall {
+                VStack(alignment: .leading, spacing: 4) { lines }
+                Spacer(minLength: 0)
+            } else {
+                Grid(alignment: .topLeading, horizontalSpacing: 10, verticalSpacing: 8) {
+                    GridRow { sessionsTile; deploysTile }
+                    GridRow { prsTile; macTile }
+                }
+                if family == .systemLarge { attention }
+                Spacer(minLength: 0)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    // MARK: small: one line per area
+
+    @ViewBuilder private var lines: some View {
+        let s = today?.sessions, d = today?.deploys, p = today?.prs
+        TodayLine(icon: "terminal.fill", tint: .purple, value: num(s?.running), label: w("running", "laufen"),
+                  extra: (s?.waiting ?? 0) > 0 ? w("\(s!.waiting) wait", "\(s!.waiting) warten") : nil, warn: true)
+        TodayLine(icon: "paperplane.fill", tint: .green, value: num(d?.live), label: w("live", "live"),
+                  extra: (d?.failed ?? 0) > 0 ? w("\(d!.failed) failed", "\(d!.failed) fehlg.") : snap.building > 0 ? w("\(snap.building) building", "\(snap.building) baut") : nil,
+                  bad: (d?.failed ?? 0) > 0)
+        TodayLine(icon: "arrow.triangle.merge", tint: .blue, value: num(p?.mergedToday), label: w("merged", "gemergt"),
+                  extra: (p?.conflicts ?? 0) > 0 ? w("\(p!.conflicts) conflict", "\(p!.conflicts) Konflikt") : nil, warn: true)
+        TodayLine(icon: "circle.fill", tint: levelColor, value: today?.mac?.freeGB.map { "\($0)" } ?? "–", label: w("GB free", "GB frei"),
+                  extra: nil)
+            .accessibilityLabel(macSpoken)
+    }
+
+    // MARK: medium and large: four tiles
+
+    private var sessionsTile: some View {
+        let s = today?.sessions
+        var parts: [(String, Color?)] = []
+        if let s {
+            parts.append((w("\(s.waiting) wait on you", "\(s.waiting) warten auf dich"), s.waiting > 0 ? .orange : nil))
+            parts.append((w("\(s.done) done, open", "\(s.done) fertig, offen"), nil))
+            if s.stopped > 0 { parts.append((w("\(s.stopped) stopped", "\(s.stopped) stehen"), .red)) }
+            if let c = s.cloudOpen { parts.append((w("\(c) in the cloud", "\(c) in der Cloud") + ((s.cloudStuck ?? 0) > 0 ? w(", \(s.cloudStuck!) stuck", ", \(s.cloudStuck!) hängt") : ""), (s.cloudStuck ?? 0) > 0 ? .orange : nil)) }
+        }
+        return TodayTile(title: w("Sessions", "Sessions"), icon: "terminal.fill", tint: .purple,
+                         value: num(s?.running), unit: w("running", "laufen"), parts: parts)
+    }
+
+    private var deploysTile: some View {
+        let d = today?.deploys
+        var parts: [(String, Color?)] = []
+        if let d { parts.append((w("\(d.failed) failed", "\(d.failed) fehlgeschlagen"), d.failed > 0 ? .red : nil)) }
+        parts.append((w("\(snap.building) building now", "\(snap.building) bauen gerade"), snap.building > 0 ? .blue : nil))
+        return TodayTile(title: w("Deploys", "Deploys"), icon: "paperplane.fill", tint: .green,
+                         value: num(d?.live), unit: w("live", "live"), parts: parts)
+    }
+
+    private var prsTile: some View {
+        let p = today?.prs
+        let parts: [(String, Color?)] = p.map { [(w("\($0.conflicts) with conflict", "\($0.conflicts) mit Konflikt"), $0.conflicts > 0 ? .orange : nil)] } ?? []
+        return TodayTile(title: "Pull Requests", icon: "arrow.triangle.merge", tint: .blue,
+                         value: num(p?.mergedToday), unit: w("merged", "gemergt"), parts: parts)
+    }
+
+    private var macTile: some View {
+        let m = today?.mac
+        let parts: [(String, Color?)] = m.map { [(levelText($0.level), levelColor)] } ?? []
+        return TodayTile(title: "Mac", icon: "memorychip", tint: levelColor,
+                         value: m?.freeGB.map { "\($0)" } ?? "–", unit: w("GB free", "GB frei"), parts: parts)
+            .accessibilityLabel(macSpoken)
+    }
+
+    // MARK: large: what needs a look
+
+    @ViewBuilder private var attention: some View {
+        let items = today?.attention ?? []
+        Divider()
+        Text(w("Needs you", "Braucht dich")).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        if today == nil {
+            Text(w("Open Deploy Center to read today's numbers.", "Öffne Deploy Center, um die Zahlen von heute zu lesen."))
+                .font(.caption).foregroundStyle(.secondary)
+        } else if items.isEmpty {
+            Label(w("Nothing waits on you", "Nichts wartet auf dich"), systemImage: "checkmark.circle.fill")
+                .font(.callout.weight(.medium)).foregroundStyle(.green).widgetAccentable()
+        } else {
+            ForEach(items.prefix(5)) { i in
+                HStack(spacing: 6) {
+                    Image(systemName: icon(i.kind)).foregroundStyle(tint(i.kind)).font(.caption).frame(width: 14).accessibilityHidden(true)
+                    Text(i.title).font(.caption.weight(.semibold)).lineLimit(1).privacySensitive()
+                    Text(i.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(1).privacySensitive()
+                    Spacer(minLength: 0)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            if items.count > 5 { Text(w("+\(items.count - 5) more", "+\(items.count - 5) weitere")).font(.caption2).foregroundStyle(.secondary) }
+        }
+    }
+
+    private func icon(_ k: DeploySnapshot.Today.Item.Kind) -> String {
+        switch k {
+        case .failed: "xmark.octagon.fill"; case .mac: "exclamationmark.triangle.fill"; case .conflict: "arrow.triangle.branch"
+        case .waiting: "hand.raised.fill"; case .stopped: "pause.circle.fill"; case .stuck: "clock.badge.exclamationmark"
+        }
+    }
+    private func tint(_ k: DeploySnapshot.Today.Item.Kind) -> Color {
+        switch k { case .failed, .mac: .red; case .conflict, .waiting, .stuck: .orange; case .stopped: .secondary }
+    }
+
+    private var levelColor: Color {
+        switch today?.mac?.level { case "green"?: .green; case "yellow"?: .yellow; case "red"?: .red; default: .secondary }
+    }
+    private func levelText(_ l: String) -> String {
+        switch l { case "green": w("load green", "Last grün"); case "yellow": w("load yellow", "Last gelb"); default: w("load red", "Last rot") }
+    }
+    private var macSpoken: String {
+        guard let m = today?.mac else { return w("Mac load unknown", "Mac-Last unbekannt") }
+        return "Mac: " + levelText(m.level) + (m.freeGB.map { w(", \($0) GB free", ", \($0) GB frei") } ?? "")
+    }
+}
+
+/// Small: an icon, the number, its word, and one more piece (orange or red when it needs a look).
+struct TodayLine: View {
+    let icon: String
+    let tint: Color
+    let value: String
+    let label: String
+    let extra: String?
+    var warn = false
+    var bad = false
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon).foregroundStyle(tint).font(.caption2).frame(width: 13).widgetAccentable().accessibilityHidden(true)
+            Text(value).font(.callout.weight(.bold).monospacedDigit()).contentTransition(.numericText())
+            Text(label).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            if let extra {
+                // Small orange text uses the darker orange in light mode (warnText), for contrast.
+                if bad { Text(extra).font(.caption2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7).foregroundStyle(.red) }
+                else { Text(extra).font(.caption2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7).warnText(warn) }
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Medium and large: a title, the main number, and the breakdown under it.
+struct TodayTile: View {
+    let title: String
+    let icon: String
+    let tint: Color
+    let value: String
+    let unit: String
+    let parts: [(String, Color?)]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Label(title, systemImage: icon).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                .labelStyle(TintedIcon(tint: tint)).lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value).font(.title2.weight(.bold).monospacedDigit()).contentTransition(.numericText()).lineLimit(1)
+                Text(unit).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            ForEach(parts.indices, id: \.self) { i in
+                let c = parts[i].1
+                // Orange and yellow text: the darker orange in light mode (warnText), for contrast.
+                if c == .orange || c == .yellow { Text(parts[i].0).font(.caption2).lineLimit(1).minimumScaleFactor(0.7).warnText() }
+                else { Text(parts[i].0).font(.caption2).lineLimit(1).minimumScaleFactor(0.7).foregroundStyle(c ?? Color.secondary) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+private struct TintedIcon: LabelStyle {
+    let tint: Color
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 3) { configuration.icon.foregroundStyle(tint).widgetAccentable(); configuration.title }
+    }
+}
+#endif
+
 #if os(iOS)
 /// Which platform the configurable widget shows.
 enum WidgetPlatform: String, AppEnum {
@@ -804,6 +1047,7 @@ struct DeployWidgets: WidgetBundle {
         OutagesWidget()
         #if os(macOS)
         NextDeployWidget()    // the Mac app writes the schedule; the iPhone has none to show
+        TodayWidget()         // sessions, deploys, PRs and the load: only the Mac knows them
         #endif
         #if os(iOS)
         DeployActivityWidget()

@@ -30,6 +30,7 @@ MainActor.assumeIsolated {
     suite_round15_bugs()
     suite_round15_ux()
     suite_round15_a11y()
+    suite_today()
     insightsAppTests(expect); insightsAppTests2(expect)
 }
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- A new desktop widget "Today" (Mac, small, medium, large): open Claude Code sessions, today's deploys, merged and conflicting pull requests, and the Mac's load with free memory; the large size lists what needs you. Add it with right-click on the desktop › Edit Widgets › Deploy Center › Today
 - `deploys clean --docker` also empties Docker's build cache older than 3 days and dangling images (never containers, volumes or tagged images); the daily `clean schedule` does it too. `clean schedule status` shows the right minimum again
 ## 0.16.0 - 2026-11-28
 
