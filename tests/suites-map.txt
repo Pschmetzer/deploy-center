@@ -234,6 +234,9 @@ tests/nightbatch-tests.sh docs/*
 tests/morning-tests.sh deploys
 tests/morning-tests.sh lib/*
 tests/morning-tests.sh docs/*
+tests/daily-tests.sh deploys
+tests/daily-tests.sh lib/*
+tests/daily-tests.sh docs/*
 tests/perf-shed-tests.sh lib/perf*.sh
 tests/perf-shed-tests.sh lib/desktopsessions.sh
 tests/perf-shed-tests.sh tests/fixtures/perf-shed/*

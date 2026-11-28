@@ -149,6 +149,8 @@ jobs:
         run: bash tests/nightbatch-tests.sh
       - name: Morning report tests (deploys morning)
         run: bash tests/morning-tests.sh
+      - name: Daily task tests (deploys daily)
+        run: bash tests/daily-tests.sh
       - name: Preview tests (deploys preview)
         run: bash tests/preview-tests.sh
       - name: Performance guard tests (perf status, gate, clean, the hook)
@@ -320,6 +322,8 @@ jobs:
         run: bash tests/nightbatch-tests.sh
       - name: Morning report tests (deploys morning)
         run: bash tests/morning-tests.sh
+      - name: Daily task tests (deploys daily)
+        run: bash tests/daily-tests.sh
       - name: Preview tests
         run: bash tests/preview-tests.sh
       - name: Performance guard tests

@@ -61,6 +61,8 @@ PAGES = [
      "What turning off auto-deploy changes on Vercel and Render, and how to turn it back on."),
     ("autofix", "Autofix", "Using it", "docs/AUTOFIX.md",
      "deploys autofix hands a failed Vercel or Render build to a Claude Code routine that opens a fix pull request. It never deploys."),
+    ("daily", "Daily tasks", "Using it", "docs/DAILY.md",
+     "deploys daily sends prompts of your own to a Claude Code routine for the repos and times you pick; it opens pull requests and never deploys."),
     ("scan", "Bug scan and security check", "Using it", "docs/SCAN.md",
      "deploys scan lets Claude Code look through a repo for bugs and open one fix pull request; deploys check runs OSV-Scanner, gitleaks and Semgrep locally."),
     ("widgets-ios", "Widgets and iPhone app", "Using it", "docs/WIDGETS-IOS.md",
